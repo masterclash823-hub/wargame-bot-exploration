@@ -1,0 +1,9 @@
+{
+  "help_title": "Bot Wargame - Komendy",
+  "help_intro": "Dostepne komendy (kolejne pojawia sie w miare rozbudowy bota):",
+  "help_language": "/language <en|pl> - Ustaw preferowany jezyk odpowiedzi bota.",
+  "help_help": "/help - Pokaz ta liste.",
+  "language_set_confirm": "Jezyk ustawiony na polski.",
+  "language_invalid": "Nieobslugiwany jezyk. Wybierz jeden z: {languages}",
+  "generic_error": "Cos poszlo nie tak. Sprobuj ponownie lub popros Game Mastera o pomoc."
+}
