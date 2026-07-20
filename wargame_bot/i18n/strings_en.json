@@ -1,9 +1,0 @@
-{
-  "help_title": "Wargame Bot - Commands",
-  "help_intro": "Available commands (more will appear here as the bot grows):",
-  "help_language": "/language <en|pl> - Set your preferred language for bot replies.",
-  "help_help": "/help - Show this list.",
-  "language_set_confirm": "Language set to English.",
-  "language_invalid": "Unsupported language. Choose one of: {languages}",
-  "generic_error": "Something went wrong. Please try again, or ask a Game Master for help."
-}
