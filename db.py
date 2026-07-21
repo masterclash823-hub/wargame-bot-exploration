@@ -3,9 +3,8 @@ Thin SQLite access layer. One shared connection, WAL mode for safe concurrent
 read/write from the bot's async command handlers, and a schema bootstrap that only
 creates what's missing so it's safe to run on every startup.
 
-Only step-1 tables are here (what /help and /language need): user_prefs.
-Later steps will add nations, provinces, resources, etc. to SCHEMA below -
-this file itself won't need to change, just the schema string.
+SCHEMA grows with each build step - safe to add new CREATE TABLE IF NOT EXISTS blocks
+here and they will be applied on next startup without touching existing data.
 """
 import sqlite3
 from contextlib import contextmanager
@@ -16,6 +15,41 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS user_prefs (
     user_id     TEXT PRIMARY KEY,
     language    TEXT NOT NULL DEFAULT 'en'
+);
+
+CREATE TABLE IF NOT EXISTS nations (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id            TEXT    NOT NULL UNIQUE,   -- Discord user ID; one nation per player
+    name                TEXT    NOT NULL UNIQUE,
+    flag                TEXT    NOT NULL DEFAULT '',
+    government_type     TEXT    NOT NULL DEFAULT 'Monarchy',
+    capital_province_id INTEGER,                   -- set later when provinces exist
+    treasury            REAL    NOT NULL DEFAULT 0,
+    stability           REAL    NOT NULL DEFAULT 50,
+    population          INTEGER NOT NULL DEFAULT 0,
+    resources_json      TEXT    NOT NULL DEFAULT '{}',
+    tech_json           TEXT    NOT NULL DEFAULT '{"naval":3.0,"land":3.0,"economy":3.0,"colonial":3.0}',
+    created_at          TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Append-only public history log per nation.
+-- source: 'gm' | 'system' | 'ai' | 'player'
+CREATE TABLE IF NOT EXISTS nation_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    nation_id   INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    timestamp   TEXT    NOT NULL DEFAULT (datetime('now')),
+    source      TEXT    NOT NULL DEFAULT 'system',
+    entry_text  TEXT    NOT NULL
+);
+
+-- Diplomatic relations between pairs of nations.
+-- status: 'peace' | 'war' | 'alliance' | 'truce'
+CREATE TABLE IF NOT EXISTS relations (
+    nation_a_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    nation_b_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    status      TEXT    NOT NULL DEFAULT 'peace',
+    PRIMARY KEY (nation_a_id, nation_b_id),
+    CHECK (nation_a_id < nation_b_id)   -- enforce one row per pair, lower id first
 );
 """
 
