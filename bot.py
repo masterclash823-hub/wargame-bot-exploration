@@ -42,6 +42,14 @@ async def on_ready():
                 print(f"[COG] FAILED to load {cog}:", flush=True)
                 traceback.print_exc()
 
+        # Explicitly add app_command groups from cogs to the tree
+        from cogs.provinces import ProvincesCog
+        cog_instance = bot.cogs.get("ProvincesCog")
+        if cog_instance:
+            tree.add_command(cog_instance.admin_grp)
+            tree.add_command(cog_instance.province_grp)
+            print("[COG] Province/admin groups added to tree", flush=True)
+
         # Sync to each guild instantly, then clear the global slot so there are no duplicates.
         for guild in bot.guilds:
             try:
