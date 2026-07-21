@@ -42,7 +42,16 @@ async def on_ready():
                 traceback.print_exc()
 
         synced = await tree.sync()
-        print(f"[SYNC] Synced {len(synced)} command(s): {[c.name for c in synced]}", flush=True)
+        print(f"[SYNC] Global synced {len(synced)} command(s): {[c.name for c in synced]}", flush=True)
+
+        # Also sync to each connected guild instantly (global sync can take up to 1 hour)
+        for guild in bot.guilds:
+            try:
+                tree.copy_global_to(guild=guild)
+                guild_synced = await tree.sync(guild=guild)
+                print(f"[SYNC] Guild {guild.name} ({guild.id}): {len(guild_synced)} command(s)", flush=True)
+            except Exception as e:
+                print(f"[SYNC] Guild sync failed for {guild.name}: {e}", flush=True)
         print(f"[READY] Done. Connected to {len(bot.guilds)} guild(s).", flush=True)
 
     except Exception:
