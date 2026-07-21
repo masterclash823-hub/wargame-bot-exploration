@@ -34,7 +34,7 @@ GEMINI_API_KEY = _require("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 # --- Database ---
-DB_PATH = os.getenv("DB_PATH", "wargame.db")
+DB_PATH = os.getenv("DB_PATH", "/tmp/wargame.db")
 
 # --- Localization ---
 DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "en")

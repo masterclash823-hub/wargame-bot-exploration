@@ -1,16 +1,20 @@
 """
-Bot entry point. Uses commands.Bot so cogs can be loaded.
-Each feature lives in its own cog under cogs/ - bot.py stays minimal.
+Bot entry point.
 """
+import sys
+print("[BOOT] bot.py started, Python", sys.version, flush=True)
+
 import traceback
 import discord
 from discord import app_commands
 from discord.ext import commands
+print("[BOOT] discord.py imported", flush=True)
 
 import config
 import db
 import i18n
 from keep_alive import keep_alive
+print("[BOOT] local modules imported", flush=True)
 
 COGS = [
     "cogs.nations",
@@ -19,35 +23,36 @@ COGS = [
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
+print("[BOOT] bot object created", flush=True)
 
 
 @bot.event
 async def on_ready():
+    print("[READY] on_ready fired", flush=True)
     try:
-        print(f"[READY] on_ready fired. User: {bot.user}")
         db.init_db()
-        print("[DB] init_db complete")
+        print("[DB] init_db complete", flush=True)
 
         for cog in COGS:
             try:
                 await bot.load_extension(cog)
-                print(f"[COG] Loaded: {cog}")
+                print(f"[COG] Loaded: {cog}", flush=True)
             except Exception:
-                print(f"[COG] FAILED to load {cog}:")
+                print(f"[COG] FAILED to load {cog}:", flush=True)
                 traceback.print_exc()
 
         synced = await tree.sync()
-        print(f"[SYNC] Synced {len(synced)} command(s): {[c.name for c in synced]}")
-        print(f"[READY] Connected to {len(bot.guilds)} guild(s).")
+        print(f"[SYNC] Synced {len(synced)} command(s): {[c.name for c in synced]}", flush=True)
+        print(f"[READY] Done. Connected to {len(bot.guilds)} guild(s).", flush=True)
 
     except Exception:
-        print("[READY] FATAL ERROR in on_ready:")
+        print("[READY] FATAL ERROR in on_ready:", flush=True)
         traceback.print_exc()
 
 
 @tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    print(f"[CMD ERROR] {interaction.command.name if interaction.command else '?'}: {type(error).__name__}: {error}")
+    print(f"[CMD ERROR] {interaction.command.name if interaction.command else '?'}: {type(error).__name__}: {error}", flush=True)
     traceback.print_exc()
     lang = i18n.get_user_language(interaction.user.id)
     try:
@@ -84,15 +89,17 @@ async def help_cmd(interaction: discord.Interaction):
         description=i18n.t(lang, "help_intro"),
         color=discord.Color.blurple(),
     )
-    embed.add_field(name="/help",               value=i18n.t(lang, "help_help"),                inline=False)
-    embed.add_field(name="/language",           value=i18n.t(lang, "help_language"),            inline=False)
-    embed.add_field(name="/nation found",       value=i18n.t(lang, "help_nation_found"),        inline=False)
-    embed.add_field(name="/nation stats",       value=i18n.t(lang, "help_nation_stats"),        inline=False)
-    embed.add_field(name="/nation history",     value=i18n.t(lang, "help_nation_history"),      inline=False)
-    embed.add_field(name="/nation history_add", value=i18n.t(lang, "help_nation_history_add"),  inline=False)
+    embed.add_field(name="/help",               value=i18n.t(lang, "help_help"),               inline=False)
+    embed.add_field(name="/language",           value=i18n.t(lang, "help_language"),           inline=False)
+    embed.add_field(name="/nation found",       value=i18n.t(lang, "help_nation_found"),       inline=False)
+    embed.add_field(name="/nation stats",       value=i18n.t(lang, "help_nation_stats"),       inline=False)
+    embed.add_field(name="/nation history",     value=i18n.t(lang, "help_nation_history"),     inline=False)
+    embed.add_field(name="/nation history_add", value=i18n.t(lang, "help_nation_history_add"), inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 if __name__ == "__main__":
+    print("[BOOT] Starting keep_alive...", flush=True)
     keep_alive()
+    print("[BOOT] Calling bot.run()...", flush=True)
     bot.run(config.DISCORD_TOKEN)
