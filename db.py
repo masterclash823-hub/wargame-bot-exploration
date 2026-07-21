@@ -42,9 +42,42 @@ CREATE TABLE IF NOT EXISTS nation_history (
     entry_text  TEXT    NOT NULL
 );
 
--- Diplomatic relations between pairs of nations.
+-- Provinces imported from Azgaar. azgaar_cell_id matches Azgaar's cell i field.
+-- active=0 means soft-deleted (removed from a map resync).
+CREATE TABLE IF NOT EXISTS provinces (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    azgaar_cell_id      INTEGER NOT NULL UNIQUE,
+    owner_nation_id     INTEGER REFERENCES nations(id) ON DELETE SET NULL,
+    name                TEXT    NOT NULL DEFAULT '',
+    biome               TEXT    NOT NULL DEFAULT 'unknown',
+    terrain             TEXT    NOT NULL DEFAULT '',
+    base_resources_json TEXT    NOT NULL DEFAULT '{}',
+    population          INTEGER NOT NULL DEFAULT 0,
+    buildings_json      TEXT    NOT NULL DEFAULT '[]',
+    fortification_level INTEGER NOT NULL DEFAULT 0,
+    active              INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_provinces_owner ON provinces(owner_nation_id);
+CREATE INDEX IF NOT EXISTS idx_provinces_cell  ON provinces(azgaar_cell_id);
+
 -- status: 'peace' | 'war' | 'alliance' | 'truce'
-CREATE TABLE IF NOT EXISTS relations (
+CREATE TABLE IF NOT EXISTS provinces (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    azgaar_cell_id      INTEGER NOT NULL UNIQUE,
+    owner_nation_id     INTEGER REFERENCES nations(id) ON DELETE SET NULL,
+    name                TEXT    NOT NULL DEFAULT '',
+    biome               TEXT    NOT NULL DEFAULT 'unknown',
+    terrain             TEXT    NOT NULL DEFAULT 'plains',
+    base_resources_json TEXT    NOT NULL DEFAULT '{}',
+    population          INTEGER NOT NULL DEFAULT 0,
+    buildings_json      TEXT    NOT NULL DEFAULT '[]',
+    fortification_level INTEGER NOT NULL DEFAULT 0,
+    active              INTEGER NOT NULL DEFAULT 1   -- 0 = soft-deleted on map resync
+);
+
+CREATE INDEX IF NOT EXISTS idx_provinces_owner ON provinces(owner_nation_id);
+CREATE INDEX IF NOT EXISTS idx_provinces_cell  ON provinces(azgaar_cell_id);
+
     nation_a_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
     nation_b_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
     status      TEXT    NOT NULL DEFAULT 'peace',
