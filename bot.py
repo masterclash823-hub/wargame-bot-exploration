@@ -41,15 +41,19 @@ async def on_ready():
                 print(f"[COG] FAILED to load {cog}:", flush=True)
                 traceback.print_exc()
 
-        synced = await tree.sync()
-        print(f"[SYNC] Global synced {len(synced)} command(s): {[c.name for c in synced]}", flush=True)
+        # Clear any previously registered global commands to remove duplicates.
+        # We move everything to guild-only, so global slot must be empty.
+        tree.clear_commands(guild=None)
+        await tree.sync()
+        print("[SYNC] Global commands cleared.", flush=True)
 
-        # Also sync to each connected guild instantly (global sync can take up to 1 hour)
+        # Guild-only sync: instant, no 1-hour propagation delay.
+        # For a single-server bot this is always preferable to global sync.
         for guild in bot.guilds:
             try:
                 tree.copy_global_to(guild=guild)
                 guild_synced = await tree.sync(guild=guild)
-                print(f"[SYNC] Guild {guild.name} ({guild.id}): {len(guild_synced)} command(s)", flush=True)
+                print(f"[SYNC] Guild '{guild.name}' ({guild.id}): {len(guild_synced)} command(s): {[c.name for c in guild_synced]}", flush=True)
             except Exception as e:
                 print(f"[SYNC] Guild sync failed for {guild.name}: {e}", flush=True)
         print(f"[READY] Done. Connected to {len(bot.guilds)} guild(s).", flush=True)
