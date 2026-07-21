@@ -23,5 +23,15 @@
   "nation_list_title": "All Nations",
   "nation_list_empty": "No nations have been founded yet.",
   "nation_list_footer": "{count} nation(s) total.",
-  "help_nation_list": "List all founded nations."
+  "help_nation_list": "List all founded nations.",
+  "help_province_info": "View details of a single province by Azgaar cell ID.",
+  "help_province_list": "List all provinces owned by a nation.",
+  "help_province_claim": "[GM] Claim provinces for a nation using cell IDs (e.g. 1,2,5-10).",
+  "help_map_import": "[GM] Import an Azgaar JSON export to populate the province database.",
+  "help_map_resync": "[GM] Re-import an updated Azgaar export, merging with existing ownership.",
+  "province_not_found": "No active province found with cell ID {cell_id}.",
+  "province_bad_ids": "Invalid ID format. Use comma-separated IDs and/or ranges e.g. 1,2,5-10.",
+  "province_claimed": "Claimed {claimed} province(s) for **{nation}**. ({not_found} ID(s) not found.)",
+  "province_unclaimed": "Removed ownership from {count} province(s).",
+  "province_list_empty": "**{nation}** owns no provinces yet."
 }

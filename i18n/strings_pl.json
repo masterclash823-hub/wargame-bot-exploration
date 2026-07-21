@@ -23,5 +23,15 @@
   "nation_list_title": "Wszystkie Narody",
   "nation_list_empty": "Nie zalozono jeszcze zadnego narodu.",
   "nation_list_footer": "Lacznie {count} narod(ow).",
-  "help_nation_list": "Lista wszystkich zalozonych narodow."
+  "help_nation_list": "Lista wszystkich zalozonych narodow.",
+  "help_province_info": "Szczegoły prowincji po ID komorki Azgaar.",
+  "help_province_list": "Lista wszystkich prowincji nalezacych do narodu.",
+  "help_province_claim": "[GM] Przyznaj prowincje narodowi uzywajac ID komorek (np. 1,2,5-10).",
+  "help_map_import": "[GM] Importuj plik JSON z Azgaar, aby wypelnic baze prowincji.",
+  "help_map_resync": "[GM] Ponowny import zaktualizowanej mapy Azgaar z zachowaniem wlasnosci.",
+  "province_not_found": "Nie znaleziono aktywnej prowincji o ID komorki {cell_id}.",
+  "province_bad_ids": "Nieprawidlowy format ID. Uzyj listy ID i/lub zakresow np. 1,2,5-10.",
+  "province_claimed": "Przyznano {claimed} prowincji dla **{nation}**. ({not_found} ID nie znaleziono.)",
+  "province_unclaimed": "Usunieto wlasnosc z {count} prowincji.",
+  "province_list_empty": "**{nation}** nie posiada jeszcze zadnych prowincji."
 }
