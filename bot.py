@@ -105,6 +105,7 @@ async def help_cmd(interaction: discord.Interaction):
     embed.add_field(name="/nation found",       value=i18n.t(lang, "help_nation_found"),       inline=False)
     embed.add_field(name="/nation stats",       value=i18n.t(lang, "help_nation_stats"),       inline=False)
     embed.add_field(name="/nation history",     value=i18n.t(lang, "help_nation_history"),     inline=False)
+    embed.add_field(name="/nation list",        value=i18n.t(lang, "help_nation_list"),        inline=False)
     embed.add_field(name="/nation history_add", value=i18n.t(lang, "help_nation_history_add"), inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
