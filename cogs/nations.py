@@ -189,7 +189,33 @@ class NationCog(commands.Cog):
         embed.set_footer(text=f"Page {page}/{total_pages}")
         await interaction.response.send_message(embed=embed)
 
-    # ------------------------------------------------------------------ /nation history_add
+    # ------------------------------------------------------------------ /nation list
+    @nation_group.command(name="list", description="List all nations / Lista wszystkich narodow")
+    async def nation_list(self, interaction: discord.Interaction):
+        lang = _lang(interaction)
+        with db.cursor() as cur:
+            cur.execute("SELECT name, flag, government_type, owner_id FROM nations ORDER BY name")
+            rows = cur.fetchall()
+
+        if not rows:
+            await interaction.response.send_message(
+                i18n.t(lang, "nation_list_empty"), ephemeral=True
+            )
+            return
+
+        lines = []
+        for r in rows:
+            flag = r["flag"] or ""
+            owner = f"<@{r['owner_id']}>"
+            lines.append(f"{flag} **{r['name']}** — {r['government_type']} ({owner})")
+
+        embed = discord.Embed(
+            title=i18n.t(lang, "nation_list_title"),
+            description="\n".join(lines),
+            color=discord.Color.blurple(),
+        )
+        embed.set_footer(text=i18n.t(lang, "nation_list_footer", count=len(rows)))
+        await interaction.response.send_message(embed=embed)
     @nation_group.command(name="history_add", description="[GM] Add history entry / [GM] Dodaj wpis historii")
     @app_commands.describe(
         name="Nation name / Nazwa narodu",
