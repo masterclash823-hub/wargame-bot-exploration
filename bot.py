@@ -26,8 +26,13 @@ tree = bot.tree
 async def on_ready():
     db.init_db()
     for cog in COGS:
-        await bot.load_extension(cog)
-    await tree.sync()
+        try:
+            await bot.load_extension(cog)
+            print(f"[COG] Loaded: {cog}")
+        except Exception as e:
+            print(f"[COG] FAILED to load {cog}: {type(e).__name__}: {e}")
+    synced = await tree.sync()
+    print(f"Synced {len(synced)} command(s).")
     print(f"Logged in as {bot.user} (id: {bot.user.id})")
     print(f"Connected to {len(bot.guilds)} guild(s).")
 
@@ -67,6 +72,16 @@ async def help_cmd(interaction: discord.Interaction):
     embed.add_field(name="/nation history",    value=i18n.t(lang, "help_nation_history"), inline=False)
     embed.add_field(name="/nation history_add",value=i18n.t(lang, "help_nation_history_add"), inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    print(f"[CMD ERROR] {interaction.command.name if interaction.command else '?'}: {type(error).__name__}: {error}")
+    lang = t_interaction(interaction)
+    try:
+        await interaction.response.send_message(i18n.t(lang, "generic_error"), ephemeral=True)
+    except discord.InteractionResponded:
+        await interaction.followup.send(i18n.t(lang, "generic_error"), ephemeral=True)
 
 
 if __name__ == "__main__":
