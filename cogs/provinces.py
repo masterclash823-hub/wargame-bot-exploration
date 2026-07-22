@@ -1,11 +1,12 @@
 """
 Province commands:
-  /admin map_import  - GM: import Azgaar JSON (file attachment or URL)
-  /admin map_resync  - GM: re-import updated map, merges with existing data
-  /province claim    - GM: claim provinces for a nation (comma list + ranges)
-  /province unclaim  - GM: remove ownership from provinces
-  /province info     - anyone: view a single province by cell ID
-  /province list     - anyone: list all provinces owned by a nation
+  /admin map_import         - GM: import Azgaar JSON (file attachment or URL)
+  /admin map_resync         - GM: re-import updated map, merges with existing data
+  /admin map_export_markers - GM: generate JS snippet to place resource markers in Azgaar
+  /province claim           - GM: claim provinces for a nation (comma list + ranges)
+  /province unclaim         - GM: remove ownership from provinces
+  /province info            - anyone: view a single province by cell ID
+  /province list            - anyone: list all provinces owned by a nation
 """
 import json
 import aiohttp
@@ -18,25 +19,25 @@ import db
 import i18n
 
 BIOME_RESOURCES = {
-    "Tropical Rainforest":        {"wood": 8, "spices": 4, "food": 3},
-    "Tropical Seasonal Forest":   {"wood": 6, "spices": 3, "food": 4},
-    "Temperate Rainforest":       {"wood": 7, "food": 3},
-    "Temperate Deciduous Forest": {"wood": 6, "food": 3},
-    "Tropical Grassland":         {"food": 5, "horses": 3},
-    "Temperate Grassland":        {"food": 6, "horses": 4, "cloth": 2},
+    "Tropical Rainforest":        {"wood": 8, "spices": 4},
+    "Tropical Seasonal Forest":   {"wood": 6, "spices": 3},
+    "Temperate Rainforest":       {"wood": 7},
+    "Temperate Deciduous Forest": {"wood": 6},
+    "Tropical Grassland":         {"horses": 3},
+    "Temperate Grassland":        {"horses": 4, "cloth": 2},
     "Desert":                     {"stone": 2, "iron": 1},
     "Hot Desert":                 {"stone": 2, "copper": 1},
     "Cold Desert":                {"stone": 3, "iron": 1},
-    "Tundra":                     {"food": 1},
+    "Tundra":                     {},
     "Glacier":                    {},
-    "Wetland":                    {"food": 4, "clay": 4, "tar": 2},
+    "Wetland":                    {"clay": 4, "tar": 2},
     "Taiga":                      {"wood": 7, "tar": 3},
-    "Savanna":                    {"food": 4, "horses": 3},
-    "Marine":                     {"food": 6},
+    "Savanna":                    {"horses": 3},
+    "Marine":                     {},
 }
 
 def _biome_resources(biome_name: str, height: int, has_river: bool, coastal: bool) -> dict:
-    base = dict(BIOME_RESOURCES.get(biome_name, {"food": 2}))
+    base = dict(BIOME_RESOURCES.get(biome_name, {}))
     if height > 60:
         base["stone"] = base.get("stone", 0) + 3
         base["iron"]  = base.get("iron",  0) + 2
@@ -46,9 +47,7 @@ def _biome_resources(biome_name: str, height: int, has_river: bool, coastal: boo
         base["copper"] = base.get("copper", 0) + 1
     if has_river:
         base["clay"] = base.get("clay", 0) + 2
-        base["food"] = base.get("food", 0) + 1
-    if coastal:
-        base["food"] = base.get("food", 0) + 2
+    # coastal adds nothing without a Fishing Wharf building — food is building-derived
     return {k: v for k, v in base.items() if v > 0}
 
 def _terrain_label(height: int, biome: str) -> str:
@@ -298,6 +297,129 @@ class ProvincesCog(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
             raise
+
+    # -------------------------------------------------- /admin map_export_markers
+    # Emoji icons for each resource — chosen to be visually distinct on the map.
+    RESOURCE_ICONS = {
+        "food":      "🌾",
+        "wood":      "🌲",
+        "stone":     "🪨",
+        "iron":      "⚙️",
+        "copper":    "🔶",
+        "coal":      "⬛",
+        "clay":      "🏺",
+        "tar":       "🛢️",
+        "gunpowder": "💣",
+        "horses":    "🐴",
+        "spices":    "🌶️",
+        "silk":      "🎀",
+        "cloth":     "🧵",
+        "algae":     "🧪",
+    }
+
+    @admin_grp.command(
+        name="map_export_markers",
+        description="[GM] Generate JS to place resource markers in Azgaar / [GM] Generuj JS z markerami zasobow",
+    )
+    async def map_export_markers(self, interaction: discord.Interaction):
+        if not _gm(interaction):
+            await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        # Pull all active provinces that have resources
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT azgaar_cell_id, base_resources_json FROM provinces WHERE active=1"
+            )
+            rows = cur.fetchall()
+
+        if not rows:
+            await interaction.followup.send(
+                "No provinces in the database yet. Run `/admin map_import` first.",
+                ephemeral=True,
+            )
+            return
+
+        # Build one marker entry per resource per cell
+        # Azgaar marker structure: {i, icon, x, y, cell, type, size}
+        # x/y aren't known to the bot (we don't store cell coordinates), so we
+        # set them to 0 — Azgaar will reposition them to the cell center when
+        # the markers layer is toggled off and on.
+        marker_entries = []
+        marker_id = 1
+        for row in rows:
+            cid = row["azgaar_cell_id"]
+            resources = json.loads(row["base_resources_json"])
+            for resource, amount in resources.items():
+                if resource == "food":
+                    continue  # food comes from buildings, not shown as map markers
+                icon = self.RESOURCE_ICONS.get(resource, "❓")
+                marker_entries.append(
+                    f'  {{i:{marker_id},icon:"{icon}",x:0,y:0,cell:{cid},'
+                    f'type:"{resource}",size:20}}'
+                )
+                marker_id += 1
+
+        if not marker_entries:
+            await interaction.followup.send(
+                "No non-food resources found in the database.", ephemeral=True
+            )
+            return
+
+        markers_js = ",\n".join(marker_entries)
+
+        # The JS snippet:
+        # 1. Removes any existing resource markers (by type matching our resource names)
+        # 2. Pushes the new markers into pack.markers
+        # 3. Toggles the markers layer to force a re-render
+        resource_types = json.dumps(list(self.RESOURCE_ICONS.keys()))
+        js = f"""// Wargame Bot — Resource Markers
+// Paste this into the Azgaar browser console (F12 → Console) and press Enter.
+// Then toggle the Markers layer off and on to see them.
+
+(function() {{
+  const resourceTypes = {resource_types};
+
+  // Remove old resource markers
+  pack.markers = pack.markers.filter(m => !resourceTypes.includes(m.type));
+
+  // Add new resource markers
+  const newMarkers = [
+{markers_js}
+  ];
+  pack.markers.push(...newMarkers);
+
+  // Re-render markers layer
+  const markersLayer = document.getElementById('markers');
+  if (markersLayer) {{
+    markersLayer.style.display = 'none';
+    setTimeout(() => {{ markersLayer.style.display = ''; }}, 100);
+  }}
+
+  console.log(`✅ Added ${{newMarkers.length}} resource markers. Toggle Markers layer to refresh.`);
+}})();"""
+
+        # Discord has an 8MB file limit — JS will be well under that
+        # but we send as a file so it's easy to copy without line wrapping
+        js_bytes = js.encode("utf-8")
+        file = discord.File(
+            fp=__import__("io").BytesIO(js_bytes),
+            filename="azgaar_resource_markers.js",
+        )
+
+        await interaction.followup.send(
+            f"✅ Generated markers for **{marker_id - 1}** resources across **{len(rows)}** provinces.\n\n"
+            "**How to use:**\n"
+            "1. Open your map in Azgaar\n"
+            "2. Press **F12** → **Console** tab\n"
+            "3. Paste the contents of the attached `.js` file and press **Enter**\n"
+            "4. Toggle the **Markers** layer off and on to see the icons\n\n"
+            "Re-run this command after any `/admin map_resync` to keep markers in sync.",
+            file=file,
+            ephemeral=True,
+        )
 
     # -------------------------------------------------- /province claim
     @province_grp.command(name="claim",
