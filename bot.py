@@ -42,27 +42,18 @@ async def on_ready():
                 print(f"[COG] FAILED to load {cog}:", flush=True)
                 traceback.print_exc()
 
-        # Explicitly add app_command groups from cogs to the tree
-        from cogs.provinces import ProvincesCog
-        cog_instance = bot.cogs.get("ProvincesCog")
-        if cog_instance:
-            tree.add_command(cog_instance.admin_grp)
-            tree.add_command(cog_instance.province_grp)
-            print("[COG] Province/admin groups added to tree", flush=True)
-
-        # Sync to each guild instantly, then clear the global slot so there are no duplicates.
+        # Sync commands to each guild directly (instant, no 1-hour delay).
+        # Do NOT use copy_global_to — cog groups are already in the tree.
         for guild in bot.guilds:
             try:
-                tree.copy_global_to(guild=guild)
                 guild_synced = await tree.sync(guild=guild)
                 print(f"[SYNC] Guild '{guild.name}' ({guild.id}): {len(guild_synced)} command(s): {[c.name for c in guild_synced]}", flush=True)
             except Exception as e:
                 print(f"[SYNC] Guild sync failed for {guild.name}: {e}", flush=True)
 
-        # Clear global commands AFTER guild sync so duplicates stop showing.
-        tree.clear_commands(guild=None)
-        await tree.sync()
-        print("[SYNC] Global commands cleared.", flush=True)
+        # Also push a global sync so commands appear everywhere (takes up to 1hr to propagate).
+        global_synced = await tree.sync()
+        print(f"[SYNC] Global: {len(global_synced)} command(s).", flush=True)
         print(f"[READY] Done. Connected to {len(bot.guilds)} guild(s).", flush=True)
 
     except Exception:
