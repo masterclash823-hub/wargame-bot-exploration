@@ -33,5 +33,6 @@
   "province_bad_ids": "Nieprawidlowy format ID. Uzyj listy ID i/lub zakresow np. 1,2,5-10.",
   "province_claimed": "Przyznano {claimed} prowincji dla **{nation}**. ({not_found} ID nie znaleziono.)",
   "province_unclaimed": "Usunieto wlasnosc z {count} prowincji.",
-  "province_list_empty": "**{nation}** nie posiada jeszcze zadnych prowincji."
+  "province_list_empty": "**{nation}** nie posiada jeszcze zadnych prowincji.",
+  "help_map_export_markers": "[GM] Generuj skrypt JS z markerami zasobow do wklejenia w Azgaar."
 }

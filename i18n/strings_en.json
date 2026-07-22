@@ -33,5 +33,6 @@
   "province_bad_ids": "Invalid ID format. Use comma-separated IDs and/or ranges e.g. 1,2,5-10.",
   "province_claimed": "Claimed {claimed} province(s) for **{nation}**. ({not_found} ID(s) not found.)",
   "province_unclaimed": "Removed ownership from {count} province(s).",
-  "province_list_empty": "**{nation}** owns no provinces yet."
+  "province_list_empty": "**{nation}** owns no provinces yet.",
+  "help_map_export_markers": "[GM] Generate a JS snippet to place resource markers on your Azgaar map."
 }
