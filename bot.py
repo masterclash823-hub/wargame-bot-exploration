@@ -109,8 +109,9 @@ async def help_cmd(interaction: discord.Interaction):
     embed.add_field(name="/province info",      value=i18n.t(lang, "help_province_info"),      inline=False)
     embed.add_field(name="/province list",      value=i18n.t(lang, "help_province_list"),      inline=False)
     embed.add_field(name="/province claim",     value=i18n.t(lang, "help_province_claim"),     inline=False)
-    embed.add_field(name="/admin map_import",   value=i18n.t(lang, "help_map_import"),         inline=False)
-    embed.add_field(name="/admin map_resync",   value=i18n.t(lang, "help_map_resync"),         inline=False)
+    embed.add_field(name="/admin map_import",          value=i18n.t(lang, "help_map_import"),          inline=False)
+    embed.add_field(name="/admin map_resync",          value=i18n.t(lang, "help_map_resync"),          inline=False)
+    embed.add_field(name="/admin map_export_markers",  value=i18n.t(lang, "help_map_export_markers"),  inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
