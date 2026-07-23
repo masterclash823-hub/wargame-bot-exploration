@@ -53,6 +53,31 @@ CREATE TABLE IF NOT EXISTS provinces (
 CREATE INDEX IF NOT EXISTS idx_provinces_owner ON provinces(owner_nation_id);
 CREATE INDEX IF NOT EXISTS idx_provinces_cell  ON provinces(azgaar_cell_id);
 
+CREATE TABLE IF NOT EXISTS building_defs (
+    key             TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    tier            INTEGER NOT NULL DEFAULT 1,
+    cost_json       TEXT NOT NULL DEFAULT '{}',
+    effect_json     TEXT NOT NULL DEFAULT '{}',
+    upkeep_json     TEXT NOT NULL DEFAULT '{}',
+    requires_terrain TEXT NOT NULL DEFAULT '',
+    requires_tech   REAL NOT NULL DEFAULT 0.0,
+    description     TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS megaprojects (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    nation_id           INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    name                TEXT NOT NULL,
+    proposed_effect     TEXT NOT NULL DEFAULT '',
+    cost_json           TEXT NOT NULL DEFAULT '{}',
+    status              TEXT NOT NULL DEFAULT 'proposed',
+    progress_json       TEXT NOT NULL DEFAULT '{}',
+    gm_notes            TEXT NOT NULL DEFAULT '',
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at        TEXT
+);
+
 CREATE TABLE IF NOT EXISTS relations (
     nation_a_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
     nation_b_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,

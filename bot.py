@@ -19,6 +19,7 @@ print("[BOOT] local modules imported", flush=True)
 COGS = [
     "cogs.nations",
     "cogs.provinces",
+    "cogs.economy",
 ]
 
 intents = discord.Intents.default()
@@ -109,7 +110,16 @@ async def help_cmd(interaction: discord.Interaction):
     embed.add_field(name="/province info",      value=i18n.t(lang, "help_province_info"),      inline=False)
     embed.add_field(name="/province list",      value=i18n.t(lang, "help_province_list"),      inline=False)
     embed.add_field(name="/province claim",     value=i18n.t(lang, "help_province_claim"),     inline=False)
-    embed.add_field(name="/admin map_import",          value=i18n.t(lang, "help_map_import"),          inline=False)
+    embed.add_field(name="/resources",            value=i18n.t(lang, "help_resources"),        inline=False)
+    embed.add_field(name="/build",                value=i18n.t(lang, "help_build"),            inline=False)
+    embed.add_field(name="/buildings list",       value=i18n.t(lang, "help_buildings_list"),   inline=False)
+    embed.add_field(name="/buildings province",   value=i18n.t(lang, "help_buildings_prov"),   inline=False)
+    embed.add_field(name="/megaproject propose",  value=i18n.t(lang, "help_mp_propose"),       inline=False)
+    embed.add_field(name="/megaproject approve",  value=i18n.t(lang, "help_mp_approve"),       inline=False)
+    embed.add_field(name="/megaproject list",     value=i18n.t(lang, "help_mp_list"),          inline=False)
+    embed.add_field(name="/admineco tick",        value=i18n.t(lang, "help_admin_tick"),       inline=False)
+    embed.add_field(name="/admineco building_set",value=i18n.t(lang, "help_building_set"),     inline=False)
+    embed.add_field(name="/admineco building_new",value=i18n.t(lang, "help_building_new"),     inline=False)
     embed.add_field(name="/admin map_resync",          value=i18n.t(lang, "help_map_resync"),          inline=False)
     embed.add_field(name="/admin map_export_markers",  value=i18n.t(lang, "help_map_export_markers"),  inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
