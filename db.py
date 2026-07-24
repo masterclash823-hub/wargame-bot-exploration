@@ -65,17 +65,41 @@ CREATE TABLE IF NOT EXISTS building_defs (
     description     TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS game_config (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- Megaprojects: extended with duration, effect_json, and construction tracking
+DROP TABLE IF EXISTS megaprojects;
 CREATE TABLE IF NOT EXISTS megaprojects (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     nation_id           INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
     name                TEXT NOT NULL,
     proposed_effect     TEXT NOT NULL DEFAULT '',
+    effect_json         TEXT NOT NULL DEFAULT '{}',
     cost_json           TEXT NOT NULL DEFAULT '{}',
+    duration_months     INTEGER NOT NULL DEFAULT 0,
+    months_spent        INTEGER NOT NULL DEFAULT 0,
     status              TEXT NOT NULL DEFAULT 'proposed',
-    progress_json       TEXT NOT NULL DEFAULT '{}',
     gm_notes            TEXT NOT NULL DEFAULT '',
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS trades (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_nation_id      INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    to_nation_id        INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    offer_resources_json    TEXT NOT NULL DEFAULT '{}',
+    offer_gold              REAL NOT NULL DEFAULT 0,
+    receive_resources_json  TEXT NOT NULL DEFAULT '{}',
+    receive_gold            REAL NOT NULL DEFAULT 0,
+    public_note         TEXT NOT NULL DEFAULT '',
+    private_note        TEXT NOT NULL DEFAULT '',
+    status              TEXT NOT NULL DEFAULT 'pending',
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at         TEXT
 );
 
 CREATE TABLE IF NOT EXISTS relations (
