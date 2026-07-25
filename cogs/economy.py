@@ -1100,21 +1100,27 @@ class EconomyCog(commands.Cog):
         mp_id="Megaproject ID",
         final_effect="Effect description (public)",
         effect_json='Effects JSON e.g. {"resources_once":{"gold":500},"stability":5}',
-        cost_json='Final cost e.g. {"gold":1000,"wood":200}',
+        cost_json='Final cost e.g. {"gold":1000,"wood":200} — use {} for free',
         duration_months="Months to build (0 = instant)",
         gm_notes="Private GM notes",
     )
     async def mp_approve(self, interaction: discord.Interaction,
                          mp_id: int, final_effect: str, effect_json: str,
-                         cost_json: str, duration_months: int = 0, gm_notes: str = ""):
+                         cost_json: str = "{}", duration_months: int = 0, gm_notes: str = ""):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
         try:
-            json.loads(effect_json)
-            cost = json.loads(cost_json)
+            parsed_effect = json.loads(effect_json)
         except json.JSONDecodeError as e:
-            await interaction.response.send_message(f"Invalid JSON: {e}", ephemeral=True)
+            await interaction.response.send_message(f"❌ Invalid effect_json: {e}\nExample: {{\"resources_once\":{{\"gold\":500}},\"stability\":5}}", ephemeral=True)
+            return
+        try:
+            cost = json.loads(cost_json)
+            if not isinstance(cost, dict):
+                raise ValueError("cost_json must be a JSON object like {} or {\"gold\":100}")
+        except (json.JSONDecodeError, ValueError) as e:
+            await interaction.response.send_message(f"❌ Invalid cost_json: {e}\nUse {{}} for free, or {{\"gold\":100}} etc.", ephemeral=True)
             return
         with db.cursor() as c:
             c.execute("SELECT * FROM megaprojects WHERE id=?", (mp_id,))
@@ -1126,27 +1132,30 @@ class EconomyCog(commands.Cog):
             c.execute("SELECT * FROM nations WHERE id=?", (mp["nation_id"],))
             nat = c.fetchone()
         gold = cost.get("gold", 0)
-        if nat["treasury"] < gold:
+        if gold > 0 and nat["treasury"] < gold:
             await interaction.response.send_message(
                 f"{nat['name']} cannot afford this ({gold:.0f}g needed, {nat['treasury']:.0f}g available).",
                 ephemeral=True)
             return
         res = json.loads(nat["resources_json"])
-        ok, missing = _deduct(res, cost)
-        if not ok:
-            await interaction.response.send_message(f"{nat['name']} lacks enough {missing}.", ephemeral=True)
-            return
+        if cost:
+            ok, missing = _deduct(res, cost)
+            if not ok:
+                await interaction.response.send_message(f"{nat['name']} lacks enough {missing}.", ephemeral=True)
+                return
         new_status = "building" if duration_months > 0 else "complete"
         with db.cursor() as c:
             c.execute(
                 "UPDATE megaprojects SET status=?,proposed_effect=?,effect_json=?,"
                 "cost_json=?,duration_months=?,gm_notes=? WHERE id=?",
-                (new_status, final_effect, effect_json, cost_json, duration_months, gm_notes, mp_id)
+                (new_status, final_effect, json.dumps(parsed_effect),
+                 json.dumps(cost), duration_months, gm_notes, mp_id)
             )
-            c.execute("UPDATE nations SET resources_json=?,treasury=? WHERE id=?",
-                      (json.dumps(res), nat["treasury"] - gold, nat["id"]))
+            if gold > 0 or any(v > 0 for k, v in cost.items() if k != "gold"):
+                c.execute("UPDATE nations SET resources_json=?,treasury=? WHERE id=?",
+                          (json.dumps(res), nat["treasury"] - gold, nat["id"]))
         if new_status == "complete":
-            _apply_mp_effect(mp["nation_id"], effect_json, mp["name"])
+            _apply_mp_effect(mp["nation_id"], json.dumps(parsed_effect), mp["name"])
         else:
             _log(mp["nation_id"], "gm",
                  f"Megaproject '{mp['name']}' approved. Building ({duration_months} months). Effect: {final_effect}")
