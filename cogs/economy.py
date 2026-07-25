@@ -403,6 +403,7 @@ class EconomyCog(commands.Cog):
             hpm      = float(_cfg("hours_per_month", "24"))
             last_str = _cfg("last_tick_ts")
             if not last_str:
+                print("[CALENDAR] No last_tick_ts set — run /calendar start", flush=True)
                 return
             elapsed = (
                 datetime.now(timezone.utc) - datetime.fromisoformat(last_str)
@@ -412,16 +413,20 @@ class EconomyCog(commands.Cog):
 
             months = max(1, int(elapsed / hpm))
             _cfg_set("last_tick_ts", datetime.now(timezone.utc).isoformat())
+            print(f"[CALENDAR] {months} month(s) elapsed, running tick...", flush=True)
 
             ch_id = _cfg("announce_channel_id")
-            ch    = self.bot.get_channel(int(ch_id)) if ch_id else None
+            print(f"[CALENDAR] Announce channel ID: {ch_id!r}", flush=True)
+            ch = self.bot.get_channel(int(ch_id)) if ch_id else None
+            print(f"[CALENDAR] Channel object: {ch}", flush=True)
 
-            # Post one announcement per month that passed
             for i in range(months):
                 month, year, summaries = await asyncio.get_event_loop().run_in_executor(
                     None, lambda: _run_tick(1)
                 )
+                print(f"[CALENDAR] Month {month}/{year} ticked. Summaries: {summaries}", flush=True)
                 if not ch:
+                    print("[CALENDAR] No channel found — skipping announcement.", flush=True)
                     continue
                 mname = MONTH_NAMES[month - 1] if 1 <= month <= 12 else str(month)
                 embed = discord.Embed(
@@ -435,10 +440,16 @@ class EconomyCog(commands.Cog):
                         value="\n".join(summaries[:20]),
                         inline=False,
                     )
-                await ch.send(embed=embed)
+                try:
+                    await ch.send(embed=embed)
+                    print(f"[CALENDAR] Announcement sent to #{ch.name}", flush=True)
+                except Exception as send_err:
+                    print(f"[CALENDAR] Failed to send announcement: {send_err}", flush=True)
 
         except Exception as e:
+            import traceback
             print(f"[CALENDAR ERROR] {e}", flush=True)
+            traceback.print_exc()
 
     @calendar_loop.before_loop
     async def _before(self):
@@ -1056,10 +1067,27 @@ class EconomyCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
         try:
-            month, year, summaries = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: _run_tick(months)
-            )
-            report = "\n".join(summaries) or "No nations."
+            ch_id = _cfg("announce_channel_id")
+            ch    = self.bot.get_channel(int(ch_id)) if ch_id else None
+            for _ in range(months):
+                month, year, summaries = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: _run_tick(1)
+                )
+                if ch:
+                    mname = MONTH_NAMES[month - 1] if 1 <= month <= 12 else str(month)
+                    embed = discord.Embed(
+                        title=f"📅 New Month: {mname}, Year {year}",
+                        description="A new month has begun. Nations have collected their income.",
+                        color=discord.Color.gold(),
+                    )
+                    if summaries:
+                        embed.add_field(
+                            name="⚙️ Resource Tick",
+                            value="\n".join(summaries[:20]),
+                            inline=False,
+                        )
+                    await ch.send(embed=embed)
+            report = "\n".join(summaries) if summaries else "No nations."
             await interaction.followup.send(
                 f"✅ Advanced **{months}** month(s) → {MONTH_NAMES[month-1]}, Year {year}\n"
                 f"```\n{report}\n```",
