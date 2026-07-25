@@ -46,6 +46,7 @@ async def on_ready():
 
         for guild in bot.guilds:
             try:
+                tree.copy_global_to(guild=guild)
                 guild_synced = await tree.sync(guild=guild)
                 print(f"[SYNC] Guild '{guild.name}': {len(guild_synced)} command(s): {[c.name for c in guild_synced]}", flush=True)
             except Exception as e:
@@ -91,13 +92,22 @@ async def language_cmd(interaction: discord.Interaction, lang: app_commands.Choi
 
 @tree.command(name="help", description="Show available commands / Pokaz dostepne komendy")
 async def help_cmd(interaction: discord.Interaction):
-    from cogs.economy import HelpView, HELP_SECTIONS
-    is_gm = bool(interaction.guild) and any(
-        r.name == config.GM_ROLE_NAME for r in interaction.user.roles
-    )
-    view  = HelpView(is_gm=is_gm, current="general")
-    embed = view._embed()
-    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    try:
+        from cogs.economy import HelpView
+        is_gm = bool(interaction.guild) and any(
+            r.name == config.GM_ROLE_NAME for r in interaction.user.roles
+        )
+        view  = HelpView(is_gm=is_gm, current="general")
+        embed = view._embed()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    except Exception as e:
+        print(f"[HELP ERROR] {e}", flush=True)
+        embed = discord.Embed(
+            title="Commands",
+            description="Economy cog failed to load — check Render logs.\n\nWorking: `/language`, `/nation`, `/province`",
+            color=discord.Color.red(),
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 if __name__ == "__main__":
