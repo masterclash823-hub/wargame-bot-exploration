@@ -10,9 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 print("[BOOT] discord.py imported", flush=True)
 
-import config
-import db
-import i18n
+import config, db, i18n
 from keep_alive import keep_alive
 print("[BOOT] local modules imported", flush=True)
 
@@ -91,117 +89,15 @@ async def language_cmd(interaction: discord.Interaction, lang: app_commands.Choi
     )
 
 
-def _is_gm(interaction: discord.Interaction) -> bool:
-    if not interaction.guild:
-        return False
-    return any(r.name == config.GM_ROLE_NAME for r in interaction.user.roles)
-
-
 @tree.command(name="help", description="Show available commands / Pokaz dostepne komendy")
-@app_commands.describe(section="Section: general / nation / province / economy / trade / gm")
-@app_commands.choices(section=[
-    app_commands.Choice(name="General",  value="general"),
-    app_commands.Choice(name="Nation",   value="nation"),
-    app_commands.Choice(name="Province", value="province"),
-    app_commands.Choice(name="Economy",  value="economy"),
-    app_commands.Choice(name="Trade",    value="trade"),
-    app_commands.Choice(name="GM only",  value="gm"),
-])
-async def help_cmd(interaction: discord.Interaction,
-                   section: app_commands.Choice[str] = None):
-    lang = i18n.get_user_language(interaction.user.id)
-    sec  = section.value if section else "general"
-
-    # GM section is restricted
-    if sec == "gm" and not _is_gm(interaction):
-        await interaction.response.send_message(
-            i18n.t(lang, "gm_only"), ephemeral=True)
-        return
-
-    SECTIONS = {
-        "general": {
-            "title": "General Commands",
-            "color": discord.Color.blurple(),
-            "fields": [
-                ("/help [section]",   "Show this help. Sections: general, nation, province, economy, trade, gm"),
-                ("/language",         "Set your preferred language (en / pl)."),
-                ("/calendar status",  "View the current in-game date and calendar settings."),
-            ],
-        },
-        "nation": {
-            "title": "Nation Commands",
-            "color": discord.Color.blue(),
-            "fields": [
-                ("/nation found",       "Found your nation."),
-                ("/nation stats",       "View a nation's stats (blank = your own)."),
-                ("/nation list",        "List all nations."),
-                ("/nation history",     "View a nation's public history log."),
-            ],
-        },
-        "province": {
-            "title": "Province Commands",
-            "color": discord.Color.green(),
-            "fields": [
-                ("/province info",    "View a province by Azgaar cell ID."),
-                ("/province list",    "List all provinces owned by a nation."),
-            ],
-        },
-        "economy": {
-            "title": "Economy Commands",
-            "color": discord.Color.gold(),
-            "fields": [
-                ("/resources",           "View your nation's resource stockpile and treasury."),
-                ("/build",               "Construct a building in one of your provinces."),
-                ("/buildings list",      "List all available building types."),
-                ("/buildings province",  "List buildings in a specific province."),
-                ("/megaproject propose", "Propose a megaproject for GM approval."),
-                ("/megaproject list",    "List your megaprojects."),
-            ],
-        },
-        "trade": {
-            "title": "Trade Commands",
-            "color": discord.Color.orange(),
-            "fields": [
-                ("/trade offer",   "Propose a trade to another nation (public note + private terms)."),
-                ("/trade accept",  "Accept a pending trade offer."),
-                ("/trade cancel",  "Cancel or decline a trade offer."),
-                ("/trade list",    "List your pending trades."),
-                ("/trade view",    "View full details of a trade (private terms visible to parties + GM only)."),
-            ],
-        },
-        "gm": {
-            "title": "GM Commands",
-            "color": discord.Color.red(),
-            "fields": [
-                ("/nation history_add",      "Add a manual history entry to a nation."),
-                ("/province claim",          "Claim provinces for a nation by cell ID(s)."),
-                ("/province unclaim",        "Remove ownership from provinces."),
-                ("/admin map_import",        "Import an Azgaar JSON export."),
-                ("/admin map_resync",        "Re-import an updated Azgaar map."),
-                ("/admin map_export_markers","Generate JS snippet for Azgaar resource markers."),
-                ("/admineco tick",           "Manually trigger a resource tick (specify months)."),
-                ("/admineco grant",          "Give resources or gold to a nation (logged)."),
-                ("/admineco mp_approve",     "Approve a megaproject, set its effect, cost, and duration."),
-                ("/admineco mp_advance",     "Advance a megaproject's construction by N months."),
-                ("/admineco building_set",   "Edit a building definition field live."),
-                ("/admineco building_new",   "Add a new custom building type."),
-                ("/calendar set",            "Configure the in-game calendar (speed, channel, start date)."),
-                ("/calendar start",          "Start the calendar loop."),
-                ("/calendar stop",           "Pause the calendar loop."),
-            ],
-        },
-    }
-
-    data = SECTIONS.get(sec, SECTIONS["general"])
-    embed = discord.Embed(
-        title=f"📖 {data['title']}",
-        color=data["color"],
-        description="Use `/help <section>` to browse: general · nation · province · economy · trade · gm",
+async def help_cmd(interaction: discord.Interaction):
+    from cogs.economy import HelpView, HELP_SECTIONS
+    is_gm = bool(interaction.guild) and any(
+        r.name == config.GM_ROLE_NAME for r in interaction.user.roles
     )
-    for name, value in data["fields"]:
-        embed.add_field(name=name, value=value, inline=False)
-
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    view  = HelpView(is_gm=is_gm, current="general")
+    embed = view._embed()
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 if __name__ == "__main__":

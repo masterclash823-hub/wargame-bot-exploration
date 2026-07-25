@@ -70,8 +70,6 @@ CREATE TABLE IF NOT EXISTS game_config (
     value TEXT NOT NULL
 );
 
--- Megaprojects: extended with duration, effect_json, and construction tracking
-DROP TABLE IF EXISTS megaprojects;
 CREATE TABLE IF NOT EXISTS megaprojects (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     nation_id           INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
