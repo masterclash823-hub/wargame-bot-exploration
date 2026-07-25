@@ -409,29 +409,34 @@ class EconomyCog(commands.Cog):
             ).total_seconds() / 3600
             if elapsed < hpm:
                 return
+
             months = max(1, int(elapsed / hpm))
             _cfg_set("last_tick_ts", datetime.now(timezone.utc).isoformat())
-            month, year, summaries = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: _run_tick(months)
-            )
+
             ch_id = _cfg("announce_channel_id")
-            if not ch_id:
-                return
-            ch = self.bot.get_channel(int(ch_id))
-            if not ch:
-                return
-            mname = MONTH_NAMES[month - 1] if 1 <= month <= 12 else str(month)
-            embed = discord.Embed(
-                title=f"📅 {mname}, Year {year}",
-                color=discord.Color.gold()
-            )
-            if summaries:
-                embed.add_field(
-                    name="Resource Tick",
-                    value="\n".join(summaries[:20]),
-                    inline=False,
+            ch    = self.bot.get_channel(int(ch_id)) if ch_id else None
+
+            # Post one announcement per month that passed
+            for i in range(months):
+                month, year, summaries = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: _run_tick(1)
                 )
-            await ch.send(embed=embed)
+                if not ch:
+                    continue
+                mname = MONTH_NAMES[month - 1] if 1 <= month <= 12 else str(month)
+                embed = discord.Embed(
+                    title=f"📅 New Month: {mname}, Year {year}",
+                    description="A new month has begun. Nations have collected their income.",
+                    color=discord.Color.gold(),
+                )
+                if summaries:
+                    embed.add_field(
+                        name="⚙️ Resource Tick",
+                        value="\n".join(summaries[:20]),
+                        inline=False,
+                    )
+                await ch.send(embed=embed)
+
         except Exception as e:
             print(f"[CALENDAR ERROR] {e}", flush=True)
 
