@@ -705,9 +705,9 @@ class EconomyCog(commands.Cog):
     async def trade_offer(self, interaction: discord.Interaction,
                           to_nation: str,
                           give_resources: str = "{}",
-                          give_gold: float = 0,
+                          give_gold: float = 0.0,
                           receive_resources: str = "{}",
-                          receive_gold: float = 0,
+                          receive_gold: float = 0.0,
                           public_note: str = "",
                           private_note: str = ""):
         lang = _lang(interaction)
