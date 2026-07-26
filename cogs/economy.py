@@ -194,6 +194,12 @@ def _run_tick(months=1):
                     else:
                         res[k] = res.get(k, 0) + v * months
                 upkeep += json.loads(bd["upkeep_json"]).get("gold", 0) * months
+        # Military upkeep (imported here to avoid circular import at module level)
+        try:
+            from cogs.military import compute_military_upkeep
+            upkeep += compute_military_upkeep(nid) * months
+        except Exception:
+            pass
         with db.cursor() as c:
             c.execute(
                 "SELECT * FROM megaprojects WHERE nation_id=? AND status IN ('building','complete')",
@@ -314,6 +320,20 @@ HELP_SECTIONS = {
             ("/trade view <id>", "Full trade details (private terms visible to parties + GM only)."),
         ],
     },
+    "military": {
+        "title": "⚔️ Military",
+        "color": discord.Color.dark_red(),
+        "fields": [
+            ("/blueprint create_ship <name> <hull>", "Design a ship blueprint with modules."),
+            ("/blueprint create_unit <name> <type>", "Create a land unit blueprint."),
+            ("/blueprint list", "View your saved blueprints."),
+            ("/blueprint delete <id>", "Delete a blueprint."),
+            ("/military build <blueprint_id> <qty> <cell_id>", "Build units from a blueprint."),
+            ("/military list", "View your forces (private)."),
+            ("/military move <unit_id> <cell_id>", "Move a unit group to another province."),
+            ("/military disband <unit_id>", "Disband a unit group."),
+        ],
+    },
 }
 
 GM_HELP_FIELDS = [
@@ -335,7 +355,7 @@ GM_HELP_FIELDS = [
 ]
 
 class HelpView(discord.ui.View):
-    PLAYER_KEYS = ["general", "nation", "province", "economy", "trade"]
+    PLAYER_KEYS = ["general", "nation", "province", "economy", "trade", "military"]
 
     def __init__(self, is_gm: bool, current: str = "general"):
         super().__init__(timeout=180)
@@ -346,7 +366,8 @@ class HelpView(discord.ui.View):
     def _build(self):
         self.clear_items()
         labels = {"general":"General","nation":"Nation",
-                  "province":"Province","economy":"Economy","trade":"Trade"}
+                  "province":"Province","economy":"Economy",
+                  "trade":"Trade","military":"Military"}
         for key, label in labels.items():
             btn = discord.ui.Button(
                 label=label,
@@ -1124,20 +1145,35 @@ class EconomyCog(commands.Cog):
         if not n:
             await interaction.response.send_message(i18n.t(_lang(interaction), "nation_not_found"), ephemeral=True)
             return
-        if resource.lower() == "gold":
+
+        KNOWN_RESOURCES = {
+            "gold", "food", "wood", "stone", "iron", "copper", "coal", "clay",
+            "cloth", "tar", "gunpowder", "horses", "spices", "silk", "algae",
+            "universal_knowledge",
+        }
+        resource_key = resource.lower().strip()
+        warning = ""
+        if resource_key != "gold" and resource_key not in KNOWN_RESOURCES:
+            warning = (
+                f"\n⚠️ **'{resource_key}'** is not a recognised resource name. "
+                f"It was added anyway — double-check the spelling.\n"
+                f"Known resources: {', '.join(sorted(KNOWN_RESOURCES - {'gold'}))}."
+            )
+
+        if resource_key == "gold":
             with db.cursor() as c:
                 c.execute("UPDATE nations SET treasury=treasury+? WHERE id=?", (amount, n["id"]))
         else:
             with db.cursor() as c:
                 c.execute("SELECT resources_json FROM nations WHERE id=?", (n["id"],))
                 res = json.loads(c.fetchone()["resources_json"])
-            res[resource.lower()] = res.get(resource.lower(), 0) + amount
+            res[resource_key] = res.get(resource_key, 0) + amount
             with db.cursor() as c:
                 c.execute("UPDATE nations SET resources_json=? WHERE id=?",
                           (json.dumps(res), n["id"]))
-        _log(n["id"], "gm", f"GM grant: +{amount} {resource}. Reason: {reason}")
+        _log(n["id"], "gm", f"GM grant: +{amount} {resource_key}. Reason: {reason}")
         await interaction.response.send_message(
-            f"✅ Granted **{amount} {resource}** to **{n['name']}**.\nReason: {reason}",
+            f"✅ Granted **{amount} {resource_key}** to **{n['name']}**.\nReason: {reason}{warning}",
             ephemeral=True,
         )
 
