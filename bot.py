@@ -18,6 +18,7 @@ COGS = [
     "cogs.nations",
     "cogs.provinces",
     "cogs.economy",
+    "cogs.tech",
 ]
 
 intents = discord.Intents.default()
