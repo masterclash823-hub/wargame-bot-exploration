@@ -100,6 +100,27 @@ CREATE TABLE IF NOT EXISTS trades (
     resolved_at         TEXT
 );
 
+CREATE TABLE IF NOT EXISTS blueprints (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    nation_id       INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    type            TEXT NOT NULL DEFAULT 'ship',
+    name            TEXT NOT NULL,
+    hull            TEXT NOT NULL DEFAULT '',
+    components_json TEXT NOT NULL DEFAULT '[]',
+    stats_json      TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS military_units (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    nation_id       INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    blueprint_id    INTEGER REFERENCES blueprints(id) ON DELETE SET NULL,
+    unit_type       TEXT NOT NULL DEFAULT '',
+    quantity        INTEGER NOT NULL DEFAULT 1,
+    province_id     INTEGER REFERENCES provinces(id) ON DELETE SET NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS relations (
     nation_a_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
     nation_b_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
