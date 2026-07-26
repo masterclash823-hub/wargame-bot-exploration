@@ -31,7 +31,7 @@ DEFAULT_BUILDINGS = [
     {"key":"market",       "name":"Market",         "tier":1,"cost":{"gold":100,"wood":30},             "effect":{"gold":15},                  "upkeep":{},         "terrain":"",                       "tech":0.0,"desc":"Gold income each tick."},
     {"key":"port",         "name":"Port",           "tier":1,"cost":{"gold":150,"wood":80},             "effect":{"gold":10},                  "upkeep":{"gold":2}, "terrain":"coastal",                "tech":0.0,"desc":"Trade gold on coastal provinces."},
     {"key":"fort",         "name":"Fort",           "tier":1,"cost":{"gold":200,"stone":80},            "effect":{},                           "upkeep":{"gold":5}, "terrain":"",                       "tech":0.0,"desc":"+1 fortification."},
-    {"key":"university",   "name":"University",    "tier":3,"cost":{"gold":500,"stone":100,"wood":50}, "effect":{"tech_points":1},            "upkeep":{"gold":10},"terrain":"",                       "tech":5.0,"desc":"Tech points. Requires tech 5."},
+    {"key":"university",   "name":"University",    "tier":3,"cost":{"gold":500,"stone":100,"wood":50}, "effect":{"universal_knowledge":1},  "upkeep":{"gold":10},"terrain":"",                       "tech":5.0,"desc":"Generates Universal Knowledge each tick. Requires tech 5."},
     {"key":"algae_farm",   "name":"Algae Farm",    "tier":3,"cost":{"gold":400,"wood":60},             "effect":{"algae":1},                  "upkeep":{"gold":8}, "terrain":"coastal,wetland",        "tech":6.0,"desc":"Rare Algae. Requires tech 6."},
 ]
 
@@ -191,7 +191,7 @@ def _run_tick(months=1):
                 for k, v in json.loads(bd["effect_json"]).items():
                     if k == "gold":
                         treasury += v * months
-                    elif k != "tech_points":
+                    else:
                         res[k] = res.get(k, 0) + v * months
                 upkeep += json.loads(bd["upkeep_json"]).get("gold", 0) * months
         with db.cursor() as c:
@@ -299,6 +299,8 @@ HELP_SECTIONS = {
             ("/buildings province <cell_id>", "List buildings in a specific province."),
             ("/megaproject propose", "Propose a megaproject for GM approval."),
             ("/megaproject list", "View your megaprojects."),
+            ("/tech status", "View your nation's tech levels (private)."),
+            ("/tech research <category>", "Spend gold + Universal Knowledge to advance tech."),
         ],
     },
     "trade": {
@@ -323,6 +325,7 @@ GM_HELP_FIELDS = [
     ("/admin map_export_markers", "Generate JS for Azgaar resource markers."),
     ("/admineco tick [months]", "Manually trigger a resource tick."),
     ("/admineco grant", "Give resources or gold to a nation (logged)."),
+    ("/admineco tech_set", "Set a nation's tech level directly."),
     ("/admineco mp_approve", "Approve a megaproject with effect, cost, duration."),
     ("/admineco mp_advance", "Advance megaproject construction by N months."),
     ("/admineco building_set", "Edit a building definition live."),
@@ -1086,7 +1089,18 @@ class EconomyCog(commands.Cog):
                             value="\n".join(summaries[:20]),
                             inline=False,
                         )
-                    await ch.send(embed=embed)
+                    try:
+                        await ch.send(embed=embed)
+                    except discord.Forbidden:
+                        await interaction.followup.send(
+                            f"⚠️ Tick ran but bot lacks **Send Messages** / **Embed Links** "
+                            f"permission in <#{ch.id}>. Fix the channel permissions in Discord.",
+                            ephemeral=True,
+                        )
+                    except Exception as send_err:
+                        await interaction.followup.send(
+                            f"⚠️ Tick ran but announcement failed: {send_err}", ephemeral=True
+                        )
             report = "\n".join(summaries) if summaries else "No nations."
             await interaction.followup.send(
                 f"✅ Advanced **{months}** month(s) → {MONTH_NAMES[month-1]}, Year {year}\n"
@@ -1095,7 +1109,6 @@ class EconomyCog(commands.Cog):
             )
         except Exception as e:
             await interaction.followup.send(f"❌ Tick failed: {e}", ephemeral=True)
-            raise
 
     @admineco_grp.command(name="grant", description="[GM] Give resources to a nation / [GM] Dodaj zasoby")
     @app_commands.describe(
@@ -1230,6 +1243,38 @@ class EconomyCog(commands.Cog):
             await interaction.response.send_message(
                 f"⏩ Advanced **{mp['name']}** by {months} month(s). ({new_spent}/{mp['duration_months']})",
                 ephemeral=True)
+
+    @admineco_grp.command(name="tech_set", description="[GM] Set a nation's tech level / [GM] Ustaw poziom technologii")
+    @app_commands.describe(
+        nation="Nation name / Nazwa narodu",
+        category="Category: naval / land / economy / colonial",
+        level="New level (0.0 - 10.0)",
+    )
+    @app_commands.choices(category=[
+        app_commands.Choice(name="Naval",    value="naval"),
+        app_commands.Choice(name="Land",     value="land"),
+        app_commands.Choice(name="Economy",  value="economy"),
+        app_commands.Choice(name="Colonial", value="colonial"),
+    ])
+    async def tech_set(self, interaction: discord.Interaction,
+                       nation: str, category: app_commands.Choice[str], level: float):
+        if not _gm(interaction):
+            await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
+            return
+        n = _nation_name(nation)
+        if not n:
+            await interaction.response.send_message(i18n.t(_lang(interaction), "nation_not_found"), ephemeral=True)
+            return
+        level = max(0.0, min(10.0, round(level, 2)))
+        tech  = json.loads(n["tech_json"])
+        old   = tech.get(category.value, 3.0)
+        tech[category.value] = level
+        with db.cursor() as c:
+            c.execute("UPDATE nations SET tech_json=? WHERE id=?", (json.dumps(tech), n["id"]))
+        _log(n["id"], "gm",
+             f"GM set {category.value.capitalize()} tech: {old:.1f} → {level:.1f}.")
+        await interaction.response.send_message(
+            f"✅ **{n['name']}** {category.name} tech set to **{level:.1f}**.", ephemeral=True)
 
     @admineco_grp.command(name="building_set", description="[GM] Edit building definition")
     @app_commands.describe(key="Building key", field="Field to change", value="New value")
