@@ -85,7 +85,7 @@ def _log(nid, src, txt):
 
 def _at_war(nid):
     with db.cursor() as c:
-        c.execute("SELECT id FROM relations WHERE status='war' AND (nation_a_id=? OR nation_b_id=?)", (nid,nid))
+        c.execute("SELECT nation_a_id FROM relations WHERE status='war' AND (nation_a_id=? OR nation_b_id=?)", (nid,nid))
         return c.fetchone() is not None
 
 def _tech_naval(nat): return json.loads(nat["tech_json"]).get("naval", 3.0)
@@ -270,19 +270,33 @@ class MilitaryCog(commands.Cog):
         for r in rows:
             stats = json.loads(r["stats_json"])
             if r["type"] == "ship":
-                comps = json.loads(r["components_json"])
-                mods  = ", ".join(MODULES[m]["name"] for m in comps if m in MODULES) or "no modules"
-                hull  = HULLS.get(r["hull"],{})
-                val   = (f"Hull: {hull.get('name',r['hull'])} | ATK:{stats.get('attack',0)} "
-                         f"HP:{stats.get('hp',0)} SPD:{stats.get('speed',0)} CARGO:{stats.get('cargo',0)}\n"
-                         f"Modules: {mods}\nUpkeep: {hull.get('peace_upkeep',5):.0f}g/unit (peace) "
-                         f"/ {hull.get('peace_upkeep',5)*WAR_MULT:.0f}g (war)")
+                comps     = json.loads(r["components_json"])
+                mods      = ", ".join(MODULES[m]["name"] for m in comps if m in MODULES) or "no modules"
+                hull      = HULLS.get(r["hull"], {})
+                base_cost = dict(hull.get("cost", {}))
+                for m in comps:
+                    for res, amt in MODULES.get(m, {}).get("cost", {}).items():
+                        base_cost[res] = base_cost.get(res, 0) + amt
+                cost_str  = ", ".join(f"{v} {k}" for k, v in base_cost.items())
+                val = (
+                    f"Hull: {hull.get('name', r['hull'])} | "
+                    f"ATK:{stats.get('attack',0)} HP:{stats.get('hp',0)} "
+                    f"SPD:{stats.get('speed',0)} CARGO:{stats.get('cargo',0)}\n"
+                    f"Modules: {mods}\n"
+                    f"Cost per unit: {cost_str}\n"
+                    f"Upkeep: {hull.get('peace_upkeep',5):.0f}g/unit (peace) "
+                    f"/ {hull.get('peace_upkeep',5)*WAR_MULT:.0f}g (war)"
+                )
             else:
-                udata = LAND_UNITS.get(r["hull"],{})
-                val   = (f"ATK:{stats.get('attack',0)} DEF:{stats.get('defense',0)} "
-                         f"HP:{stats.get('hp',0)} SPD:{stats.get('speed',0)}\n"
-                         f"Upkeep: {udata.get('peace_upkeep',2):.0f}g/unit (peace) "
-                         f"/ {udata.get('peace_upkeep',2)*WAR_MULT:.0f}g (war)")
+                udata    = LAND_UNITS.get(r["hull"], {})
+                cost_str = ", ".join(f"{v} {k}" for k, v in udata.get("cost", {}).items())
+                val = (
+                    f"ATK:{stats.get('attack',0)} DEF:{stats.get('defense',0)} "
+                    f"HP:{stats.get('hp',0)} SPD:{stats.get('speed',0)}\n"
+                    f"Cost per unit: {cost_str}\n"
+                    f"Upkeep: {udata.get('peace_upkeep',2):.0f}g/unit (peace) "
+                    f"/ {udata.get('peace_upkeep',2)*WAR_MULT:.0f}g (war)"
+                )
             embed.add_field(
                 name=f"[{r['id']}] {'⚓' if r['type']=='ship' else '⚔️'} {r['name']}",
                 value=val, inline=False,
