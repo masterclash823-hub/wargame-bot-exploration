@@ -93,6 +93,13 @@ class NationCog(commands.Cog):
             )
             nation_id = cur.lastrowid
 
+        # Seed default blueprints into the new nation
+        try:
+            from cogs.military import seed_nation_blueprints
+            seed_nation_blueprints(nation_id)
+        except Exception as e:
+            print(f"[MILITARY] Blueprint seed failed: {e}", flush=True)
+
         _log(nation_id, "system", i18n.t("en", "history_founded", nation=name))
 
         embed = discord.Embed(

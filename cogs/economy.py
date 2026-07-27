@@ -304,6 +304,7 @@ HELP_SECTIONS = {
             ("/buildings list", "Browse all building types."),
             ("/buildings province <cell_id>", "List buildings in a specific province."),
             ("/megaproject propose", "Propose a megaproject for GM approval."),
+            ("/megaproject build <id>", "Pay and start construction of an approved megaproject."),
             ("/megaproject list", "View your megaprojects."),
             ("/tech status", "View your nation's tech levels (private)."),
             ("/tech research <category>", "Spend gold + Universal Knowledge to advance tech."),
@@ -324,14 +325,15 @@ HELP_SECTIONS = {
         "title": "⚔️ Military",
         "color": discord.Color.dark_red(),
         "fields": [
-            ("/blueprint create_ship <name> <hull>", "Design a ship blueprint with modules."),
-            ("/blueprint create_unit <name> <type>", "Create a land unit blueprint."),
-            ("/blueprint list", "View your saved blueprints."),
-            ("/blueprint delete <id>", "Delete a blueprint."),
-            ("/military build <blueprint_id> <qty> <cell_id>", "Build units from a blueprint."),
-            ("/military list", "View your forces (private)."),
-            ("/military move <unit_id> <cell_id>", "Move a unit group to another province."),
-            ("/military disband <unit_id>", "Disband a unit group."),
+            ("/blueprint design_ship <name> <hull>", "Design a ship blueprint with interactive module buttons."),
+            ("/blueprint create_unit <name> <type>", "Create a land unit blueprint (stats shown in choices)."),
+            ("/blueprint list", "View your saved blueprints with stats and upkeep."),
+            ("/blueprint delete <id>", "Delete a custom blueprint."),
+            ("/military build <id> <qty> [cell_id]", "Build units. Leave cell_id blank to keep them floating."),
+            ("/military list", "View your forces — army, navy, and floating units (private)."),
+            ("/military move <unit_id> <cell_id>", "Assign a unit group to a province."),
+            ("/military unassign <unit_id>", "Return a unit group to the floating pool."),
+            ("/military disband <unit_id>", "Disband a unit group permanently."),
         ],
     },
 }
@@ -684,6 +686,59 @@ class EconomyCog(commands.Cog):
             color=discord.Color.orange(),
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @mp_grp.command(name="build", description="Start building an approved megaproject / Rozpocznij budowe")
+    @app_commands.describe(mp_id="Megaproject ID")
+    async def mp_build(self, interaction: discord.Interaction, mp_id: int):
+        lang = _lang(interaction)
+        nat  = _nation_owner(str(interaction.user.id))
+        if not nat:
+            await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
+            return
+        with db.cursor() as c:
+            c.execute("SELECT * FROM megaprojects WHERE id=? AND nation_id=?", (mp_id, nat["id"]))
+            mp = c.fetchone()
+        if not mp:
+            await interaction.response.send_message(f"Megaproject #{mp_id} not found.", ephemeral=True)
+            return
+        if mp["status"] != "approved":
+            await interaction.response.send_message(
+                f"Megaproject #{mp_id} is **{mp['status']}** — only approved projects can be started.",
+                ephemeral=True)
+            return
+        cost      = json.loads(mp["cost_json"])
+        gold_cost = cost.get("gold", 0)
+        if nat["treasury"] < gold_cost:
+            await interaction.response.send_message(
+                f"Not enough gold. Need **{gold_cost:,}g**, have **{nat['treasury']:,.0f}g**.",
+                ephemeral=True)
+            return
+        res = json.loads(nat["resources_json"])
+        ok, missing = _deduct(res, cost)
+        if not ok:
+            await interaction.response.send_message(f"Not enough **{missing}**.", ephemeral=True)
+            return
+        new_status = "building" if mp["duration_months"] > 0 else "complete"
+        with db.cursor() as c:
+            c.execute(
+                "UPDATE megaprojects SET status=?,months_spent=0 WHERE id=?",
+                (new_status, mp_id)
+            )
+            c.execute("UPDATE nations SET resources_json=?,treasury=? WHERE id=?",
+                      (json.dumps(res), nat["treasury"] - gold_cost, nat["id"]))
+        if new_status == "complete":
+            _apply_mp_effect(nat["id"], mp["effect_json"], mp["name"])
+            _log(nat["id"], "system", f"Megaproject '{mp['name']}' completed instantly.")
+            await interaction.response.send_message(
+                f"✅ **{mp['name']}** built and completed! Effects applied.", ephemeral=False)
+        else:
+            _log(nat["id"], "player",
+                 f"Started construction of megaproject '{mp['name']}' "
+                 f"({mp['duration_months']} months). Cost paid.")
+            await interaction.response.send_message(
+                f"🔨 **{mp['name']}** construction started! "
+                f"Estimated completion: **{mp['duration_months']}** in-game month(s).",
+                ephemeral=False)
 
     @mp_grp.command(name="list", description="List your megaprojects / Lista megaprojektow")
     async def mp_list(self, interaction: discord.Interaction):
@@ -1225,7 +1280,7 @@ class EconomyCog(commands.Cog):
             if not ok:
                 await interaction.response.send_message(f"{nat['name']} lacks enough {missing}.", ephemeral=True)
                 return
-        new_status = "building" if duration_months > 0 else "complete"
+        new_status = "approved"
         with db.cursor() as c:
             c.execute(
                 "UPDATE megaprojects SET status=?,proposed_effect=?,effect_json=?,"
@@ -1233,17 +1288,17 @@ class EconomyCog(commands.Cog):
                 (new_status, final_effect, json.dumps(parsed_effect),
                  json.dumps(cost), duration_months, gm_notes, mp_id)
             )
-            if gold > 0 or any(v > 0 for k, v in cost.items() if k != "gold"):
-                c.execute("UPDATE nations SET resources_json=?,treasury=? WHERE id=?",
-                          (json.dumps(res), nat["treasury"] - gold, nat["id"]))
-        if new_status == "complete":
-            _apply_mp_effect(mp["nation_id"], json.dumps(parsed_effect), mp["name"])
-        else:
-            _log(mp["nation_id"], "gm",
-                 f"Megaproject '{mp['name']}' approved. Building ({duration_months} months). Effect: {final_effect}")
+        _log(mp["nation_id"], "gm",
+             f"Megaproject '{mp['name']}' approved by GM. "
+             f"Effect: {final_effect}. Cost: {json.dumps(cost)}. "
+             f"Duration: {duration_months} month(s). "
+             f"Player must run /megaproject build {mp_id} to start.")
         await interaction.response.send_message(
-            f"✅ **{mp['name']}** approved.\nEffect: {final_effect}\n"
-            f"{'Completed instantly.' if new_status == 'complete' else f'Under construction: {duration_months} months.'}",
+            f"✅ **{mp['name']}** approved.\n"
+            f"Effect: {final_effect}\n"
+            f"Cost: {', '.join(f'{v} {k}' for k,v in cost.items()) or 'free'}\n"
+            f"Duration: {duration_months} month(s)\n\n"
+            f"The player can now run `/megaproject build {mp_id}` to pay and start construction.",
             ephemeral=True,
         )
 
