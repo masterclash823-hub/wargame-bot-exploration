@@ -20,6 +20,7 @@ COGS = [
     "cogs.economy",
     "cogs.tech",
     "cogs.military",
+    "cogs.combat",
 ]
 
 intents = discord.Intents.default()

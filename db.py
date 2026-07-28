@@ -121,6 +121,29 @@ CREATE TABLE IF NOT EXISTS military_units (
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS battle_plans (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    nation_id       INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    forces_json     TEXT NOT NULL DEFAULT '[]',
+    provinces_json  TEXT NOT NULL DEFAULT '[]',
+    orders_text     TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'unmatched',
+    submitted_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS battles (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_a_id             INTEGER NOT NULL REFERENCES battle_plans(id),
+    plan_b_id             INTEGER NOT NULL REFERENCES battle_plans(id),
+    gm_note               TEXT NOT NULL DEFAULT '',
+    status                TEXT NOT NULL DEFAULT 'pending',
+    ai_modifier_json      TEXT NOT NULL DEFAULT '{}',
+    gm_final_modifier_json TEXT NOT NULL DEFAULT '{}',
+    report_json           TEXT NOT NULL DEFAULT '{}',
+    created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at           TEXT
+);
+
 CREATE TABLE IF NOT EXISTS relations (
     nation_a_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
     nation_b_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
