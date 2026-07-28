@@ -336,6 +336,18 @@ HELP_SECTIONS = {
             ("/military disband <unit_id>", "Disband a unit group permanently."),
         ],
     },
+    "combat": {
+        "title": "🗡️ Combat & Diplomacy",
+        "color": discord.Color.dark_orange(),
+        "fields": [
+            ("/battle plan", "Submit a battle plan — location (free text), orders, and optional unit IDs."),
+            ("/battle view <id>", "View a battle. Plans are private to parties and GM only."),
+            ("/diplomacy war <nation>", "Declare war. Upkeep rises to war rate (×3) immediately."),
+            ("/diplomacy peace <nation>", "Make peace with a nation you are at war with."),
+            ("/diplomacy alliance <nation>", "Form an alliance with another nation."),
+            ("/diplomacy status", "View all your current diplomatic relations."),
+        ],
+    },
 }
 
 GM_HELP_FIELDS = [
@@ -347,6 +359,9 @@ GM_HELP_FIELDS = [
     ("/admin map_export_markers", "Generate JS for Azgaar resource markers."),
     ("/admineco tick [months]", "Manually trigger a resource tick."),
     ("/admineco grant", "Give resources or gold to a nation (logged)."),
+    ("/battle plans_pending", "List all unmatched battle plans."),
+    ("/battle match <plan_a> <plan_b>", "Match two plans into a battle, optional context note."),
+    ("/battle resolve <id>", "Get AI modifier and resolve battle. GM can override modifiers."),
     ("/admineco tech_set", "Set a nation's tech level directly."),
     ("/admineco mp_approve", "Approve a megaproject with effect, cost, duration."),
     ("/admineco mp_advance", "Advance megaproject construction by N months."),
@@ -357,7 +372,7 @@ GM_HELP_FIELDS = [
 ]
 
 class HelpView(discord.ui.View):
-    PLAYER_KEYS = ["general", "nation", "province", "economy", "trade", "military"]
+    PLAYER_KEYS = ["general", "nation", "province", "economy", "trade", "military", "combat"]
 
     def __init__(self, is_gm: bool, current: str = "general"):
         super().__init__(timeout=180)
@@ -369,7 +384,7 @@ class HelpView(discord.ui.View):
         self.clear_items()
         labels = {"general":"General","nation":"Nation",
                   "province":"Province","economy":"Economy",
-                  "trade":"Trade","military":"Military"}
+                  "trade":"Trade","military":"Military","combat":"Combat"}
         for key, label in labels.items():
             btn = discord.ui.Button(
                 label=label,
