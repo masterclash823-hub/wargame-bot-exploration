@@ -20,7 +20,6 @@ Combat formula:
 import json
 import random
 import asyncio
-import aiohttp
 from datetime import datetime, timezone
 
 import discord
@@ -186,8 +185,7 @@ def _resolve_combat(
 async def _get_ai_modifier(plan_a: dict, plan_b: dict, nat_a: dict, nat_b: dict) -> dict:
     """
     Call Gemini to review battle plans and return structured modifiers.
-    Returns {"attacker_modifier": float, "defender_modifier": float, "reasoning": str}
-    on success, or a default dict on failure.
+    Uses the google-genai SDK which is already installed.
     """
     tech_a = json.loads(nat_a["tech_json"])
     tech_b = json.loads(nat_b["tech_json"])
@@ -215,27 +213,29 @@ weather if mentioned, and anything else tactically relevant.
 Respond ONLY with the JSON object. No markdown, no explanation outside the JSON."""
 
     try:
-        url     = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-        headers = {"Content-Type": "application/json", "x-goog-api-key": config.GEMINI_API_KEY}
-        body    = {"contents": [{"parts": [{"text": prompt}]}],
-                   "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300}}
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=body, timeout=aiohttp.ClientTimeout(total=20)) as resp:
-                data = await resp.json()
-        raw = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        from google import genai
+        client   = genai.Client(api_key=config.GEMINI_API_KEY)
+        response = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt,
+            )
+        )
+        raw = response.text.strip()
         # Strip markdown code fences if present
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
-        result = json.loads(raw)
+        result = json.loads(raw.strip())
         return {
             "attacker_modifier": float(result.get("attacker_modifier", 1.0)),
             "defender_modifier": float(result.get("defender_modifier", 1.0)),
             "reasoning":         str(result.get("reasoning", "No reasoning provided.")),
         }
     except Exception as e:
-        print(f"[COMBAT AI] Gemini call failed: {e}", flush=True)
+        print(f"[COMBAT AI] Gemini call failed: {type(e).__name__}: {e}", flush=True)
         return {
             "attacker_modifier": 1.0,
             "defender_modifier": 1.0,
@@ -391,14 +391,14 @@ class CombatCog(commands.Cog):
         for r in rows:
             forces   = json.loads(r["forces_json"])
             loc      = json.loads(r["provinces_json"])
-            loc_str  = loc[0] if loc else "not specified"
-            # Extract orders from the combined field
+            loc_str  = loc[0][:150] if loc else "not specified"
             orders_full = r["orders_text"]
             orders_disp = orders_full.split(" | Location:")[0][:200]
             embed.add_field(
-                name=f"[#{r['id']}] {r['nflag'] or ''} {r['nname']} — {r['submitted_at'][:10]}",
+                name=f"Plan #{r['id']} — {r['submitted_at'][:10]}",
                 value=(
-                    f"**Location:** {loc_str[:100]}\n"
+                    f"**Nation:** {r['nflag'] or ''} {r['nname']}\n"
+                    f"**Location:** {loc_str}\n"
                     f"**Orders:** {orders_disp}\n"
                     f"**Units:** {len(forces)} group(s) committed"
                 ),
@@ -410,28 +410,28 @@ class CombatCog(commands.Cog):
     @battle_grp.command(name="match",
                         description="[GM] Match two plans into a battle / [GM] Polacz dwa plany")
     @app_commands.describe(
-        plan_a_id="First plan ID (attacker) / ID pierwszego planu",
-        plan_b_id="Second plan ID (defender) / ID drugiego planu",
+        attacker_plan_id="Plan ID of the ATTACKER / ID planu atakujacego",
+        defender_plan_id="Plan ID of the DEFENDER / ID planu broniącego",
         gm_note="Context note — terrain, ambush, conditions (optional)",
     )
     async def battle_match(self, interaction: discord.Interaction,
-                           plan_a_id: int, plan_b_id: int, gm_note: str = ""):
+                           attacker_plan_id: int, defender_plan_id: int, gm_note: str = ""):
         if not _gm(interaction):
             await interaction.response.send_message(
                 i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
 
         with db.cursor() as c:
-            c.execute("SELECT * FROM battle_plans WHERE id=?", (plan_a_id,))
+            c.execute("SELECT * FROM battle_plans WHERE id=?", (attacker_plan_id,))
             plan_a = c.fetchone()
-            c.execute("SELECT * FROM battle_plans WHERE id=?", (plan_b_id,))
+            c.execute("SELECT * FROM battle_plans WHERE id=?", (defender_plan_id,))
             plan_b = c.fetchone()
 
         if not plan_a:
-            await interaction.response.send_message(f"Plan #{plan_a_id} not found.", ephemeral=True)
+            await interaction.response.send_message(f"Plan #{attacker_plan_id} not found.", ephemeral=True)
             return
         if not plan_b:
-            await interaction.response.send_message(f"Plan #{plan_b_id} not found.", ephemeral=True)
+            await interaction.response.send_message(f"Plan #{defender_plan_id} not found.", ephemeral=True)
             return
         if plan_a["nation_id"] == plan_b["nation_id"]:
             await interaction.response.send_message(
@@ -442,11 +442,11 @@ class CombatCog(commands.Cog):
             c.execute(
                 "INSERT INTO battles(plan_a_id,plan_b_id,gm_note,status)"
                 " VALUES(?,?,?,?)",
-                (plan_a_id, plan_b_id, gm_note, "pending")
+                (attacker_plan_id, defender_plan_id, gm_note, "pending")
             )
             battle_id = c.lastrowid
             c.execute("UPDATE battle_plans SET status='matched' WHERE id=? OR id=?",
-                      (plan_a_id, plan_b_id))
+                      (attacker_plan_id, defender_plan_id))
 
         nat_a = _nat_id(plan_a["nation_id"])
         nat_b = _nat_id(plan_b["nation_id"])
@@ -455,12 +455,11 @@ class CombatCog(commands.Cog):
             title=f"⚔️ Battle #{battle_id} Created",
             color=discord.Color.red(),
         )
-        embed.add_field(name="Attacker", value=f"{nat_a['flag'] or ''} {nat_a['name']}", inline=True)
-        embed.add_field(name="Defender", value=f"{nat_b['flag'] or ''} {nat_b['name']}", inline=True)
+        embed.add_field(name="⚔️ Attacker", value=f"{nat_a['flag'] or ''} {nat_a['name']} (Plan #{attacker_plan_id})", inline=True)
+        embed.add_field(name="🛡️ Defender", value=f"{nat_b['flag'] or ''} {nat_b['name']} (Plan #{defender_plan_id})", inline=True)
         if gm_note:
             embed.add_field(name="GM Context", value=gm_note, inline=False)
-        embed.set_footer(
-            text=f"Run /battle resolve {battle_id} to get AI modifier and resolve.")
+        embed.set_footer(text=f"Run /battle resolve {battle_id} to get AI modifier and resolve.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # -------------------------------------------------- /battle view
@@ -513,12 +512,16 @@ class CombatCog(commands.Cog):
         if is_party or is_gm:
             def plan_field(p, nat_p, label):
                 loc  = json.loads(p["provinces_json"])
-                loc_str = loc[0] if loc else "?"
+                loc_str = loc[0][:200] if loc else "?"
                 orders_full = p["orders_text"]
-                orders_disp = orders_full.split(" | Location:")[0]
+                orders_disp = orders_full.split(" | Location:")[0][:300]
                 embed.add_field(
-                    name=f"🔒 {label}: {nat_p['flag'] or ''} {nat_p['name']}",
-                    value=f"**Location:** {loc_str}\n**Orders:** {orders_disp[:300]}",
+                    name=f"🔒 {label}",
+                    value=(
+                        f"**{nat_p['flag'] or ''} {nat_p['name']}**\n"
+                        f"**Location:** {loc_str}\n"
+                        f"**Orders:** {orders_disp}"
+                    ),
                     inline=False,
                 )
             plan_field(plan_a, nat_a, "Attacker's Plan")
@@ -528,9 +531,9 @@ class CombatCog(commands.Cog):
                 embed.add_field(
                     name="🤖 AI Modifier",
                     value=(
-                        f"Attacker: ×{ai.get('attacker_modifier',1.0):.2f} | "
-                        f"Defender: ×{ai.get('defender_modifier',1.0):.2f}\n"
-                        f"Reasoning: {ai.get('reasoning','—')}"
+                        f"ATK ×{ai.get('attacker_modifier',1.0):.2f} | "
+                        f"DEF ×{ai.get('defender_modifier',1.0):.2f}\n"
+                        f"{ai.get('reasoning','—')[:300]}"
                     ),
                     inline=False,
                 )
