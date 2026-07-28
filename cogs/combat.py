@@ -305,6 +305,35 @@ class CombatCog(commands.Cog):
                     return
                 forces.append({"unit_id": uid, "qty": u["quantity"]})
 
+        # Check no unit is already committed to another pending plan
+        if forces:
+            with db.cursor() as c:
+                c.execute(
+                    "SELECT id, forces_json FROM battle_plans "
+                    "WHERE nation_id=? AND status IN ('unmatched','matched')",
+                    (nat["id"],)
+                )
+                existing_plans = c.fetchall()
+            already_committed = {}
+            for ep in existing_plans:
+                try:
+                    ep_forces = json.loads(ep["forces_json"])
+                    for f in ep_forces:
+                        already_committed[f["unit_id"]] = ep["id"]
+                except Exception:
+                    pass
+            conflicts = [
+                f"Group #{f['unit_id']} (already in plan #{already_committed[f['unit_id']]})"
+                for f in forces if f["unit_id"] in already_committed
+            ]
+            if conflicts:
+                await interaction.response.send_message(
+                    f"❌ Some units are already committed to a pending battle plan:\n"
+                    + "\n".join(conflicts)
+                    + "\nWait for those battles to resolve before committing them again.",
+                    ephemeral=True)
+                return
+
         plan_data = {
             "location_text": location,
             "orders_text":   orders,

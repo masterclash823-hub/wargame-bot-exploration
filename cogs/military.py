@@ -580,12 +580,42 @@ class MilitaryCog(commands.Cog):
         if not nat:
             await interaction.response.send_message(i18n.t(lang,"no_nation"), ephemeral=True); return
         with db.cursor() as c:
-            c.execute("SELECT u.*,b.name as bname FROM military_units u "
-                      "LEFT JOIN blueprints b ON u.blueprint_id=b.id "
-                      "WHERE u.id=? AND u.nation_id=?", (unit_id,nat["id"]))
+            c.execute(
+                "SELECT u.*,b.name as bname FROM military_units u "
+                "LEFT JOIN blueprints b ON u.blueprint_id=b.id "
+                "WHERE u.id=? AND u.nation_id=?",
+                (unit_id, nat["id"])
+            )
             unit = c.fetchone()
         if not unit:
             await interaction.response.send_message(f"Unit group #{unit_id} not found.", ephemeral=True); return
+
+        # Block if committed to a pending (unmatched or matched) battle plan
+        with db.cursor() as c:
+            c.execute(
+                "SELECT p.id FROM battle_plans p "
+                "WHERE p.nation_id=? AND p.status IN ('unmatched','matched') "
+                "AND p.forces_json LIKE ?",
+                (nat["id"], f'%"unit_id": {unit_id}%')
+            )
+            committed = c.fetchone()
+        if not committed:
+            # Also check without space after colon
+            with db.cursor() as c:
+                c.execute(
+                    "SELECT p.id FROM battle_plans p "
+                    "WHERE p.nation_id=? AND p.status IN ('unmatched','matched') "
+                    "AND p.forces_json LIKE ?",
+                    (nat["id"], f'%"unit_id":{unit_id}%')
+                )
+                committed = c.fetchone()
+        if committed:
+            await interaction.response.send_message(
+                f"❌ Unit group #{unit_id} is committed to battle plan #{committed['id']} "
+                f"which is still pending resolution. Wait for the battle to resolve first.",
+                ephemeral=True)
+            return
+
         with db.cursor() as c:
             c.execute("DELETE FROM military_units WHERE id=?", (unit_id,))
         _log(nat["id"],"player",
