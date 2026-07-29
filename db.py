@@ -121,6 +121,17 @@ CREATE TABLE IF NOT EXISTS military_units (
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    nation_id       INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    ai_draft_text   TEXT NOT NULL DEFAULT '',
+    gm_final_text   TEXT NOT NULL DEFAULT '',
+    effects_json    TEXT NOT NULL DEFAULT '{}',
+    status          TEXT NOT NULL DEFAULT 'draft',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    posted_at       TEXT
+);
+
 CREATE TABLE IF NOT EXISTS battle_plans (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     nation_id       INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,

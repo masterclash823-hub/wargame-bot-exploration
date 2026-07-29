@@ -21,6 +21,7 @@ COGS = [
     "cogs.tech",
     "cogs.military",
     "cogs.combat",
+    "cogs.events",
 ]
 
 intents = discord.Intents.default()
