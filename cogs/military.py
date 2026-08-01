@@ -425,6 +425,9 @@ class MilitaryCog(commands.Cog):
             udata        = LAND_UNITS.get(bp["hull"], {})
             base_cost    = dict(udata.get("cost", {}))
             peace_upkeep = udata.get("peace_upkeep", 2.0)
+            # Cloth consumption: 1 cloth per 5 land units (rounded up)
+            cloth_needed = max(1, (quantity + 4) // 5)
+            base_cost["cloth"] = base_cost.get("cloth", 0) + cloth_needed
 
         total_cost = {r: a * quantity for r, a in base_cost.items()}
         gold_cost  = total_cost.pop("gold", 0)

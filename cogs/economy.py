@@ -17,22 +17,24 @@ MONTH_NAMES = [
 ]
 
 DEFAULT_BUILDINGS = [
-    {"key":"farm",         "name":"Farm",          "tier":1,"cost":{"gold":100,"wood":50},             "effect":{"food":10},                  "upkeep":{"gold":2}, "terrain":"plains,grassland",       "tech":0.0,"desc":"Food on plains/grassland."},
-    {"key":"fishing_wharf","name":"Fishing Wharf", "tier":1,"cost":{"gold":80,"wood":60},              "effect":{"food":8},                   "upkeep":{"gold":2}, "terrain":"coastal",                "tech":0.0,"desc":"Food on coastal provinces."},
-    {"key":"plantation",   "name":"Plantation",    "tier":2,"cost":{"gold":150,"wood":40},             "effect":{"food":6,"spices":2},        "upkeep":{"gold":3}, "terrain":"forest,jungle",          "tech":3.0,"desc":"Food+spices in tropical/forest provinces."},
-    {"key":"pasture",      "name":"Pasture",        "tier":1,"cost":{"gold":60,"wood":20},              "effect":{"food":5,"horses":1},        "upkeep":{"gold":1}, "terrain":"plains,grassland,hills", "tech":0.0,"desc":"Food+horses on open terrain."},
-    {"key":"lumber_camp",  "name":"Lumber Camp",   "tier":1,"cost":{"gold":80},                       "effect":{"wood":8},                   "upkeep":{"gold":1}, "terrain":"forest,taiga",           "tech":0.0,"desc":"Wood from forests."},
-    {"key":"mine",         "name":"Mine",           "tier":1,"cost":{"gold":120,"wood":30},             "effect":{"iron":6,"stone":4,"coal":3},"upkeep":{"gold":2}, "terrain":"hills,mountains",        "tech":0.0,"desc":"Iron/stone/coal from hills/mountains."},
-    {"key":"copper_mine",  "name":"Copper Mine",   "tier":1,"cost":{"gold":100,"wood":20},             "effect":{"copper":5},                 "upkeep":{"gold":2}, "terrain":"hills,mountains",        "tech":0.0,"desc":"Copper from hills/mountains."},
-    {"key":"clay_pit",     "name":"Clay Pit",       "tier":1,"cost":{"gold":60},                       "effect":{"clay":6},                   "upkeep":{"gold":1}, "terrain":"wetland,plains",         "tech":0.0,"desc":"Clay from wetlands/plains."},
-    {"key":"tar_works",    "name":"Tar Works",      "tier":1,"cost":{"gold":80,"wood":20},              "effect":{"tar":5},                    "upkeep":{"gold":1}, "terrain":"forest,wetland,taiga",   "tech":0.0,"desc":"Tar from forests/wetlands."},
-    {"key":"powder_mill",  "name":"Powder Mill",   "tier":2,"cost":{"gold":200,"stone":50,"iron":20},  "effect":{"gunpowder":4},              "upkeep":{"gold":5}, "terrain":"",                       "tech":4.0,"desc":"Gunpowder. Requires tech 4."},
-    {"key":"textile_mill", "name":"Textile Mill",  "tier":2,"cost":{"gold":150,"wood":40},             "effect":{"cloth":6},                  "upkeep":{"gold":3}, "terrain":"",                       "tech":3.0,"desc":"Cloth. Requires tech 3."},
-    {"key":"market",       "name":"Market",         "tier":1,"cost":{"gold":100,"wood":30},             "effect":{"gold":15},                  "upkeep":{},         "terrain":"",                       "tech":0.0,"desc":"Gold income each tick."},
-    {"key":"port",         "name":"Port",           "tier":1,"cost":{"gold":150,"wood":80},             "effect":{"gold":10},                  "upkeep":{"gold":2}, "terrain":"coastal",                "tech":0.0,"desc":"Trade gold on coastal provinces."},
-    {"key":"fort",         "name":"Fort",           "tier":1,"cost":{"gold":200,"stone":80},            "effect":{},                           "upkeep":{"gold":5}, "terrain":"",                       "tech":0.0,"desc":"+1 fortification."},
-    {"key":"university",   "name":"University",    "tier":3,"cost":{"gold":500,"stone":100,"wood":50}, "effect":{"universal_knowledge":1},  "upkeep":{"gold":10},"terrain":"",                       "tech":5.0,"desc":"Generates Universal Knowledge each tick. Requires tech 5."},
-    {"key":"algae_farm",   "name":"Algae Farm",    "tier":3,"cost":{"gold":400,"wood":60},             "effect":{"algae":1},                  "upkeep":{"gold":8}, "terrain":"coastal,wetland",        "tech":6.0,"desc":"Rare Algae. Requires tech 6."},
+    {"key":"farm",            "name":"Farm",            "tier":1,"cost":{"gold":100,"wood":50},                      "effect":{"food":10},                  "upkeep":{"gold":2}, "terrain":"plains,grassland",       "tech":0.0,"desc":"Food on plains/grassland."},
+    {"key":"fishing_wharf",   "name":"Fishing Wharf",   "tier":1,"cost":{"gold":80,"wood":60},                       "effect":{"food":8},                   "upkeep":{"gold":2}, "terrain":"coastal",                "tech":0.0,"desc":"Food on coastal provinces."},
+    {"key":"plantation",      "name":"Plantation",      "tier":2,"cost":{"gold":150,"wood":40},                      "effect":{"food":6,"spices":2},        "upkeep":{"gold":3}, "terrain":"forest,jungle",          "tech":3.0,"desc":"Food+spices in tropical/forest provinces."},
+    {"key":"pasture",         "name":"Pasture",          "tier":1,"cost":{"gold":60,"wood":20},                       "effect":{"food":5,"horses":1},        "upkeep":{"gold":1}, "terrain":"plains,grassland,hills", "tech":0.0,"desc":"Food+horses on open terrain."},
+    {"key":"lumber_camp",     "name":"Lumber Camp",      "tier":1,"cost":{"gold":80},                                 "effect":{"wood":8},                   "upkeep":{"gold":1}, "terrain":"forest,taiga",           "tech":0.0,"desc":"Wood from forests."},
+    {"key":"mine",            "name":"Mine",             "tier":1,"cost":{"gold":120,"wood":30},                      "effect":{"iron":6,"stone":4,"coal":3},"upkeep":{"gold":2}, "terrain":"hills,mountains",        "tech":0.0,"desc":"Iron/stone/coal from hills/mountains."},
+    {"key":"copper_mine",     "name":"Copper Mine",      "tier":1,"cost":{"gold":100,"wood":20},                      "effect":{"copper":5},                 "upkeep":{"gold":2}, "terrain":"hills,mountains",        "tech":0.0,"desc":"Copper from hills/mountains."},
+    {"key":"clay_pit",        "name":"Clay Pit",         "tier":1,"cost":{"gold":60},                                 "effect":{"clay":6},                   "upkeep":{"gold":1}, "terrain":"wetland,plains",         "tech":0.0,"desc":"Clay from wetlands/plains."},
+    {"key":"tar_works",       "name":"Tar Works",        "tier":1,"cost":{"gold":80,"wood":20},                       "effect":{"tar":5},                    "upkeep":{"gold":1}, "terrain":"forest,wetland,taiga",   "tech":0.0,"desc":"Tar from forests/wetlands."},
+    {"key":"powder_mill",     "name":"Powder Mill",      "tier":2,"cost":{"gold":200,"stone":50,"iron":20,"coal":20,"copper":10}, "effect":{"gunpowder":4},  "upkeep":{"gold":5}, "terrain":"",                       "tech":4.0,"desc":"Gunpowder. Requires coal+copper+iron. Tech 4."},
+    {"key":"cannon_foundry",  "name":"Cannon Foundry",   "tier":2,"cost":{"gold":250,"iron":40,"coal":30,"copper":20},"effect":{"gunpowder":6,"iron":-2},   "upkeep":{"gold":6}, "terrain":"",                       "tech":4.0,"desc":"More gunpowder output, consumes iron. Requires coal+copper. Tech 4."},
+    {"key":"textile_mill",    "name":"Textile Mill",     "tier":2,"cost":{"gold":150,"wood":40},                      "effect":{"cloth":6},                  "upkeep":{"gold":3}, "terrain":"",                       "tech":3.0,"desc":"Cloth. Requires tech 3."},
+    {"key":"silk_workshop",   "name":"Silk Workshop",    "tier":2,"cost":{"gold":200,"wood":30,"cloth":20},           "effect":{"silk":3},                   "upkeep":{"gold":4}, "terrain":"plains,grassland",       "tech":3.0,"desc":"Silk production. Requires cloth. Tech 3."},
+    {"key":"market",          "name":"Market",           "tier":1,"cost":{"gold":100,"wood":30},                      "effect":{"gold":15},                  "upkeep":{},         "terrain":"",                       "tech":0.0,"desc":"Gold income each tick."},
+    {"key":"port",            "name":"Port",             "tier":1,"cost":{"gold":150,"wood":80},                      "effect":{"gold":10},                  "upkeep":{"gold":2}, "terrain":"coastal",                "tech":0.0,"desc":"Trade gold on coastal provinces."},
+    {"key":"fort",            "name":"Fort",             "tier":1,"cost":{"gold":200,"stone":80,"clay":40},           "effect":{},                           "upkeep":{"gold":5}, "terrain":"",                       "tech":0.0,"desc":"+1 fortification. Requires clay."},
+    {"key":"university",      "name":"University",       "tier":3,"cost":{"gold":500,"stone":100,"wood":50,"clay":60},"effect":{"universal_knowledge":1},   "upkeep":{"gold":10},"terrain":"",                       "tech":5.0,"desc":"Universal Knowledge each tick. Requires clay. Tech 5."},
+    {"key":"algae_farm",      "name":"Algae Farm",       "tier":3,"cost":{"gold":400,"wood":60},                      "effect":{"algae":1},                  "upkeep":{"gold":8}, "terrain":"coastal,wetland",        "tech":6.0,"desc":"Rare Algae. Requires tech 6."},
 ]
 
 # ---------------------------------------------------------------------------
@@ -200,6 +202,107 @@ def _run_tick(months=1):
             upkeep += compute_military_upkeep(nid) * months
         except Exception:
             pass
+
+        # ---- FOOD: feeds population + military ----
+        try:
+            # Count total population across owned provinces
+            with db.cursor() as c:
+                c.execute(
+                    "SELECT COALESCE(SUM(population),0) as total_pop "
+                    "FROM provinces WHERE owner_nation_id=? AND active=1",
+                    (nid,)
+                )
+                total_pop = c.fetchone()["total_pop"] or 0
+
+            # Count military units
+            with db.cursor() as c:
+                c.execute(
+                    "SELECT COALESCE(SUM(quantity),0) as total "
+                    "FROM military_units WHERE nation_id=?",
+                    (nid,)
+                )
+                total_units = c.fetchone()["total"] or 0
+
+            # Food needed: 1 per 100 pop + 1 per 10 military units, per month
+            food_for_pop     = (total_pop / 100.0) * months
+            food_for_military= (total_units / 10.0) * months
+            food_needed      = food_for_pop + food_for_military
+            food_have        = res.get("food", 0)
+
+            if food_needed <= 0:
+                pass  # no consumption needed
+            elif food_have >= food_needed:
+                # Sufficient food
+                res["food"] = food_have - food_needed
+                surplus_ratio = food_have / food_needed
+
+                # Population growth if well-fed (surplus > 20%)
+                if surplus_ratio >= 1.2 and total_pop > 0:
+                    growth_rate = min(0.005, (surplus_ratio - 1.0) * 0.01) * months
+                    with db.cursor() as c:
+                        c.execute(
+                            "SELECT id, population FROM provinces "
+                            "WHERE owner_nation_id=? AND active=1 AND population>0",
+                            (nid,)
+                        )
+                        provs_pop = c.fetchall()
+                    for pp in provs_pop:
+                        new_pop = int(pp["population"] * (1 + growth_rate))
+                        if new_pop != pp["population"]:
+                            with db.cursor() as c:
+                                c.execute(
+                                    "UPDATE provinces SET population=? WHERE id=?",
+                                    (new_pop, pp["id"])
+                                )
+            else:
+                # Food shortage
+                shortage_ratio = food_have / food_needed if food_needed > 0 else 0
+                res["food"]    = 0
+                stab_penalty   = max(1, int((1.0 - shortage_ratio) * 8 * months))
+
+                with db.cursor() as c:
+                    c.execute("SELECT stability FROM nations WHERE id=?", (nid,))
+                    cur_stab = c.fetchone()["stability"]
+                new_stab = max(0.0, cur_stab - stab_penalty)
+                with db.cursor() as c:
+                    c.execute("UPDATE nations SET stability=? WHERE id=?", (new_stab, nid))
+
+                # Population decline if severe shortage (< 50% fed)
+                if shortage_ratio < 0.5 and total_pop > 0:
+                    decline_rate = (0.5 - shortage_ratio) * 0.02 * months
+                    with db.cursor() as c:
+                        c.execute(
+                            "SELECT id, population FROM provinces "
+                            "WHERE owner_nation_id=? AND active=1 AND population>0",
+                            (nid,)
+                        )
+                        provs_pop = c.fetchall()
+                    for pp in provs_pop:
+                        new_pop = max(0, int(pp["population"] * (1 - decline_rate)))
+                        if new_pop != pp["population"]:
+                            with db.cursor() as c:
+                                c.execute(
+                                    "UPDATE provinces SET population=? WHERE id=?",
+                                    (new_pop, pp["id"])
+                                )
+
+                _log(nid, "system",
+                     f"Food shortage! Needed {food_needed:.0f} (pop {total_pop:,} + "
+                     f"{total_units} units), had {food_have:.0f}. "
+                     f"Stability -{stab_penalty}."
+                     + (" Population declining." if shortage_ratio < 0.5 else ""))
+        except Exception as e:
+            print(f"[TICK] Food calc error for nation {nid}: {e}", flush=True)
+
+        # SILK + SPICES: luxury income (1 gold per 5 units held, capped at 50g/tick)
+        silk_income   = min(50.0, res.get("silk",   0) / 5) * months
+        spices_income = min(50.0, res.get("spices", 0) / 5) * months
+        luxury_income = silk_income + spices_income
+        if luxury_income > 0:
+            treasury += luxury_income
+
+        # CLOTH: consumed when building military land units (handled in /military build)
+        # Here we just track — cloth upkeep is negligible and handled at build time
         with db.cursor() as c:
             c.execute(
                 "SELECT * FROM megaprojects WHERE nation_id=? AND status IN ('building','complete')",
@@ -233,9 +336,14 @@ def _run_tick(months=1):
                 "UPDATE nations SET resources_json=?,treasury=? WHERE id=?",
                 (json.dumps(res), treasury, nid)
             )
+        summary_parts = [f"{nat['name']}: -{upkeep:.0f}g upkeep, {treasury:.0f}g treasury"]
+        if luxury_income > 0:
+            summary_parts.append(f"+{luxury_income:.0f}g luxury")
         _log(nid, "system",
-             f"Month {month}/{year}: upkeep -{upkeep:.0f}g, treasury {treasury:.0f}g.")
-        summaries.append(f"{nat['name']}: -{upkeep:.0f}g upkeep, {treasury:.0f}g")
+             f"Month {month}/{year}: upkeep -{upkeep:.0f}g"
+             + (f", luxury income +{luxury_income:.0f}g" if luxury_income > 0 else "")
+             + f", treasury {treasury:.0f}g.")
+        summaries.append(", ".join(summary_parts))
     return month, year, summaries
 
 # ---------------------------------------------------------------------------
@@ -299,15 +407,22 @@ HELP_SECTIONS = {
         "title": "💰 Economy",
         "color": discord.Color.gold(),
         "fields": [
-            ("/resources", "View your resource stockpile and treasury."),
-            ("/build <cell_id> <key>", "Construct a building in one of your provinces."),
-            ("/buildings list", "Browse all building types."),
+            ("/resources", "View stockpile, treasury, food status, luxury income, and population."),
+            ("/build <cell_id> <key>", "Construct a building. Fort+University now require Clay."),
+            ("/buildings list", "Browse all building types with costs and effects."),
             ("/buildings province <cell_id>", "List buildings in a specific province."),
             ("/megaproject propose", "Propose a megaproject for GM approval."),
-            ("/megaproject build <id>", "Pay and start construction of an approved megaproject."),
+            ("/megaproject build <id>", "Pay and start an approved megaproject."),
             ("/megaproject list", "View your megaprojects."),
             ("/tech status", "View your nation's tech levels (private)."),
             ("/tech research <category>", "Spend gold + Universal Knowledge to advance tech."),
+            ("Resource mechanics",
+             "• **Food**: consumed by population (1/100 pop) + military (1/10 units) per tick. "
+             "Surplus → pop growth. Shortage → stability loss. Severe shortage → pop decline.\n"
+             "• **Silk + Spices**: generate luxury income (1g per 5 held, cap 50g/tick each).\n"
+             "• **Cloth**: consumed when building land units (1 per 5 units).\n"
+             "• **Coal + Copper**: required for Powder Mill and Cannon Foundry.\n"
+             "• **Clay**: required for Fort and University construction."),
         ],
     },
     "trade": {
@@ -520,15 +635,66 @@ class EconomyCog(commands.Cog):
             await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
             return
         res  = json.loads(n["resources_json"])
-        desc = "\n".join(
-            f"**{k.capitalize()}**: {v:,.1f}" for k, v in sorted(res.items()) if v > 0
-        ) or "*No resources yet.*"
+
+        # Calculate food needs
+        with db.cursor() as c:
+            c.execute(
+                "SELECT COALESCE(SUM(population),0) as total_pop "
+                "FROM provinces WHERE owner_nation_id=? AND active=1",
+                (n["id"],)
+            )
+            total_pop = c.fetchone()["total_pop"] or 0
+            c.execute(
+                "SELECT COALESCE(SUM(quantity),0) as total "
+                "FROM military_units WHERE nation_id=?",
+                (n["id"],)
+            )
+            total_units = c.fetchone()["total"] or 0
+
+        food_needed = (total_pop / 100.0) + (total_units / 10.0)
+        food_have   = res.get("food", 0)
+
+        if food_needed > 0:
+            food_ratio = food_have / food_needed
+            if food_ratio >= 1.2:
+                food_status = f"✅ Well-fed ({food_have:.0f}/{food_needed:.0f}) — population growing"
+            elif food_ratio >= 1.0:
+                food_status = f"🟡 Sufficient ({food_have:.0f}/{food_needed:.0f})"
+            elif food_ratio >= 0.5:
+                food_status = f"🟠 Shortage ({food_have:.0f}/{food_needed:.0f}) — stability declining"
+            else:
+                food_status = f"🔴 Severe shortage ({food_have:.0f}/{food_needed:.0f}) — population declining"
+        else:
+            food_status = f"✅ No population to feed ({food_have:.0f} stockpiled)"
+
+        # Luxury income preview
+        silk_income   = min(50.0, res.get("silk",   0) / 5)
+        spices_income = min(50.0, res.get("spices", 0) / 5)
+        luxury_income = silk_income + spices_income
+
+        # Build resource display — exclude food (shown separately)
+        other_res = {k: v for k, v in sorted(res.items()) if k != "food" and v > 0}
+        desc = "\n".join(f"**{k.replace('_',' ').capitalize()}**: {v:,.1f}"
+                         for k, v in other_res.items()) or "*No resources yet.*"
+
         embed = discord.Embed(
             title=f"{n['flag'] or ''} {n['name']} — Resources".strip(),
             description=desc,
             color=discord.Color.green(),
         )
-        embed.add_field(name="Treasury", value=f"{n['treasury']:,.0f} gold", inline=True)
+        embed.add_field(name="🌾 Food", value=food_status, inline=False)
+        embed.add_field(name="💰 Treasury", value=f"{n['treasury']:,.0f} gold", inline=True)
+        if luxury_income > 0:
+            embed.add_field(
+                name="💎 Luxury Income",
+                value=f"+{luxury_income:.0f}g/tick (silk+spices)",
+                inline=True,
+            )
+        embed.add_field(
+            name="👥 Population",
+            value=f"{total_pop:,} total | {total_units} military units",
+            inline=True,
+        )
         embed.set_footer(
             text=f"In-game: Month {_cfg('current_month','?')}, Year {_cfg('current_year','?')}"
         )
