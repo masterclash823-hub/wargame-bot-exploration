@@ -491,6 +491,71 @@ class ProvincesCog(commands.Cog):
             i18n.t(lang, "province_unclaimed", count=cleared), ephemeral=True
         )
 
+    # -------------------------------------------------- /province yield
+    @province_grp.command(name="yield",
+                          description="Total resource yield of your provinces / Laczna produkcja")
+    @app_commands.describe(nation="Nation name (blank = your own, GM only for others)")
+    async def province_yield(self, interaction: discord.Interaction, nation: str = ""):
+        lang  = _lang(interaction)
+        is_gm = _gm(interaction)
+        if nation and not is_gm:
+            await interaction.response.send_message(
+                "Province yields are private. You can only view your own.", ephemeral=True)
+            return
+        if nation:
+            nat = _get_nation(nation)
+        else:
+            with db.cursor() as c:
+                c.execute("SELECT * FROM nations WHERE owner_id=?", (str(interaction.user.id),))
+                nat = c.fetchone()
+        if not nat:
+            await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
+            return
+        with db.cursor() as c:
+            c.execute("SELECT * FROM provinces WHERE owner_nation_id=? AND active=1", (nat["id"],))
+            provs = c.fetchall()
+        if not provs:
+            await interaction.response.send_message(f"**{nat['name']}** owns no provinces.", ephemeral=True)
+            return
+
+        total: dict[str, float] = {}
+        gold_per_tick = 0.0
+        for prov in provs:
+            base = json.loads(prov["base_resources_json"])
+            for k, v in base.items():
+                total[k] = total.get(k, 0) + v
+            for bkey in json.loads(prov["buildings_json"]):
+                with db.cursor() as c:
+                    c.execute("SELECT effect_json FROM building_defs WHERE key=?", (bkey,))
+                    bd = c.fetchone()
+                if bd:
+                    for k, v in json.loads(bd["effect_json"]).items():
+                        if k == "gold":
+                            gold_per_tick += v
+                        else:
+                            total[k] = total.get(k, 0) + v
+
+        stab_mod = 0.75 + (nat["stability"] / 100.0) * 0.25
+        lines = []
+        if gold_per_tick > 0:
+            lines.append(f"**Gold**: {gold_per_tick:.0f}/tick (×{stab_mod:.2f} = {gold_per_tick*stab_mod:.0f} effective)")
+        for k, v in sorted(total.items()):
+            if v > 0:
+                lines.append(
+                    f"**{k.replace('_',' ').capitalize()}**: {v:.1f}/tick "
+                    f"(×{stab_mod:.2f} = {v*stab_mod:.1f} effective)"
+                )
+
+        embed = discord.Embed(
+            title=f"📊 Province Yield — {nat['flag'] or ''} {nat['name']}",
+            description="\n".join(lines) or "*No production yet.*",
+            color=discord.Color.green(),
+        )
+        embed.set_footer(
+            text=f"{len(provs)} province(s) | Stability {nat['stability']:.0f}/100 → ×{stab_mod:.2f} modifier"
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     # -------------------------------------------------- /province info
     @province_grp.command(name="info",
                           description="View province details / Szczegoly prowincji")

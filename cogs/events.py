@@ -139,14 +139,26 @@ Write the event now:"""
 
     try:
         from google import genai
-        client   = genai.Client(api_key=config.GEMINI_API_KEY)
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: client.models.generate_content(
-                model="gemini-2.0-flash",
+        client = genai.Client(api_key=config.GEMINI_API_KEY)
+
+        def _call():
+            return client.models.generate_content(
+                model=config.GEMINI_MODEL,
                 contents=prompt,
             )
-        )
+
+        # Try once, retry after 2s if rate-limited
+        import time
+        try:
+            response = await asyncio.get_event_loop().run_in_executor(None, _call)
+        except Exception as e:
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                print(f"[EVENTS AI] 429 rate limit, retrying in 2s...", flush=True)
+                await asyncio.sleep(2)
+                response = await asyncio.get_event_loop().run_in_executor(None, _call)
+            else:
+                raise
+
         raw = response.text.strip()
 
         # Split on EFFECTS:
@@ -410,6 +422,22 @@ class EventsCog(commands.Cog):
                 await ch.send(embed=embed)
             except discord.Forbidden:
                 pass
+
+        # Notify nation owner via DM
+        if interaction.guild:
+            owner = interaction.guild.get_member(int(nat["owner_id"]))
+            if owner:
+                try:
+                    notif = discord.Embed(
+                        title=f"📜 New Event — {nat['flag'] or ''} {nat['name']}",
+                        description=ev["gm_final_text"],
+                        color=discord.Color.purple(),
+                    )
+                    if applied:
+                        notif.add_field(name="Effects", value="\n".join(applied), inline=False)
+                    await owner.send(embed=notif)
+                except discord.Forbidden:
+                    pass
 
         # Also respond to GM
         await interaction.response.send_message(

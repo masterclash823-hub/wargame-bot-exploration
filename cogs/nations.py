@@ -124,14 +124,23 @@ class NationCog(commands.Cog):
         resources = json.loads(nation["resources_json"])
         flag = nation["flag"] or ""
 
+        stab = nation["stability"]
+        if stab >= 80:   stab_str = f"✅ {stab:.0f}/100 (Stable)"
+        elif stab >= 60: stab_str = f"🟡 {stab:.0f}/100 (Tense)"
+        elif stab >= 40: stab_str = f"🟠 {stab:.0f}/100 (Unstable)"
+        else:            stab_str = f"🔴 {stab:.0f}/100 (Crisis)"
+
         embed = discord.Embed(
             title=f"{flag}  {nation['name']}".strip(),
             color=discord.Color.blue(),
         )
-        embed.add_field(name="Government",  value=nation["government_type"],      inline=True)
-        embed.add_field(name="Treasury",    value=f"{nation['treasury']:.0f} gold", inline=True)
-        embed.add_field(name="Stability",   value=f"{nation['stability']:.0f}/100", inline=True)
-        embed.add_field(name="Population",  value=f"{nation['population']:,}",    inline=True)
+        embed.add_field(name="Government",  value=nation["government_type"],         inline=True)
+        embed.add_field(name="Treasury",    value=f"{nation['treasury']:.0f} gold",  inline=True)
+        embed.add_field(name="Stability",   value=stab_str,                          inline=True)
+        embed.add_field(name="Population",  value=f"{nation['population']:,}",       inline=True)
+        # Stability production modifier
+        stab_mod = 0.75 + (stab / 100.0) * 0.25
+        embed.add_field(name="Production",  value=f"×{stab_mod:.2f} (stability)",   inline=True)
         embed.add_field(
             name="Tech Levels",
             value="\n".join(f"{k.capitalize()}: {v:.1f}" for k, v in tech.items()),
@@ -153,26 +162,40 @@ class NationCog(commands.Cog):
         page="Page number / Numer strony",
     )
     async def history(self, interaction: discord.Interaction, name: str, page: int = 1):
-        lang = _lang(interaction)
+        lang   = _lang(interaction)
         nation = _get_by_name(name)
         if not nation:
             await interaction.response.send_message(i18n.t(lang, "nation_not_found"), ephemeral=True)
             return
 
-        page = max(1, page)
+        is_owner = nation["owner_id"] == str(interaction.user.id)
+        is_gm    = bool(interaction.guild) and any(
+            r.name == config.GM_ROLE_NAME for r in interaction.user.roles
+        )
+        # trade_private entries visible only to nation owner and GM
+        if is_owner or is_gm:
+            source_filter = ""
+            filter_params: tuple = (nation["id"],)
+        else:
+            source_filter = "AND source != 'trade_private'"
+            filter_params = (nation["id"],)
+
+        page     = max(1, page)
         per_page = 10
-        offset = (page - 1) * per_page
+        offset   = (page - 1) * per_page
 
         with db.cursor() as cur:
             cur.execute(
-                "SELECT COUNT(*) as cnt FROM nation_history WHERE nation_id = ?",
-                (nation["id"],),
+                f"SELECT COUNT(*) as cnt FROM nation_history "
+                f"WHERE nation_id=? {source_filter}",
+                filter_params,
             )
             total = cur.fetchone()["cnt"]
             cur.execute(
-                """SELECT timestamp, source, entry_text FROM nation_history
-                   WHERE nation_id = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?""",
-                (nation["id"], per_page, offset),
+                f"SELECT timestamp, source, entry_text FROM nation_history "
+                f"WHERE nation_id=? {source_filter} "
+                f"ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+                (*filter_params, per_page, offset),
             )
             rows = cur.fetchall()
 
@@ -242,6 +265,52 @@ class NationCog(commands.Cog):
             i18n.t(lang, "history_added", nation=name), ephemeral=True
         )
 
+
+    # ------------------------------------------------------------------ /nation delete
+    @nation_group.command(name="delete", description="[GM] Delete a nation / [GM] Usun narod")
+    @app_commands.describe(name="Nation name to delete / Nazwa narodu do usuniecia")
+    async def delete(self, interaction: discord.Interaction, name: str):
+        lang = _lang(interaction)
+        if not (bool(interaction.guild) and any(
+            r.name == config.GM_ROLE_NAME for r in interaction.user.roles
+        )):
+            await interaction.response.send_message(i18n.t(lang, "gm_only"), ephemeral=True)
+            return
+        nation = _get_by_name(name)
+        if not nation:
+            await interaction.response.send_message(i18n.t(lang, "nation_not_found"), ephemeral=True)
+            return
+
+        class ConfirmDelete(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=30)
+
+            @discord.ui.button(label="⚠️ Confirm Delete", style=discord.ButtonStyle.danger)
+            async def confirm(self, btn: discord.Interaction, button: discord.ui.Button):
+                with db.cursor() as cur:
+                    cur.execute("UPDATE provinces SET owner_nation_id=NULL WHERE owner_nation_id=?",
+                                (nation["id"],))
+                    cur.execute("DELETE FROM nations WHERE id=?", (nation["id"],))
+                self.stop()
+                await btn.response.edit_message(
+                    content=f"🗑️ Nation **{nation['name']}** deleted. Provinces unclaimed.",
+                    embed=None, view=None)
+
+            @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+            async def cancel(self, btn: discord.Interaction, button: discord.ui.Button):
+                self.stop()
+                await btn.response.edit_message(content="Cancelled.", embed=None, view=None)
+
+        embed = discord.Embed(
+            title="⚠️ Confirm Nation Deletion",
+            description=(
+                f"This will permanently delete **{nation['name']}** and release all their provinces.\n"
+                "Military units, blueprints, history, and megaprojects will also be deleted.\n\n"
+                "**This cannot be undone.**"
+            ),
+            color=discord.Color.red(),
+        )
+        await interaction.response.send_message(embed=embed, view=ConfirmDelete(), ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(NationCog(bot))

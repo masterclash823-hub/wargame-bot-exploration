@@ -274,35 +274,60 @@ class TechCog(commands.Cog):
 
         old     = current
         new     = min(TECH_MAX, round(current + steps * 0.1, 2))
-        tech[cat] = new
-        res["universal_knowledge"] = uk_have - uk_cost
 
-        with db.cursor() as c:
-            c.execute(
-                "UPDATE nations SET tech_json=?,resources_json=?,treasury=? WHERE id=?",
-                (json.dumps(tech), json.dumps(res), nat["treasury"] - gold_cost, nat["id"])
-            )
-
-        # Private history log
-        _log(nat["id"], "player",
-             f"Researched {cat.capitalize()}: {old:.1f} → {new:.1f} "
-             f"(cost: {gold_cost}g + {uk_cost} UK).")
-
-        # Check tier crossings and maybe announce
-        for tier in _tier_crossed(old, new):
-            _log(nat["id"], "system",
-                 f"Tech milestone: {cat.capitalize()} reached tier {tier}.")
-            await _maybe_announce(self.bot, nat["name"], tier)
-
-        embed = discord.Embed(
-            title="🔬 Research Complete",
+        # Confirmation embed before spending
+        confirm_embed = discord.Embed(
+            title="🔬 Confirm Research",
             description=(
                 f"**{cat.capitalize()}**: {old:.1f} → **{new:.1f}**\n"
-                f"Cost: {gold_cost:,}g + {uk_cost} Universal Knowledge"
+                f"Cost: **{gold_cost:,}g** + **{uk_cost} Universal Knowledge**\n\n"
+                "Click Confirm to proceed."
             ),
             color=discord.Color.teal(),
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        class ConfirmView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=60)
+                self.confirmed = False
+
+            @discord.ui.button(label="✅ Confirm", style=discord.ButtonStyle.success)
+            async def confirm(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
+                self.confirmed = True
+                self.stop()
+                # Deduct and apply
+                tech[cat] = new
+                res["universal_knowledge"] = uk_have - uk_cost
+                with db.cursor() as c:
+                    c.execute(
+                        "UPDATE nations SET tech_json=?,resources_json=?,treasury=? WHERE id=?",
+                        (json.dumps(tech), json.dumps(res), nat["treasury"] - gold_cost, nat["id"])
+                    )
+                _log(nat["id"], "player",
+                     f"Researched {cat.capitalize()}: {old:.1f} → {new:.1f} "
+                     f"(cost: {gold_cost}g + {uk_cost} UK).")
+                for tier in _tier_crossed(old, new):
+                    _log(nat["id"], "system", f"Tech milestone: {cat.capitalize()} reached tier {tier}.")
+                    await _maybe_announce(self.view_bot, nat["name"], tier)
+                result_embed = discord.Embed(
+                    title="🔬 Research Complete",
+                    description=(
+                        f"**{cat.capitalize()}**: {old:.1f} → **{new:.1f}**\n"
+                        f"Cost: {gold_cost:,}g + {uk_cost} Universal Knowledge"
+                    ),
+                    color=discord.Color.teal(),
+                )
+                await btn_interaction.response.edit_message(embed=result_embed, view=None)
+
+            @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
+            async def cancel(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
+                self.stop()
+                await btn_interaction.response.edit_message(
+                    content="Research cancelled.", embed=None, view=None)
+
+        view = ConfirmView()
+        view.view_bot = self.bot
+        await interaction.response.send_message(embed=confirm_embed, view=view, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

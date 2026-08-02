@@ -223,20 +223,30 @@ class ShipDesignerView(discord.ui.View):
         await interaction.response.edit_message(embed=final, view=self)
 
     def _embed(self):
-        stats = _ship_stats(self.hull_key, self.selected)
-        hull  = HULLS[self.hull_key]
+        stats    = _ship_stats(self.hull_key, self.selected)
+        hull     = HULLS[self.hull_key]
         mods_str = (", ".join(MODULES[m]["name"] for m in self.selected)
                     if self.selected else "none")
+        cost_str = ", ".join(f"{v} {k}" for k, v in hull["cost"].items())
+        mod_cost: dict[str, float] = {}
+        for m in self.selected:
+            for r, a in MODULES.get(m, {}).get("cost", {}).items():
+                mod_cost[r] = mod_cost.get(r, 0) + a
+        if mod_cost:
+            cost_str += " + " + ", ".join(f"{v} {k}" for k, v in mod_cost.items())
         embed = discord.Embed(
             title=f"⚓ Designing: {self.bp_name}",
             description=f"Hull: **{hull['name']}** | {len(self.selected)}/{self.slots} slots used",
             color=discord.Color.dark_blue(),
         )
-        embed.add_field(name="Modules",value=mods_str,        inline=False)
-        embed.add_field(name="ATK",    value=str(stats["attack"]),  inline=True)
-        embed.add_field(name="HP",     value=str(stats["hp"]),      inline=True)
-        embed.add_field(name="Speed",  value=str(stats["speed"]),   inline=True)
-        embed.add_field(name="Cargo",  value=str(stats["cargo"]),   inline=True)
+        embed.add_field(name="Modules",       value=mods_str,              inline=False)
+        embed.add_field(name="Total Cost",    value=cost_str,              inline=False)
+        embed.add_field(name="ATK",           value=str(stats["attack"]),  inline=True)
+        embed.add_field(name="HP",            value=str(stats["hp"]),      inline=True)
+        embed.add_field(name="Speed",         value=str(stats["speed"]),   inline=True)
+        embed.add_field(name="Cargo",         value=str(stats["cargo"]),   inline=True)
+        embed.add_field(name="Peace upkeep",  value=f"{hull['peace_upkeep']:.0f}g/unit", inline=True)
+        embed.add_field(name="War upkeep",    value=f"{hull['peace_upkeep']*WAR_MULT:.0f}g/unit", inline=True)
         embed.set_footer(text="Click modules to add them. Each click uses one slot.")
         return embed
 
@@ -514,16 +524,30 @@ class MilitaryCog(commands.Cog):
             inline=False,
         )
         def loc(r):
-            if r["pname"]:      return r["pname"]
+            if r["pname"]:          return r["pname"]
             if r["azgaar_cell_id"]: return f"Cell #{r['azgaar_cell_id']}"
             return "🌊 Floating"
+
+        def upkeep_str(r):
+            if r["btype"] == "ship":
+                base = HULLS.get(r["hull"], {}).get("peace_upkeep", 5.0)
+            else:
+                base = LAND_UNITS.get(r["hull"], {}).get("peace_upkeep", 2.0)
+            peace = base * r["quantity"]
+            war   = peace * WAR_MULT
+            return f"{peace:.0f}g peace / {war:.0f}g war"
+
         if ships:
             embed.add_field(name="⚓ Navy",
-                value="\n".join(f"`[{r['id']}]` **{r['quantity']}× {r['bname']}** @ {loc(r)}" for r in ships),
+                value="\n".join(
+                    f"`[{r['id']}]` **{r['quantity']}× {r['bname']}** @ {loc(r)} — {upkeep_str(r)}"
+                    for r in ships),
                 inline=False)
         if units:
             embed.add_field(name="⚔️ Army",
-                value="\n".join(f"`[{r['id']}]` **{r['quantity']}× {r['bname']}** @ {loc(r)}" for r in units),
+                value="\n".join(
+                    f"`[{r['id']}]` **{r['quantity']}× {r['bname']}** @ {loc(r)} — {upkeep_str(r)}"
+                    for r in units),
                 inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
