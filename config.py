@@ -31,7 +31,7 @@ GM_ROLE_NAME = os.getenv("GM_ROLE_NAME", "Game Master")
 
 # --- Google Gemini ---
 GEMINI_API_KEY = _require("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
 # --- Database ---
 DB_PATH = os.getenv("DB_PATH", "/tmp/wargame.db")

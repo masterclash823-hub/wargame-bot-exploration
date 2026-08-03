@@ -603,6 +603,9 @@ class EconomyCog(commands.Cog):
                 return
 
             months = max(1, int(elapsed / hpm))
+            # Cap catch-up to 3 months max per loop to avoid announcement spam
+            # If offline longer, remaining months catch up on next loop iteration
+            months = min(months, 3)
             _cfg_set("last_tick_ts", datetime.now(timezone.utc).isoformat())
             print(f"[CALENDAR] {months} month(s) elapsed, running tick...", flush=True)
 
@@ -1673,6 +1676,8 @@ class EconomyCog(commands.Cog):
             f"**Resources:** {res_preview}",
             ephemeral=True,
         )
+
+    @admineco_grp.command(name="building_set", description="[GM] Edit building definition")
     @app_commands.describe(key="Building key", field="Field to change", value="New value")
     async def building_set(self, interaction: discord.Interaction, key: str, field: str, value: str):
         if not _gm(interaction):
