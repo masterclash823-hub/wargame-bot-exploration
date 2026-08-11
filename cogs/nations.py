@@ -59,6 +59,7 @@ class NationCog(commands.Cog):
     @nation_group.command(name="found", description="Found your nation / Zaloz swoj narod")
     @app_commands.describe(
         name="Nation name / Nazwa narodu",
+        founding_story="Brief history or origin of your nation (required) / Krotka historia narodu",
         flag="Flag emoji or URL / Emoji flagi lub URL",
         government="Government type / Typ rzadu",
     )
@@ -66,6 +67,7 @@ class NationCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         name: str,
+        founding_story: str,
         flag: str = "",
         government: str = "Monarchy",
     ):
