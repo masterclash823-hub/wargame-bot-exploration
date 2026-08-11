@@ -22,6 +22,7 @@ COGS = [
     "cogs.military",
     "cogs.combat",
     "cogs.events",
+    "cogs.colonialism",
 ]
 
 intents = discord.Intents.default()

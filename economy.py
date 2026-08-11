@@ -210,8 +210,14 @@ def _run_tick(months=1):
             provs = c.fetchall()
         for prov in provs:
             base = json.loads(prov["base_resources_json"])
+            # Apply colony yield modifier if this is a colony province
+            try:
+                from cogs.colonialism import get_colony_yield_modifier
+                col_mod = get_colony_yield_modifier(prov["id"])
+            except Exception:
+                col_mod = 1.0
             for k, v in base.items():
-                res[k] = res.get(k, 0) + v * months * stab_mod
+                res[k] = res.get(k, 0) + v * months * stab_mod * col_mod
             for bkey in json.loads(prov["buildings_json"]):
                 bd = _bdef(bkey)
                 if not bd:
@@ -222,12 +228,20 @@ def _run_tick(months=1):
                     else:
                         res[k] = res.get(k, 0) + v * months * stab_mod
                 upkeep += json.loads(bd["upkeep_json"]).get("gold", 0) * months
-        # Military upkeep (imported here to avoid circular import at module level)
+        # Military upkeep
         try:
             from cogs.military import compute_military_upkeep
             upkeep += compute_military_upkeep(nid) * months
         except Exception:
             pass
+
+        # Trade route income + colony month ticks
+        try:
+            from cogs.colonialism import compute_trade_route_income, tick_colonies
+            treasury += compute_trade_route_income(nid) * months
+            tick_colonies(nid, months)
+        except Exception as e:
+            print(f"[TICK] Trade/colony error for nation {nid}: {e}", flush=True)
 
         # ---- FOOD: feeds population + military ----
         try:
@@ -452,6 +466,19 @@ HELP_SECTIONS = {
              "• **Clay**: required for Fort and University construction."),
         ],
     },
+    "colonialism": {
+        "title": "🗺️ Colonialism & Trade Routes",
+        "color": discord.Color.dark_green(),
+        "fields": [
+            ("/colony found <cell_id> <name>", "Found a colony on an unclaimed province (costs gold + fleet cargo)."),
+            ("/colony develop <cell_id> <gold>", "Invest gold to advance a colony toward next stage."),
+            ("/colony list [nation]", "List all colonies of a nation."),
+            ("/colony view <cell_id>", "View detailed colony status and progress bars."),
+            ("/traderoute add <from> <to> <name>", "Establish a trade route. Income = ship cargo × 2g/tick (or 20g flat)."),
+            ("/traderoute remove <id>", "Remove a trade route."),
+            ("/traderoute list", "List your trade routes and income per tick."),
+        ],
+    },
     "trade": {
         "title": "🤝 Trade",
         "color": discord.Color.orange(),
@@ -505,6 +532,8 @@ GM_HELP_FIELDS = [
     ("/admineco tick [months]", "Manually trigger a resource tick."),
     ("/admineco starter_pack [nation|all]", "Give starting resources to one nation or all nations."),
     ("/admineco grant", "Give resources or gold to a nation (logged)."),
+    ("/colonymgr advance <cell_id>", "Approve colony advancement to next stage."),
+    ("/colonymgr setback <cell_id>", "Set a colony back a stage."),
     ("/event generate <nation>", "Generate an AI event based on nation history and stats."),
     ("/event edit <id> <text>", "Edit an event draft before posting."),
     ("/event effects <id> <json>", "Set stat effects for an event draft."),
@@ -522,7 +551,7 @@ GM_HELP_FIELDS = [
 ]
 
 class HelpView(discord.ui.View):
-    PLAYER_KEYS = ["general", "nation", "province", "economy", "trade", "military", "combat"]
+    PLAYER_KEYS = ["general", "nation", "province", "economy", "trade", "military", "combat", "colonialism"]
 
     def __init__(self, is_gm: bool, current: str = "general"):
         super().__init__(timeout=180)
@@ -534,7 +563,7 @@ class HelpView(discord.ui.View):
         self.clear_items()
         labels = {"general":"General","nation":"Nation",
                   "province":"Province","economy":"Economy",
-                  "trade":"Trade","military":"Military","combat":"Combat"}
+                  "trade":"Trade","military":"Military","combat":"Combat","colonialism":"Colonialism"}
         for key, label in labels.items():
             btn = discord.ui.Button(
                 label=label,
