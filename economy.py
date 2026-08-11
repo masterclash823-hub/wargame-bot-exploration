@@ -159,18 +159,30 @@ def _apply_mp_effect(nid, effect_str, mp_name):
 def _seed_buildings():
     with db.cursor() as c:
         c.execute("SELECT COUNT(*) as cnt FROM building_defs")
-        if c.fetchone()["cnt"] > 0:
+        row = c.fetchone()
+        # Handle dict/RealDictCursor or tuple output safely
+        count = row["cnt"] if isinstance(row, dict) else row[0]
+        if count > 0:
             return
+
         for b in DEFAULT_BUILDINGS:
             c.execute(
-                "INSERT OR IGNORE INTO building_defs"
-                "(key,name,tier,cost_json,effect_json,upkeep_json,requires_terrain,requires_tech,description)"
-                " VALUES(?,?,?,?,?,?,?,?,?)",
-                (b["key"], b["name"], b["tier"],
-                 json.dumps(b["cost"]), json.dumps(b["effect"]), json.dumps(b["upkeep"]),
-                 b["terrain"], b["tech"], b["desc"]),
+                "INSERT INTO building_defs "
+                "(key, name, tier, cost_json, effect_json, upkeep_json, requires_terrain, requires_tech, description) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (key) DO NOTHING",
+                (
+                    b["key"],
+                    b["name"],
+                    b["tier"],
+                    json.dumps(b["cost"]),
+                    json.dumps(b["effect"]),
+                    json.dumps(b["upkeep"]),
+                    b["terrain"],
+                    b["tech"],
+                    b["desc"],
+                ),
             )
-
 def _run_tick(months=1):
     with db.cursor() as c:
         c.execute("SELECT * FROM nations")
