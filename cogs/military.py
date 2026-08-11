@@ -518,9 +518,18 @@ class MilitaryCog(commands.Cog):
             title=f"⚔️ Forces — {nat['flag'] or ''} {nat['name']}".strip(),
             color=discord.Color.dark_red(),
         )
+        # Calculate total fleet cargo
+        total_cargo = sum(
+            json.loads(r["stats_json"] or "{}").get("cargo", 0) * r["quantity"]
+            for r in rows if r["btype"] == "ship"
+        )
         embed.add_field(
             name="Status",
-            value=f"{'🔴 At War' if at_war else '🟢 Peace'} | Upkeep: {total_upkeep:.0f}g/tick",
+            value=(
+                f"{'🔴 At War' if at_war else '🟢 Peace'} | "
+                f"Upkeep: {total_upkeep:.0f}g/tick"
+                + (f" | ⚓ Fleet cargo: {total_cargo:.0f}" if total_cargo > 0 else "")
+            ),
             inline=False,
         )
         def loc(r):
