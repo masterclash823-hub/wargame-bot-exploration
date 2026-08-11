@@ -257,6 +257,7 @@ def _run_tick(months=1):
             print(f"[TICK] Trade/colony error for nation {nid}: {e}", flush=True)
 
         # ---- FOOD: feeds population + military ----
+        food_needed = 0.0
         try:
             # Count total population across owned provinces
             with db.cursor() as c:
@@ -742,6 +743,11 @@ class EconomyCog(commands.Cog):
                 bd = _bdef(bkey)
                 if bd:
                     food_prod += json.loads(bd["effect_json"]).get("food", 0)
+
+        # Calculate food needed for population and military
+        food_for_pop = (total_pop / 100.0)
+        food_for_military = (total_units / 10.0)
+        food_needed = food_for_pop + food_for_military
 
         food_balance = food_prod - food_needed
         if food_needed > 0:
