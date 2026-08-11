@@ -744,12 +744,16 @@ class EconomyCog(commands.Cog):
                 if bd:
                     food_prod += json.loads(bd["effect_json"]).get("food", 0)
 
-        # Calculate food needed for population and military
+       # Ensure all variables used in formatting are populated
+        food_have = res.get("food", 0)
         food_for_pop = (total_pop / 100.0)
         food_for_military = (total_units / 10.0)
         food_needed = food_for_pop + food_for_military
-
         food_balance = food_prod - food_needed
+
+        if total_pop == 0 and total_units == 0:
+            food_status = f"✅ No population ({food_have:.0f} stored, +{food_prod:.0f}/tick)"
+
         if food_needed > 0:
             food_ratio = food_have / food_needed if food_have > 0 else 0
             if food_ratio >= 1.2:
