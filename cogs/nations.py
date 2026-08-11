@@ -13,6 +13,7 @@ from discord.ext import commands
 import config
 import db
 import i18n
+import os
 
 
 def _lang(interaction: discord.Interaction) -> str:
