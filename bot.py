@@ -30,6 +30,47 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 print("[BOOT] bot object created", flush=True)
 
+async def global_guild_check(interaction: discord.Interaction) -> bool:
+    if interaction.command and interaction.command.name in ("help", "language", "activate"):
+        return True
+    if not interaction.guild:
+        return False
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT value FROM game_config WHERE key=?",
+            (f"guild_active_{interaction.guild_id}",)
+        )
+        row = cur.fetchone()
+    if not row or row["value"] != "1":
+        await interaction.response.send_message(
+            "⛔ Bot not activated on this server. The GM must run `/activate <auth_key>` first.",
+            ephemeral=True)
+        return False
+    return True
+
+tree.interaction_check = global_guild_check
+
+def _guild_active():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        # Always allow help and activate
+        if interaction.command and interaction.command.name in ("help", "language", "activate"):
+            return True
+        if not interaction.guild:
+            return False
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT value FROM game_config WHERE key=?",
+                (f"guild_active_{interaction.guild_id}",)
+            )
+            row = cur.fetchone()
+        if not row or row["value"] != "1":
+            await interaction.response.send_message(
+                "⛔ This bot has not been activated on this server.\n"
+                "The Game Master must run `/activate <auth_key>` first.",
+                ephemeral=True)
+            return False
+        return True
+    return app_commands.check(predicate)
 
 @bot.event
 async def on_ready():
@@ -74,6 +115,31 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
         await interaction.response.send_message(i18n.t(lang, "generic_error"), ephemeral=True)
     except discord.InteractionResponded:
         await interaction.followup.send(i18n.t(lang, "generic_error"), ephemeral=True)
+
+
+@tree.command(name="activate",
+              description="Activate the bot on this server (GM only)")
+@app_commands.describe(auth_key="Secret key from the bot owner")
+async def activate_cmd(interaction: discord.Interaction, auth_key: str):
+    import os
+    expected = os.getenv("AUTH_KEY", "")
+    if not expected:
+        await interaction.response.send_message(
+            "AUTH_KEY not set in server environment.", ephemeral=True)
+        return
+    if auth_key != expected:
+        await interaction.response.send_message(
+            "❌ Incorrect key.", ephemeral=True)
+        return
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO game_config(key,value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (f"guild_active_{interaction.guild_id}", "1")
+        )
+    await interaction.response.send_message(
+        "✅ Bot activated on this server! All commands are now available.",
+        ephemeral=True)
 
 
 @tree.command(name="language", description="Set your preferred language / Ustaw jezyk")
