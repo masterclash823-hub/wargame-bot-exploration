@@ -57,7 +57,15 @@ def _route_income(nation_id):
         total += cargo*2.0 if cargo>0 else 20.0
     return total
 
-def compute_trade_route_income(nation_id): return _route_income(nation_id)
+def compute_trade_route_income(nation_id: int) -> float:
+    with db.cursor() as c:
+        c.execute(
+            "SELECT COALESCE(SUM(income_per_tick), 0) as total_income "
+            "FROM trade_routes WHERE nation_id=%s",
+            (nation_id,)
+        )
+        row = c.fetchone()
+        return float(row["total_income"] if isinstance(row, dict) else row[0])
 
 def get_colony_yield_modifier(province_id):
     col = _colony_by_prov(province_id)
@@ -83,65 +91,149 @@ class ColonialismCog(commands.Cog):
     # ---- TRADE ROUTES ----
 
     @traderoute_grp.command(name="add", description="Establish a trade route / Ustanow szlak handlowy")
-    @app_commands.describe(from_cell="Start cell ID", to_cell="End cell ID", name="Route name")
-    async def route_add(self, interaction: discord.Interaction, from_cell: int, to_cell: int, name: str):
-        lang = _lang(interaction)
-        nat  = _nat_owner(str(interaction.user.id))
-        if not nat: await interaction.response.send_message(i18n.t(lang,"no_nation"),ephemeral=True); return
-        if from_cell == to_cell: await interaction.response.send_message("Start and end must differ.",ephemeral=True); return
-        pf = _prov_by_cell(from_cell); pt = _prov_by_cell(to_cell)
-        if not pf: await interaction.response.send_message(f"Province {from_cell} not found.",ephemeral=True); return
-        if not pt: await interaction.response.send_message(f"Province {to_cell} not found.",ephemeral=True); return
-        if pf["owner_nation_id"] != nat["id"]: await interaction.response.send_message("You don't own the starting province.",ephemeral=True); return
-        with db.cursor() as c:
-            c.execute("SELECT id FROM trade_routes WHERE nation_id=? AND from_cell_id=? AND to_cell_id=? AND active=1", (nat["id"],from_cell,to_cell))
-            if c.fetchone(): await interaction.response.send_message("Route already exists.",ephemeral=True); return
-            c.execute("INSERT INTO trade_routes(nation_id,from_cell_id,to_cell_id,name) VALUES(?,?,?,?)", (nat["id"],from_cell,to_cell,name))
-            route_id = c.lastrowid
-        fn = pf["name"] or f"Cell #{from_cell}"; tn = pt["name"] or f"Cell #{to_cell}"
-        _log(nat["id"],"player",f"Established trade route '{name}' (#{route_id}): {fn} → {tn}.")
-        embed = discord.Embed(title=f"🚢 Trade Route — {name}",color=discord.Color.blue())
-        embed.add_field(name="From",value=fn,inline=True); embed.add_field(name="To",value=tn,inline=True)
-        embed.add_field(name="Income", value="Ships cargo×2g/tick at endpoints, or 20g flat with no ships.", inline=False)
-        embed.set_footer(text=f"Route ID: {route_id} | Assign ships with /military move")
-        await interaction.response.send_message(embed=embed)
+async def traderoute_add(
+    self, 
+    interaction: discord.Interaction, 
+    from_cell: int, 
+    to_cell: int, 
+    route_name: str, 
+    ship_id: int
+):
+    nat = _nation_owner(interaction.user.id)
+    if not nat:
+        return await interaction.response.send_message("❌ You do not own a nation.", ephemeral=True)
+    
+    nid = nat["id"]
+
+    with db.cursor() as c:
+        # 1. Check maximum trade routes cap (e.g., max 5 active routes per nation)
+        c.execute("SELECT COUNT(*) as cnt FROM trade_routes WHERE nation_id=%s", (nid,))
+        row = c.fetchone()
+        route_count = row["cnt"] if isinstance(row, dict) else row[0]
+        if route_count >= 5:
+            return await interaction.response.send_message(
+                "❌ You have reached your maximum limit of 5 trade routes!", ephemeral=True
+            )
+
+        # 2. Check for existing duplicate route
+        c.execute(
+            "SELECT id FROM trade_routes WHERE nation_id=%s AND from_cell=%s AND to_cell=%s",
+            (nid, from_cell, to_cell)
+        )
+        if c.fetchone():
+            return await interaction.response.send_message(
+                "❌ A trade route between these two provinces already exists!", ephemeral=True
+            )
+
+        # 3. Validate that the specified ship exists, belongs to nation, has cargo capacity, and is not already assigned
+        c.execute(
+            "SELECT u.id, b.stats_json FROM military_units u "
+            "JOIN unit_blueprints b ON u.blueprint_id = b.id "
+            "WHERE u.id=%s AND u.nation_id=%s AND b.unit_type='ship'",
+            (ship_id, nid)
+        )
+        ship = c.fetchone()
+        if not ship:
+            return await interaction.response.send_message(
+                "❌ Valid ship not found or does not belong to your nation.", ephemeral=True
+            )
+
+        # Check if ship is already assigned to another trade route
+        c.execute("SELECT id FROM trade_routes WHERE ship_id=%s", (ship_id,))
+        if c.fetchone():
+            return await interaction.response.send_message(
+                "❌ This ship is already assigned to another trade route!", ephemeral=True
+            )
+
+        # Read cargo capacity from ship's blueprint stats
+        stats = json.loads(ship["stats_json"]) if isinstance(ship["stats_json"], str) else ship["stats_json"]
+        cargo_capacity = stats.get("cargo", 0)
+
+        if cargo_capacity <= 0:
+            return await interaction.response.send_message(
+                "❌ This ship has 0 cargo capacity and cannot carry trade cargo!", ephemeral=True
+            )
+
+        # Income formula: Cargo * 2g / tick
+        income_per_tick = cargo_capacity * 2
+
+        # 4. Insert trade route with attached ship ID
+        c.execute(
+            "INSERT INTO trade_routes (nation_id, name, from_cell, to_cell, ship_id, income_per_tick) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (nid, route_name, from_cell, to_cell, ship_id, income_per_tick)
+        )
+
+    await interaction.response.send_message(
+        f"✅ Trade route **{route_name}** established using Ship #{ship_id}! "
+        f"Yielding **+{income_per_tick}g/month** (Cargo: {cargo_capacity})."
+    )
 
     @traderoute_grp.command(name="remove", description="Remove a trade route / Usun szlak")
-    @app_commands.describe(route_id="Route ID")
-    async def route_remove(self, interaction: discord.Interaction, route_id: int):
-        lang=_lang(interaction); nat=_nat_owner(str(interaction.user.id))
-        if not nat: await interaction.response.send_message(i18n.t(lang,"no_nation"),ephemeral=True); return
-        with db.cursor() as c:
-            c.execute("SELECT * FROM trade_routes WHERE id=? AND nation_id=?",(route_id,nat["id"])); r=c.fetchone()
-        if not r: await interaction.response.send_message(f"Route #{route_id} not found.",ephemeral=True); return
-        with db.cursor() as c: c.execute("UPDATE trade_routes SET active=0 WHERE id=?",(route_id,))
-        _log(nat["id"],"player",f"Removed trade route '{r['name']}' (#{route_id}).")
-        await interaction.response.send_message(f"🚫 Trade route **{r['name']}** removed.",ephemeral=True)
+async def traderoute_remove(self, interaction: discord.Interaction, route_id: int):
+    nat = _nation_owner(interaction.user.id)
+    if not nat:
+        return await interaction.response.send_message("❌ You do not own a nation.", ephemeral=True)
+    
+    nid = nat["id"]
+
+    with db.cursor() as c:
+        # 1. Fetch trade route to verify ownership and grab info
+        c.execute(
+            "SELECT id, name, ship_id FROM trade_routes WHERE id=%s AND nation_id=%s",
+            (route_id, nid)
+        )
+        route = c.fetchone()
+        if not route:
+            return await interaction.response.send_message(
+                "❌ Trade route not found or does not belong to your nation.", ephemeral=True
+            )
+
+        # Handle dict vs tuple cursors safely
+        route_name = route["name"] if isinstance(route, dict) else route[1]
+        ship_id = route["ship_id"] if isinstance(route, dict) else route[2]
+
+        # 2. Delete the route record
+        c.execute("DELETE FROM trade_routes WHERE id=%s AND nation_id=%s", (route_id, nid))
+
+    ship_msg = f" Ship **#{ship_id}** is now unassigned and available." if ship_id else ""
+    await interaction.response.send_message(
+        f"✅ Trade route **{route_name}** (ID: `{route_id}`) has been cancelled.{ship_msg}"
+    )
 
     @traderoute_grp.command(name="list", description="List your trade routes / Lista szlakow")
-    async def route_list(self, interaction: discord.Interaction):
-        lang=_lang(interaction); nat=_nat_owner(str(interaction.user.id))
-        if not nat: await interaction.response.send_message(i18n.t(lang,"no_nation"),ephemeral=True); return
-        with db.cursor() as c:
-            c.execute("SELECT * FROM trade_routes WHERE nation_id=? AND active=1 ORDER BY id",(nat["id"],)); routes=c.fetchall()
-        if not routes: await interaction.response.send_message("No active trade routes.",ephemeral=True); return
-        total_cargo = _total_cargo(nat["id"]); lines=[]; total_income=0.0
-        for r in routes:
-            pf=_prov_by_cell(r["from_cell_id"]); pt=_prov_by_cell(r["to_cell_id"])
-            fn=pf["name"] if pf and pf["name"] else f"Cell #{r['from_cell_id']}"
-            tn=pt["name"] if pt and pt["name"] else f"Cell #{r['to_cell_id']}"
-            cargo=0.0
-            for prov in [pf,pt]:
-                if not prov: continue
-                with db.cursor() as c:
-                    c.execute("SELECT u.quantity,b.stats_json FROM military_units u JOIN blueprints b ON u.blueprint_id=b.id WHERE u.province_id=? AND b.type='ship'",(prov["id"],)); ships=c.fetchall()
-                cargo+=sum(json.loads(s["stats_json"]).get("cargo",0)*s["quantity"] for s in ships)
-            income=cargo*2.0 if cargo>0 else 20.0; total_income+=income
-            lines.append(f"**#{r['id']} {r['name']}** — {fn} → {tn}\n  {income:.0f}g/tick"+( f" ({cargo:.0f} cargo)" if cargo>0 else " (flat 20g — no ships)"))
-        embed=discord.Embed(title=f"🚢 Trade Routes — {nat['flag'] or ''} {nat['name']}",description="\n\n".join(lines),color=discord.Color.blue())
-        embed.add_field(name="Total income",value=f"{total_income:.0f}g/tick",inline=True)
-        embed.add_field(name="Fleet cargo", value=f"{total_cargo:.0f}",        inline=True)
-        await interaction.response.send_message(embed=embed,ephemeral=True)
+async def traderoute_list(self, interaction: discord.Interaction):
+    nat = _nation_owner(interaction.user.id)
+    if not nat:
+        return await interaction.response.send_message("❌ You do not own a nation.", ephemeral=True)
+
+    nid = nat["id"]
+    with db.cursor() as c:
+        c.execute("SELECT id, name, from_cell, to_cell, ship_id, income_per_tick FROM trade_routes WHERE nation_id=%s", (nid,))
+        routes = c.fetchall()
+
+    if not routes:
+        return await interaction.response.send_message("ℹ️ You currently have no active trade routes.", ephemeral=True)
+
+    embed = discord.Embed(title=f"📜 Trade Routes — {nat['name']}", color=discord.Color.gold())
+    
+    for r in routes:
+        r_id = r["id"] if isinstance(r, dict) else r[0]
+        r_name = r["name"] if isinstance(r, dict) else r[1]
+        from_c = r["from_cell"] if isinstance(r, dict) else r[2]
+        to_c = r["to_cell"] if isinstance(r, dict) else r[3]
+        s_id = r["ship_id"] if isinstance(r, dict) else r[4]
+        income = r["income_per_tick"] if isinstance(r, dict) else r[5]
+
+        embed.add_field(
+            name=f"ID `{r_id}`: {r_name}",
+            value=f"• **From:** Cell {from_c} ➔ **To:** Cell {to_c}\n"
+                  f"• **Ship Assigned:** #{s_id}\n"
+                  f"• **Income:** +{income}g/month",
+            inline=False
+        )
+
+    await interaction.response.send_message(embed=embed)
 
     # ---- COLONIES ----
 
