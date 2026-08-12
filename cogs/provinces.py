@@ -86,14 +86,26 @@ def _get_nation(name: str):
         return cur.fetchone()
 
 async def _fetch_json(source: str, attachment: discord.Attachment | None) -> dict:
-    """Load JSON from attachment bytes or a URL string."""
+    """Load JSON from attachment bytes or a URL string. Handles gzipped Azgaar .map files."""
+    import gzip
+
+    def _parse_bytes(raw: bytes) -> dict:
+        # Try gzip first (newer Azgaar .map files are gzipped)
+        try:
+            raw = gzip.decompress(raw)
+        except (gzip.BadGzipFile, OSError):
+            pass  # Not gzipped, use as-is
+        return json.loads(raw.decode("utf-8"))
+
     if attachment:
         raw = await attachment.read()
-        return json.loads(raw.decode("utf-8"))
+        return _parse_bytes(raw)
+
     async with aiohttp.ClientSession() as session:
-        async with session.get(source) as resp:
+        async with session.get(source, headers={"User-Agent": "WargameBot/1.0"}) as resp:
             resp.raise_for_status()
-            return await resp.json(content_type=None)
+            raw = await resp.read()
+            return _parse_bytes(raw)
 
 def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
     """
