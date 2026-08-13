@@ -120,8 +120,24 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
     if not cells_raw:
         return [], "Could not find 'cells' in the export. Make sure you exported Full Data (not SVG only)."
 
-    biomes = pack.get("biomes", {})
-    biome_names = biomes.get("name", [])
+    if isinstance(data, dict):
+        pack = data.get("pack", data)
+    else:
+        pack = {}
+      
+    biomes_raw = pack.get("biomes", {})
+    biome_names = []
+
+    if isinstance(biomes_raw, dict):
+        biome_names = biomes_raw.get("name", [])
+    elif isinstance(biomes_raw, list):
+        for b in biomes_raw:
+            if isinstance(b, dict):
+                biome_names.append(b.get("name", "unknown"))
+            elif isinstance(b, str):
+                biome_names.append(b)
+            else:
+                biome_names.append("unknown")
 
     burg_cell: dict[int, str] = {}
     for burg in pack.get("burgs", []):
