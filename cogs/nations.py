@@ -153,7 +153,13 @@ class NationCog(commands.Cog):
                 value="\n".join(f"{k.capitalize()}: {v}" for k, v in resources.items()),
                 inline=True,
             )
-        embed.set_footer(text=f"Founded: {nation['created_at'][:10]}")
+        created_at = nation["created_at"]
+        if hasattr(created_at, "strftime"):
+            created_str = created_at.strftime("%Y-%m-%d")
+        else:
+            created_str = str(created_at)[:10]
+        
+        embed.set_footer(text=f"Founded: {created_str}")
         await interaction.response.send_message(embed=embed)
 
     # ------------------------------------------------------------------ /nation history
@@ -208,7 +214,7 @@ class NationCog(commands.Cog):
 
         total_pages = max(1, (total + per_page - 1) // per_page)
         lines = [
-            f"`{r['timestamp'][:10]}` [{r['source'].upper()}] {r['entry_text']}"
+            f"`{r['timestamp'].strftime('%Y-%m-%d') if hasattr(r['timestamp'], 'strftime') else str(r['timestamp'])[:10]}` [{r['source'].upper()}] {r['entry_text']}"
             for r in rows
         ]
 
