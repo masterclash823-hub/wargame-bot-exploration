@@ -101,8 +101,16 @@ async def _maybe_announce(bot, nation_name: str, tier: int):
 def _run_drift():
     """
     Apply +DRIFT_PER_DAY to each tech category for every nation.
-    Returns list of (nation_id, nation_name, category, old, new) for tier crossings.
+    Guaranteed to run at most once per 24 hours.
     """
+    # 1. Check when drift last ran
+    last_run_str = _cfg("last_tech_drift", "0")
+    now_ts = datetime.now(timezone.utc).timestamp()
+    
+    # If 24 hours (86400 seconds) have not passed since last drift, skip
+    if now_ts - float(last_run_str) < 86400:
+        return []
+
     with db.cursor() as c:
         c.execute("SELECT * FROM nations")
         nations = c.fetchall()
@@ -120,12 +128,22 @@ def _run_drift():
             changed = True
             for tier in _tier_crossed(old, new):
                 crossings.append((nat["id"], nat["name"], cat, old, new, tier))
+        
         if changed:
             with db.cursor() as c:
                 c.execute(
                     "UPDATE nations SET tech_json=? WHERE id=?",
                     (json.dumps(tech), nat["id"])
                 )
+
+    # 2. Record successful drift timestamp in game_config
+    with db.cursor() as c:
+        c.execute(
+            "INSERT INTO game_config (key, value) VALUES ('last_tech_drift', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (str(now_ts),)
+        )
+
     return crossings
 
 
@@ -137,19 +155,17 @@ class TechCog(commands.Cog):
     def cog_unload(self):
         self.drift_loop.cancel()
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=1)
     async def drift_loop(self):
-        print("[TECH] Running daily drift...", flush=True)
         try:
             crossings = await self.bot.loop.run_in_executor(None, _run_drift)
+            if crossings:
+                print(f"[TECH] Daily drift executed. {len(crossings)} tier crossing(s).", flush=True)
             for nid, nname, cat, old, new, tier in crossings:
-                # Private history log — full details
                 _log(nid, "system",
                      f"Tech milestone: {cat.capitalize()} reached tier {tier} "
                      f"(was {old:.1f}, now {new:.1f}).")
-                # Public announcement — chance-based, no details
                 await _maybe_announce(self.bot, nname, tier)
-            print(f"[TECH] Drift complete. {len(crossings)} tier crossing(s).", flush=True)
         except Exception as e:
             import traceback
             print(f"[TECH ERROR] {e}", flush=True)
