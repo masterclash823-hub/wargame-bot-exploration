@@ -60,6 +60,7 @@ class NationCog(commands.Cog):
     @nation_group.command(name="found", description="Found your nation / Zaloz swoj narod")
     @app_commands.describe(
         name="Nation name / Nazwa narodu",
+        history="Brief lore or history of your nation / Historia narodu",
         flag="Flag emoji or URL / Emoji flagi lub URL",
         government="Government type / Typ rzadu",
     )
@@ -67,10 +68,20 @@ class NationCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         name: str,
+        history: str,
         flag: str = "",
         government: str = "Monarchy",
     ):
         lang = _lang(interaction)
+
+        # Validate that history isn't just empty spaces
+        clean_history = history.strip()
+        if not clean_history:
+            await interaction.response.send_message(
+                "You must provide a brief history/lore to found a nation.",
+                ephemeral=True,
+            )
+            return
 
         if _get_by_owner(str(interaction.user.id)):
             existing = _get_by_owner(str(interaction.user.id))
@@ -101,13 +112,19 @@ class NationCog(commands.Cog):
         except Exception as e:
             print(f"[MILITARY] Blueprint seed failed: {e}", flush=True)
 
+        # 1. Log system foundation entry
         _log(nation_id, "system", i18n.t("en", "history_founded", nation=name))
+
+        # 2. Log required lore entry (appears in /nation history)
+        _log(nation_id, "lore", clean_history)
 
         embed = discord.Embed(
             title=i18n.t(lang, "nation_founded_title"),
             description=i18n.t(lang, "nation_founded_desc", name=name, flag=flag, government=government),
             color=discord.Color.green(),
         )
+        embed.add_field(name="History / Lore", value=clean_history, inline=False)
+
         await interaction.response.send_message(embed=embed)
 
     # ------------------------------------------------------------------ /nation stats
