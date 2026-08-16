@@ -142,6 +142,14 @@ class NationCog(commands.Cog):
         tech = json.loads(nation["tech_json"])
         resources = json.loads(nation["resources_json"])
         flag = nation["flag"] or ""
+        is_url = flag.startswith("http://") or flag.startswith("https://")
+        
+        embed = discord.Embed(
+            title=f"{flag if not is_url else ''} {nation['name']}".strip(),
+            color=discord.Color.blue(),
+        )
+        if is_url:
+            embed.set_thumbnail(url=flag)
 
         stab = nation["stability"]
         if stab >= 80:   stab_str = f"✅ {stab:.0f}/100 (Stable)"
