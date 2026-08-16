@@ -74,7 +74,6 @@ class NationCog(commands.Cog):
     ):
         lang = _lang(interaction)
 
-        # Validate that history isn't just empty spaces
         clean_history = history.strip()
         if not clean_history:
             await interaction.response.send_message(
@@ -98,12 +97,14 @@ class NationCog(commands.Cog):
             )
             return
 
+        # Execute INSERT and retrieve the newly generated ID via RETURNING id
         with db.cursor() as cur:
             cur.execute(
-                "INSERT INTO nations (owner_id, name, flag, government_type) VALUES (?, ?, ?, ?)",
+                "INSERT INTO nations (owner_id, name, flag, government_type) VALUES (?, ?, ?, ?) RETURNING id",
                 (str(interaction.user.id), name, flag, government),
             )
-            nation_id = cur.lastrowid
+            row = cur.fetchone()
+            nation_id = row[0] if isinstance(row, (tuple, list)) else row["id"]
 
         # Seed default blueprints into the new nation
         try:
@@ -112,10 +113,10 @@ class NationCog(commands.Cog):
         except Exception as e:
             print(f"[MILITARY] Blueprint seed failed: {e}", flush=True)
 
-        # 1. Log system foundation entry
+        # Log default foundation entry
         _log(nation_id, "system", i18n.t("en", "history_founded", nation=name))
 
-        # 2. Log required lore entry (appears in /nation history)
+        # Log required lore entry
         _log(nation_id, "lore", clean_history)
 
         embed = discord.Embed(
