@@ -162,7 +162,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
             coastal   = bool(cell.get("haven", 0))
             
             # Multiply population by 10,000
-            pop       = int(cell.get("pop", 0)) * 10000
+            pop       = int(cell.get("pop", 0)) * 100
             
             terrain   = _terrain_label(height, bname)
             resources = _biome_resources(bname, height, has_river, coastal)
