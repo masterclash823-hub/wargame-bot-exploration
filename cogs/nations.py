@@ -139,13 +139,24 @@ class NationCog(commands.Cog):
             await interaction.response.send_message(i18n.t(lang, "nation_not_found"), ephemeral=True)
             return
 
+        # Calculate dynamic population from owned provinces
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(SUM(population), 0) AS total_pop FROM provinces WHERE owner_nation_id = ?",
+                (nation["id"],)
+            )
+            row = cur.fetchone()
+            total_population = row["total_pop"] if isinstance(row, dict) else row[0]
+
         tech = json.loads(nation["tech_json"])
         resources = json.loads(nation["resources_json"])
-        flag = nation["flag"] or ""
+        flag = (nation["flag"] or "").strip()
         is_url = flag.startswith("http://") or flag.startswith("https://")
         
+        display_title = f"{flag} {nation['name']}".strip() if not is_url else nation["name"]
+
         embed = discord.Embed(
-            title=f"{flag if not is_url else ''} {nation['name']}".strip(),
+            title=display_title,
             color=discord.Color.blue(),
         )
         if is_url:
@@ -157,17 +168,14 @@ class NationCog(commands.Cog):
         elif stab >= 40: stab_str = f"🟠 {stab:.0f}/100 (Unstable)"
         else:            stab_str = f"🔴 {stab:.0f}/100 (Crisis)"
 
-        embed = discord.Embed(
-            title=f"{flag}  {nation['name']}".strip(),
-            color=discord.Color.blue(),
-        )
         embed.add_field(name="Government",  value=nation["government_type"],         inline=True)
         embed.add_field(name="Treasury",    value=f"{nation['treasury']:.0f} gold",  inline=True)
         embed.add_field(name="Stability",   value=stab_str,                          inline=True)
-        embed.add_field(name="Population",  value=f"{nation['population']:,}",       inline=True)
-        # Stability production modifier
+        embed.add_field(name="Population",  value=f"{total_population:,}",           inline=True)
+        
         stab_mod = 0.75 + (stab / 100.0) * 0.25
         embed.add_field(name="Production",  value=f"×{stab_mod:.2f} (stability)",   inline=True)
+        
         embed.add_field(
             name="Tech Levels",
             value="\n".join(f"{k.capitalize()}: {v:.1f}" for k, v in tech.items()),
