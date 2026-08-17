@@ -147,54 +147,60 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
     provinces = []
 
     # --- Format A: cells is a LIST of cell objects ---
-    if isinstance(cells_raw, list):
-        for cell in cells_raw:
-            if not isinstance(cell, dict):
-                continue
-            cid       = cell.get("i")
-            if cid is None:
-                continue
-            cid       = int(cid)
-            bi        = int(cell.get("biome", 0))
-            bname     = biome_names[bi] if bi < len(biome_names) else "unknown"
-            height    = int(cell.get("h", 0))
-            has_river = bool(cell.get("r", 0))
-            coastal   = bool(cell.get("haven", 0))
-            pop       = int(cell.get("pop", 0))
-            terrain   = _terrain_label(height, bname)
-            resources = _biome_resources(bname, height, has_river, coastal)
-            name      = burg_cell.get(cid, "")
-            provinces.append({
-                "cell_id": cid, "name": name, "biome": bname,
-                "terrain": terrain, "resources": resources, "pop": pop,
-            })
+if isinstance(cells_raw, list):
+    for cell in cells_raw:
+        if not isinstance(cell, dict):
+            continue
+        cid       = cell.get("i")
+        if cid is None:
+            continue
+        cid       = int(cid)
+        bi        = int(cell.get("biome", 0))
+        bname     = biome_names[bi] if bi < len(biome_names) else "unknown"
+        height    = int(cell.get("h", 0))
+        has_river = bool(cell.get("r", 0))
+        coastal   = bool(cell.get("haven", 0))
+        
+        # Multiply population by 10,000
+        pop       = int(cell.get("pop", 0)) * 10000
+        
+        terrain   = _terrain_label(height, bname)
+        resources = _biome_resources(bname, height, has_river, coastal)
+        name      = burg_cell.get(cid, "")
+        provinces.append({
+            "cell_id": cid, "name": name, "biome": bname,
+            "terrain": terrain, "resources": resources, "pop": pop,
+        })
 
-    # --- Format B: cells is a DICT of parallel arrays ---
-    elif isinstance(cells_raw, dict):
-        cell_ids  = cells_raw.get("i", [])
-        if not cell_ids:
-            return [], "Cell ID array 'i' is empty or missing."
-        pops      = cells_raw.get("pop",   [0] * len(cell_ids))
-        biome_idx = cells_raw.get("biome", [0] * len(cell_ids))
-        heights   = cells_raw.get("h",     [0] * len(cell_ids))
-        rivers    = cells_raw.get("r",     [0] * len(cell_ids))
-        havens    = cells_raw.get("haven", [0] * len(cell_ids))
+# --- Format B: cells is a DICT of parallel arrays ---
+elif isinstance(cells_raw, dict):
+    cell_ids  = cells_raw.get("i", [])
+    if not cell_ids:
+        return [], "Cell ID array 'i' is empty or missing."
+    pops      = cells_raw.get("pop",   [0] * len(cell_ids))
+    biome_idx = cells_raw.get("biome", [0] * len(cell_ids))
+    heights   = cells_raw.get("h",     [0] * len(cell_ids))
+    rivers    = cells_raw.get("r",     [0] * len(cell_ids))
+    havens    = cells_raw.get("haven", [0] * len(cell_ids))
 
-        for idx, cid in enumerate(cell_ids):
-            cid       = int(cid)
-            bi        = int(biome_idx[idx]) if idx < len(biome_idx) else 0
-            bname     = biome_names[bi] if bi < len(biome_names) else "unknown"
-            height    = int(heights[idx]) if idx < len(heights) else 0
-            has_river = bool(rivers[idx])  if idx < len(rivers)  else False
-            coastal   = bool(havens[idx])  if idx < len(havens)  else False
-            pop       = int(pops[idx])     if idx < len(pops)     else 0
-            terrain   = _terrain_label(height, bname)
-            resources = _biome_resources(bname, height, has_river, coastal)
-            name      = burg_cell.get(cid, "")
-            provinces.append({
-                "cell_id": cid, "name": name, "biome": bname,
-                "terrain": terrain, "resources": resources, "pop": pop,
-            })
+    for idx, cid in enumerate(cell_ids):
+        cid       = int(cid)
+        bi        = int(biome_idx[idx]) if idx < len(biome_idx) else 0
+        bname     = biome_names[bi] if bi < len(biome_names) else "unknown"
+        height    = int(heights[idx]) if idx < len(heights) else 0
+        has_river = bool(rivers[idx])  if idx < len(rivers)  else False
+        coastal   = bool(havens[idx])  if idx < len(havens)  else False
+        
+        # Multiply population by 10,000
+        pop       = (int(pops[idx]) if idx < len(pops) else 0) * 10000
+        
+        terrain   = _terrain_label(height, bname)
+        resources = _biome_resources(bname, height, has_river, coastal)
+        name      = burg_cell.get(cid, "")
+        provinces.append({
+            "cell_id": cid, "name": name, "biome": bname,
+            "terrain": terrain, "resources": resources, "pop": pop,
+        })
     else:
         return [], f"Unexpected 'cells' type: {type(cells_raw).__name__}. Please share a snippet of your JSON so the parser can be adjusted."
 
