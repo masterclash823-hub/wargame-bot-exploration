@@ -50,15 +50,14 @@ def _biome_resources(biome_name: str, height: int, has_river: bool, coastal: boo
     # coastal adds nothing without a Fishing Wharf building — food is building-derived
     return {k: v for k, v in base.items() if v > 0}
 
-def _terrain_label(height: int, biome: str, coastal: bool = False) -> str:
-    if height > 70:                return "mountains"
-    if height > 50:                return "hills"
+def _terrain_label(height: int, biome: str) -> str:
+    if height > 70:               return "mountains"
+    if height > 50:               return "hills"
     if "forest"  in biome.lower(): return "forest"
     if "desert"  in biome.lower(): return "desert"
     if "wetland" in biome.lower(): return "wetland"
     if "tundra"  in biome.lower(): return "tundra"
     if "taiga"   in biome.lower(): return "taiga"
-    if coastal:                    return "coastal"
     return "plains"
 
 def _parse_ids(id_string: str) -> list[int]:
@@ -165,7 +164,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
             # Multiply population by 10,000
             pop       = int(cell.get("pop", 0)) * 100
             
-            terrain = _terrain_label(height, bname, coastal)
+            terrain = _terrain_label(height, bname)
             resources = _biome_resources(bname, height, has_river, coastal)
             name      = burg_cell.get(cid, "")
             provinces.append({
@@ -197,7 +196,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
             # Multiply population by 10,000
             pop       = (int(pops[idx]) if idx < len(pops) else 0) * 100
             
-            terrain   = _terrain_label(height, bname, coastal)
+            terrain   = _terrain_label(height, bname)
             resources = _biome_resources(bname, height, has_river, coastal)
             name      = burg_cell.get(cid, "")
             provinces.append({
