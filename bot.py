@@ -90,11 +90,11 @@ async def on_ready():
         for guild in bot.guilds:
             try:
                 tree.copy_global_to(guild=guild)
-                guild_synced = await tree.sync(guild=guild)
+                # guild_synced = await tree.sync(guild=guild)
                 print(f"[SYNC] Guild '{guild.name}': {len(guild_synced)} command(s): {[c.name for c in guild_synced]}", flush=True)
                 # Clear global after guild sync to avoid duplicates
                 tree.clear_commands(guild=None)
-                await tree.sync()
+                # await tree.sync()
                 print("[SYNC] Global commands cleared to prevent duplicates.", flush=True)
             except Exception as e:
                 print(f"[SYNC] Guild sync failed for {guild.name}: {e}", flush=True)
