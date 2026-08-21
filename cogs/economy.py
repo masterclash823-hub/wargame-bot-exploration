@@ -29,7 +29,7 @@ def _month_name(month: int, lang: str = "en") -> str:
 
 DEFAULT_BUILDINGS = [
     {"key":"farm",            "name":"Farm",            "tier":1,"cost":{"gold":100,"wood":50},                      "effect":{"food":10},                  "upkeep":{"gold":2}, "terrain":"plains,grassland",       "tech":0.0,"desc":"Food on plains/grassland."},
-    {"key":"fishing_wharf",   "name":"Fishing Wharf",   "tier":1,"cost":{"gold":80,"wood":60},                       "effect":{"food":8},                   "upkeep":{"gold":2}, "terrain":"coastal",                "tech":0.0,"desc":"Food on coastal provinces."},
+    {"key":"fishing_wharf",   "name":"Fishing Wharf",   "tier":1,"cost":{"gold":80,"wood":60},                       "effect":{"food":8},                   "upkeep":{"gold":2}, "terrain":"",                "tech":0.0,"desc":"Food on coastal provinces."},
     {"key":"plantation",      "name":"Plantation",      "tier":2,"cost":{"gold":150,"wood":40},                      "effect":{"food":6,"spices":2},        "upkeep":{"gold":3}, "terrain":"forest,jungle",          "tech":3.0,"desc":"Food+spices in tropical/forest provinces."},
     {"key":"pasture",         "name":"Pasture",          "tier":1,"cost":{"gold":60,"wood":20},                       "effect":{"food":5,"horses":1},        "upkeep":{"gold":1}, "terrain":"plains,grassland,hills", "tech":0.0,"desc":"Food+horses on open terrain."},
     {"key":"lumber_camp",     "name":"Lumber Camp",      "tier":1,"cost":{"gold":80},                                 "effect":{"wood":8},                   "upkeep":{"gold":1}, "terrain":"forest,taiga,tropical rainforest,temperate rainforest,temperate deciduous forest,tropical seasonal forest",           "tech":0.0,"desc":"Wood from forests."},
@@ -42,7 +42,7 @@ DEFAULT_BUILDINGS = [
     {"key":"textile_mill",    "name":"Textile Mill",     "tier":2,"cost":{"gold":150,"wood":40},                      "effect":{"cloth":6},                  "upkeep":{"gold":3}, "terrain":"",                       "tech":3.0,"desc":"Cloth. Requires tech 3."},
     {"key":"silk_workshop",   "name":"Silk Workshop",    "tier":2,"cost":{"gold":200,"wood":30,"cloth":20},           "effect":{"silk":3},                   "upkeep":{"gold":4}, "terrain":"plains,grassland",       "tech":3.0,"desc":"Silk production. Requires cloth. Tech 3."},
     {"key":"market",          "name":"Market",           "tier":1,"cost":{"gold":100,"wood":30},                      "effect":{"gold":15},                  "upkeep":{},         "terrain":"",                       "tech":0.0,"desc":"Gold income each tick."},
-    {"key":"port",            "name":"Port",             "tier":1,"cost":{"gold":150,"wood":80},                      "effect":{"gold":10},                  "upkeep":{"gold":2}, "terrain":"coastal",                "tech":0.0,"desc":"Trade gold on coastal provinces."},
+    {"key":"port",            "name":"Port",             "tier":1,"cost":{"gold":150,"wood":80},                      "effect":{"gold":10},                  "upkeep":{"gold":2}, "terrain":"",                "tech":0.0,"desc":"Trade gold on coastal provinces."},
     {"key":"fort",            "name":"Fort",             "tier":1,"cost":{"gold":200,"stone":80,"clay":40},           "effect":{},                           "upkeep":{"gold":5}, "terrain":"",                       "tech":0.0,"desc":"+1 fortification. Requires clay."},
     {"key":"university",      "name":"University",       "tier":3,"cost":{"gold":500,"stone":100,"wood":50,"clay":60},"effect":{"universal_knowledge":1},   "upkeep":{"gold":10},"terrain":"",                       "tech":5.0,"desc":"Universal Knowledge each tick. Requires clay. Tech 5."},
     {"key":"algae_farm",      "name":"Algae Farm",       "tier":3,"cost":{"gold":400,"wood":60},                      "effect":{"algae":1},                  "upkeep":{"gold":8}, "terrain":"coastal,wetland",        "tech":6.0,"desc":"Rare Algae. Requires tech 6."},
@@ -199,10 +199,10 @@ def _run_tick(months=1):
     _cfg_set("current_year",  year)
     summaries = []
     for nat in nations:
-        nid      = nat["id"]
-        res      = json.loads(nat["resources_json"])
-        treasury = nat["treasury"]
-        upkeep   = 0.0
+        nid       = nat["id"]
+        res       = json.loads(nat["resources_json"])
+        treasury  = nat["treasury"]
+        upkeep    = 0.0
         stability = nat["stability"]
 
         # Sync nation population from provinces
@@ -241,6 +241,59 @@ def _run_tick(months=1):
                     else:
                         res[k] = res.get(k, 0) + v * months * stab_mod
                 upkeep += json.loads(bd["upkeep_json"]).get("gold", 0) * months
+
+        # ---- MEGAPROJECTS (Yields processed BEFORE food consumption) ----
+        with db.cursor() as c:
+            c.execute(
+                "SELECT * FROM megaprojects WHERE nation_id=? AND status IN ('building','complete')",
+                (nid,)
+            )
+            mps = c.fetchall()
+        for mp in mps:
+            try:
+                eff = json.loads(mp["effect_json"]) if mp["effect_json"] else {}
+            except Exception:
+                eff = {}
+
+            # 1. Handle completed megaproject monthly output
+            if mp["status"] == "complete":
+                # Support nested resources_per_tick OR flat JSON structures (e.g. {"food": 500})
+                per_tick = eff.get("resources_per_tick", {})
+                if not per_tick and isinstance(eff, dict):
+                    # Exclude non-resource keys
+                    per_tick = {k: v for k, v in eff.items() if k not in ("gold", "gold_per_tick", "resources_per_tick")}
+
+                for k, v in per_tick.items():
+                    res[k] = res.get(k, 0) + v * months
+                
+                treasury += eff.get("gold_per_tick", eff.get("gold", 0)) * months
+
+            # 2. Handle ongoing megaproject construction
+            elif mp["status"] == "building" and mp["duration_months"] > 0:
+                new_spent = min(mp["months_spent"] + months, mp["duration_months"])
+                if new_spent >= mp["duration_months"]:
+                    with db.cursor() as c:
+                        c.execute(
+                            "UPDATE megaprojects SET status='complete', months_spent=?, "
+                            "completed_at=datetime('now') WHERE id=?",
+                            (new_spent, mp["id"])
+                        )
+                    _apply_mp_effect(nid, mp["effect_json"], mp["name"])
+                    
+                    # Refetch resources & treasury to catch instant payout changes from _apply_mp_effect
+                    with db.cursor() as c:
+                        c.execute("SELECT resources_json, treasury FROM nations WHERE id=?", (nid,))
+                        updated_nat = c.fetchone()
+                        if updated_nat:
+                            res = json.loads(updated_nat["resources_json"])
+                            treasury = updated_nat["treasury"]
+                else:
+                    with db.cursor() as c:
+                        c.execute(
+                            "UPDATE megaprojects SET months_spent=? WHERE id=?",
+                            (new_spent, mp["id"])
+                        )
+
         # Military upkeep
         try:
             from cogs.military import compute_military_upkeep
@@ -278,10 +331,10 @@ def _run_tick(months=1):
                 total_units = c.fetchone()["total"] or 0
 
             # Food needed: 1 per 100 pop + 1 per 10 military units, per month
-            food_for_pop     = (total_pop / 100.0) * months
-            food_for_military= (total_units / 10.0) * months
-            food_needed      = food_for_pop + food_for_military
-            food_have        = res.get("food", 0)
+            food_for_pop      = (total_pop / 100.0) * months
+            food_for_military = (total_units / 10.0) * months
+            food_needed       = food_for_pop + food_for_military
+            food_have         = res.get("food", 0)
 
             if food_needed <= 0:
                 pass  # no consumption needed
@@ -355,35 +408,6 @@ def _run_tick(months=1):
         if luxury_income > 0:
             treasury += luxury_income
 
-        # CLOTH: consumed when building military land units (handled in /military build)
-        # Here we just track — cloth upkeep is negligible and handled at build time
-        with db.cursor() as c:
-            c.execute(
-                "SELECT * FROM megaprojects WHERE nation_id=? AND status IN ('building','complete')",
-                (nid,)
-            )
-            mps = c.fetchall()
-        for mp in mps:
-            eff = json.loads(mp["effect_json"])
-            for k, v in eff.get("resources_per_tick", {}).items():
-                res[k] = res.get(k, 0) + v * months
-            treasury += eff.get("gold_per_tick", 0) * months
-            if mp["status"] == "building" and mp["duration_months"] > 0:
-                new_spent = min(mp["months_spent"] + months, mp["duration_months"])
-                if new_spent >= mp["duration_months"]:
-                    with db.cursor() as c:
-                        c.execute(
-                            "UPDATE megaprojects SET status='complete',months_spent=?,"
-                            "completed_at=datetime('now') WHERE id=?",
-                            (new_spent, mp["id"])
-                        )
-                    _apply_mp_effect(nid, mp["effect_json"], mp["name"])
-                else:
-                    with db.cursor() as c:
-                        c.execute(
-                            "UPDATE megaprojects SET months_spent=? WHERE id=?",
-                            (new_spent, mp["id"])
-                        )
         treasury = max(0.0, treasury - upkeep)
         with db.cursor() as c:
             c.execute(
