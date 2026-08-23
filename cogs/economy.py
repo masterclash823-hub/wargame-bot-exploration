@@ -606,14 +606,152 @@ GM_HELP_FIELDS = [
     ("/calendar set", "Configure calendar speed, channel, and start date."),
     ("/calendar start/stop", "Start or pause the calendar."),
 ]
+HELP_SECTIONS_PL = {
+    "general": {
+        "title": "📖 Ogólne",
+        "color": discord.Color.blurple(),
+        "fields": [
+            ("/help", "Przeglądaj komendy używając przycisków poniżej."),
+            ("/language", "Ustaw preferowany język odpowiedzi bota (en / pl)."),
+            ("/calendar status", "Sprawdź aktualną datę w grze."),
+            ("/activate <klucz>", "Aktywuj bota na tym serwerze (tylko GM)."),
+        ],
+    },
+    "nation": {
+        "title": "🏳️ Naród",
+        "color": discord.Color.blue(),
+        "fields": [
+            ("/nation found <nazwa>", "Załóż swój naród (wymaga historii założenia)."),
+            ("/nation stats [nazwa]", "Statystyki narodu. Puste = twój naród."),
+            ("/nation list", "Lista wszystkich narodów."),
+            ("/nation history <nazwa>", "Publiczna historia narodu."),
+            ("/nation delete <nazwa>", "[GM] Usuń naród z potwierdzeniem."),
+        ],
+    },
+    "province": {
+        "title": "🗺️ Prowincje",
+        "color": discord.Color.green(),
+        "fields": [
+            ("/province info <id>", "Szczegóły prowincji po ID komórki Azgaar."),
+            ("/province list <naród>", "Lista prowincji należących do narodu."),
+            ("/province yield [naród]", "Łączna produkcja zasobów ze wszystkich prowincji na tick."),
+        ],
+    },
+    "economy": {
+        "title": "💰 Gospodarka",
+        "color": discord.Color.gold(),
+        "fields": [
+            ("/resources", "Zasoby, skarbiec, status żywności i populacja."),
+            ("/build <id> <klucz>", "Wybuduj budynek w prowincji."),
+            ("/buildings list", "Lista wszystkich typów budynków z kosztami i efektami."),
+            ("/buildings province <id>", "Lista budynków w konkretnej prowincji."),
+            ("/megaproject propose", "Zaproponuj megaprojekt do zatwierdzenia przez GM."),
+            ("/megaproject build <id>", "Zapłać i rozpocznij zatwierdzony megaprojekt."),
+            ("/megaproject list", "Lista twoich megaprojektów."),
+            ("/tech status", "Poziomy technologii twojego narodu (prywatne)."),
+            ("/tech research <kategoria>", "Wydaj złoto + Powszechną Wiedzę aby rozwinąć technologię."),
+            ("Mechaniki zasobów",
+             "• **Żywność**: zużywana przez populację (1/100) + wojsko (1/10) na tick.\n"
+             "• **Jedwab + Przyprawy**: dochód luksusowy (1g/5 jednostek, max 50g/tick każdy).\n"
+             "• **Sukno**: zużywane przy budowie jednostek lądowych (1 na 5 jednostek).\n"
+             "• **Węgiel + Miedź**: wymagane do Młyna Prochowego i Ludwisarni.\n"
+             "• **Glina**: wymagana do budowy Fortu i Uniwersytetu.\n"
+             "• **Decay**: zapasy >500 tracą 2%/tick (oprócz żywności/złota/PW/alg)."),
+        ],
+    },
+    "trade": {
+        "title": "🤝 Handel",
+        "color": discord.Color.orange(),
+        "fields": [
+            ("/trade offer <naród>", "Zaproponuj handel (notatka publiczna + warunki prywatne)."),
+            ("/trade accept <id>", "Zaakceptuj ofertę handlową."),
+            ("/trade cancel <id>", "Anuluj lub odrzuć handel."),
+            ("/trade list", "Lista twoich oczekujących ofert handlowych."),
+            ("/trade view <id>", "Szczegóły transakcji (warunki prywatne widoczne dla stron i GM)."),
+        ],
+    },
+    "military": {
+        "title": "⚔️ Wojsko",
+        "color": discord.Color.dark_red(),
+        "fields": [
+            ("/blueprint design_ship <nazwa> <kadłub>", "Zaprojektuj okręt z interaktywnymi przyciskami modułów."),
+            ("/blueprint create_unit <nazwa> <typ>", "Utwórz projekt jednostki lądowej."),
+            ("/blueprint list", "Lista twoich projektów ze statystykami i utrzymaniem."),
+            ("/blueprint delete <id>", "Usuń projekt."),
+            ("/military build <id> <ilość> [id_komórki]", "Zbuduj jednostki. Bez id_komórki = pływające."),
+            ("/military list", "Twoje siły zbrojne — armia, marynarka i pływające (prywatne)."),
+            ("/military move <id_grupy> <id_komórki>", "Przypisz grupę jednostek do prowincji."),
+            ("/military unassign <id_grupy>", "Cofnij przydział grupy do puli pływającej."),
+            ("/military disband <id_grupy>", "Rozwiąż grupę jednostek na stałe."),
+        ],
+    },
+    "combat": {
+        "title": "🗡️ Bitwy i Dyplomacja",
+        "color": discord.Color.dark_orange(),
+        "fields": [
+            ("/battle plan", "Wyślij plan bitwy — lokalizacja (tekst), rozkazy, opcjonalne ID jednostek i URL mapy."),
+            ("/battle view <id>", "Szczegóły bitwy. Plany prywatne dla stron i GM."),
+            ("/diplomacy war <naród>", "Wypowiedz wojnę. Utrzymanie rośnie do ×3 natychmiast."),
+            ("/diplomacy peace <naród>", "Zawrzyj pokój z narodem z którym jesteś w stanie wojny."),
+            ("/diplomacy alliance <naród>", "Zaproponuj sojusz innemu narodowi."),
+            ("/diplomacy status", "Twoje relacje dyplomatyczne."),
+            ("/diplomacy public", "Mapa dyplomatyczna świata — wszystkie aktywne wojny i sojusze."),
+            ("/event list [naród]", "Lista opublikowanych eventów dla narodu."),
+        ],
+    },
+    "colonialism": {
+        "title": "🗺️ Kolonializm i Szlaki Handlowe",
+        "color": discord.Color.dark_green(),
+        "fields": [
+            ("/colony found <id> <nazwa>", "Załóż kolonię na niezajętej prowincji (koszt: złoto + ładowność floty)."),
+            ("/colony develop <id> <złoto>", "Zainwestuj złoto aby awansować kolonię."),
+            ("/colony list [naród]", "Lista wszystkich kolonii narodu."),
+            ("/colony view <id>", "Szczegóły kolonii z paskami postępu."),
+            ("/traderoute add <od> <do> <nazwa>", "Ustanów szlak handlowy. Dochód = ładowność statków ×2g/tick."),
+            ("/traderoute remove <id>", "Usuń szlak handlowy."),
+            ("/traderoute list", "Lista twoich szlaków handlowych i dochód na tick."),
+        ],
+    },
+}
 
+GM_HELP_FIELDS_PL = [
+    ("/nation history_add", "Dodaj ręcznie wpis do historii narodu."),
+    ("/nation delete <nazwa>", "Usuń naród z potwierdzeniem (prowincje zwolnione)."),
+    ("/province claim", "Przyznaj prowincje narodowi po ID komórek."),
+    ("/province unclaim", "Usuń własność prowincji."),
+    ("/admin map_import", "Importuj pełny eksport JSON z Azgaar."),
+    ("/admin map_resync", "Ponowny import zaktualizowanej mapy z zachowaniem własności."),
+    ("/admin map_export_markers", "Generuj skrypt JS z markerami zasobów do Azgaar."),
+    ("/admineco tick [miesiące]", "Ręcznie uruchom tick zasobów."),
+    ("/admineco grant", "Dodaj zasoby lub złoto do narodu (logowane)."),
+    ("/admineco starter_pack [naród|all]", "Daj zestaw startowy jednemu lub wszystkim narodom."),
+    ("/admineco tech_set", "Ustaw poziom technologii narodu bezpośrednio."),
+    ("/admineco mp_approve", "Zatwierdź megaprojekt z efektami, kosztem i czasem budowy."),
+    ("/admineco mp_advance", "Przyspiesz budowę megaprojektu o N miesięcy."),
+    ("/admineco building_set", "Edytuj definicję budynku na żywo."),
+    ("/admineco building_new", "Dodaj nowy typ budynku."),
+    ("/admineco relation_set", "Ustaw relację dyplomatyczną między narodami bezpośrednio."),
+    ("/colonymgr advance <id>", "Zatwierdź awans kolonii do następnego etapu."),
+    ("/colonymgr setback <id>", "Cofnij kolonię o etap."),
+    ("/event generate <naród>", "Generuj event AI na podstawie historii i statystyk narodu."),
+    ("/event edit <id> <tekst>", "Edytuj szkic eventu przed publikacją."),
+    ("/event effects <id> <json>", "Ustaw efekty statystyk dla eventu."),
+    ("/event post <id>", "Opublikuj event i zastosuj efekty."),
+    ("/battle plans_pending", "Lista wszystkich niedopasowanych planów bitew."),
+    ("/battle match <plan_atk> <plan_def>", "Dopasuj dwa plany — wybierz kto atakuje, kto broni."),
+    ("/battle resolve <id>", "Pobierz modyfikator AI i rozstrzygnij bitwę."),
+    ("/calendar set", "Skonfiguruj prędkość kalendarza, kanał i datę startową."),
+    ("/calendar start/stop", "Uruchom lub zatrzymaj kalendarz."),
+]
 class HelpView(discord.ui.View):
     PLAYER_KEYS = ["general", "nation", "province", "economy", "trade", "military", "combat", "colonialism"]
 
-    def __init__(self, is_gm: bool, current: str = "general"):
+    class HelpView(discord.ui.View):
+    def __init__(self, is_gm: bool, current: str = "general", lang: str = "en"):
         super().__init__(timeout=180)
         self.is_gm   = is_gm
         self.current = current
+        self.lang    = lang
         self._build()
 
     def _build(self):
@@ -649,12 +787,17 @@ class HelpView(discord.ui.View):
         return callback
 
     def _embed(self) -> discord.Embed:
+        sections = HELP_SECTIONS_PL if self.lang == "pl" else HELP_SECTIONS
+        gm_fields = GM_HELP_FIELDS_PL if self.lang == "pl" else GM_HELP_FIELDS
         if self.current == "gm":
-            e = discord.Embed(title="🔐 GM Commands", color=discord.Color.red())
-            for name, value in GM_HELP_FIELDS:
+            e = discord.Embed(
+                title="🔐 Komendy GM" if self.lang == "pl" else "🔐 GM Commands",
+                color=discord.Color.red()
+            )
+            for name, value in gm_fields:
                 e.add_field(name=name, value=value, inline=False)
             return e
-        data = HELP_SECTIONS[self.current]
+        data = sections[self.current]
         e = discord.Embed(title=data["title"], color=data["color"])
         for name, value in data["fields"]:
             e.add_field(name=name, value=value, inline=False)
