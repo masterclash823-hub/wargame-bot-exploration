@@ -169,7 +169,8 @@ async def help_cmd(interaction: discord.Interaction):
         is_gm = bool(interaction.guild) and any(
             r.name == config.GM_ROLE_NAME for r in interaction.user.roles
         )
-        view  = HelpView(is_gm=is_gm, current="general")
+        lang  = i18n.get_user_language(interaction.user.id)
+        view  = HelpView(is_gm=is_gm, current="general", lang=lang)
         embed = view._embed()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     except Exception as e:
