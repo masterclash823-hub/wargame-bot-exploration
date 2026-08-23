@@ -47,7 +47,26 @@ DEFAULT_BUILDINGS = [
     {"key":"university",      "name":"University",       "tier":3,"cost":{"gold":500,"stone":100,"wood":50,"clay":60},"effect":{"universal_knowledge":1},   "upkeep":{"gold":10},"terrain":"",                       "tech":5.0,"desc":"Universal Knowledge each tick. Requires clay. Tech 5."},
     {"key":"algae_farm",      "name":"Algae Farm",       "tier":3,"cost":{"gold":400,"wood":60},                      "effect":{"algae":1},                  "upkeep":{"gold":8}, "terrain":"coastal,wetland",        "tech":6.0,"desc":"Rare Algae. Requires tech 6."},
 ]
-
+BUILDING_TRANSLATIONS_PL = {
+    "farm":           ("Farma",           "Produkuje żywność na równinach i trawiastych terenach."),
+    "fishing_wharf":  ("Przystań Rybacka","Produkuje żywność w prowincjach przybrzeżnych."),
+    "plantation":     ("Plantacja",       "Żywność i przyprawy w tropikalnych/leśnych prowincjach."),
+    "pasture":        ("Pastwisko",       "Żywność i konie na otwartym terenie."),
+    "lumber_camp":    ("Obóz Drwali",     "Drewno z lasów i tajgi."),
+    "mine":           ("Kopalnia",        "Żelazo, kamień i węgiel z wzgórz i gór."),
+    "copper_mine":    ("Kopalnia Miedzi", "Miedź z wzgórz i gór."),
+    "clay_pit":       ("Glinianka",       "Glina z mokradeł i równin."),
+    "tar_works":      ("Smolarnia",       "Smoła z lasów i mokradeł."),
+    "powder_mill":    ("Młyn Prochowy",   "Proch. Wymaga węgla+miedzi+żelaza. Tech 4."),
+    "cannon_foundry": ("Ludwisarnia",     "Więcej prochu, zużywa żelazo. Wymaga węgla+miedzi. Tech 4."),
+    "textile_mill":   ("Tkacalnia",       "Sukno. Wymaga tech 3."),
+    "silk_workshop":  ("Warsztat Jedwabiu","Produkcja jedwabiu. Wymaga sukna. Tech 3."),
+    "market":         ("Rynek",           "Dochód złota każdy tick."),
+    "port":           ("Port",            "Złoto handlowe w prowincjach przybrzeżnych."),
+    "fort":           ("Fort",            "+1 fortyfikacja. Wymaga gliny."),
+    "university":     ("Uniwersytet",     "Powszechna Wiedza każdy tick. Wymaga gliny. Tech 5."),
+    "algae_farm":     ("Farma Alg",       "Rzadkie Algi. Wymaga tech 6."),
+}
 # ---------------------------------------------------------------------------
 # Pure helper functions (no discord imports needed)
 # ---------------------------------------------------------------------------
@@ -914,15 +933,31 @@ class EconomyCog(commands.Cog):
             c.execute("SELECT * FROM building_defs ORDER BY tier, name")
             rows = c.fetchall()
         pages = []
-        cur_embed = discord.Embed(title="🏗️ Available Buildings (1/…)", color=discord.Color.blue())
+        lang = _lang(interaction)
+        title_base = "🏗️ Dostępne Budynki" if lang == "pl" else "🏗️ Available Buildings"
+        cur_embed = discord.Embed(
+                    title=f"{title_base} ({len(pages)+1}/…)",
+                    color=discord.Color.blue(),
+                )
         for i, b in enumerate(rows):
             cost_str = ", ".join(f"{v} {k}" for k, v in json.loads(b["cost_json"]).items())
             eff_str  = ", ".join(f"+{v} {k}/tick" for k, v in json.loads(b["effect_json"]).items()) or "special"
             terrain  = b["requires_terrain"] or "any"
             tech     = f" | Tech≥{b['requires_tech']}" if b["requires_tech"] > 0 else ""
+            lang = _lang(interaction)
+            if lang == "pl" and b["key"] in BUILDING_TRANSLATIONS_PL:
+                bname, bdesc = BUILDING_TRANSLATIONS_PL[b["key"]]
+            else:
+                bname, bdesc = b["name"], b["description"]
+            terrain_label = "dowolny" if terrain == "any" and lang == "pl" else terrain
             cur_embed.add_field(
-                name=f"T{b['tier']} `{b['key']}` — {b['name']}",
-                value=f"{b['description']}\nCost: {cost_str} | Terrain: {terrain}{tech}\nProduces: {eff_str}",
+                name=f"T{b['tier']} `{b['key']}` — {bname}",
+                value=(
+                    f"{bdesc}\n"
+                    f"{'Koszt' if lang=='pl' else 'Cost'}: {cost_str} | "
+                    f"{'Teren' if lang=='pl' else 'Terrain'}: {terrain_label}{tech}\n"
+                    f"{'Produkuje' if lang=='pl' else 'Produces'}: {eff_str}"
+                ),
                 inline=False,
             )
             if (i + 1) % 5 == 0:
@@ -934,7 +969,7 @@ class EconomyCog(commands.Cog):
         if cur_embed.fields:
             pages.append(cur_embed)
         for idx, p in enumerate(pages):
-            p.title = f"🏗️ Available Buildings ({idx+1}/{len(pages)})"
+            p.title = f"{title_base} ({idx+1}/{len(pages)})"
         view = PageView(pages)
         await interaction.response.send_message(embed=pages[0], view=view, ephemeral=True)
 
