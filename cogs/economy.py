@@ -746,7 +746,6 @@ GM_HELP_FIELDS_PL = [
 class HelpView(discord.ui.View):
     PLAYER_KEYS = ["general", "nation", "province", "economy", "trade", "military", "combat", "colonialism"]
 
-    class HelpView(discord.ui.View):
     def __init__(self, is_gm: bool, current: str = "general", lang: str = "en"):
         super().__init__(timeout=180)
         self.is_gm   = is_gm
