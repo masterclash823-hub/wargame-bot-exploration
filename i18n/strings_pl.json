@@ -187,4 +187,17 @@
   "nation_delete_confirm_title": "⚠️ Potwierdz Usuniecie Narodu",
   "nation_delete_confirm_desc": "Spowoduje to trwale usuniecie **{nation}** i zwolnienie wszystkich ich prowincji.\nJednostki wojskowe, projekty, historia i megaprojekty takze zostana usuniete.\n\n**Tej operacji nie mozna cofnac.**",
   "nation_deleted": "🗑️ Narod **{nation}** usuniety. Prowincje zwolnione."
+  "unit_militia":         "Milicja",
+  "unit_pikemen":         "Pikinierzy",
+  "unit_musketeers":      "Muszkieterzy",
+  "unit_dragoons":        "Dragoni",
+  "unit_field_cannon":    "Armata Polowa",
+  "unit_cuirassiers":     "Kirasjerzy",
+  "unit_siege_artillery": "Artyleria Oblężnicza",
+  "unit_upkeep_peace":    "Utrzymanie (pokój)",
+  "unit_upkeep_war":      "Utrzymanie (wojna)",
+  "blueprint_created":    "Projekt Utworzony",
+  "blueprint_type":       "Typ",
+  "blueprint_stats":      "ATK/OBR/HP",
+  "blueprint_upkeep_note":"Utrzymanie: {peace:.0f}g/jednostkę (pokój) / {war:.0f}g (wojna)"
 }
