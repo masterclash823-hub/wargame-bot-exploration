@@ -41,13 +41,13 @@ MODULES = {
 }
 
 LAND_UNITS = {
-    "militia":        {"name":"Militia",        "attack":5, "defense":4, "hp":50,"speed":2,"cost":{"gold":30},                          "requires_tech":0.0,"peace_upkeep":1.0,"desc":"Cheap defence only."},
-    "pikemen":        {"name":"Pikemen",        "attack":10,"defense":8, "hp":70,"speed":2,"cost":{"gold":60,"iron":5},                 "requires_tech":1.0,"peace_upkeep":2.0,"desc":"Anti-cavalry, reliable."},
-    "musketeers":     {"name":"Musketeers",     "attack":18,"defense":6, "hp":65,"speed":2,"cost":{"gold":100,"iron":10,"gunpowder":5}, "requires_tech":2.0,"peace_upkeep":3.0,"desc":"Core ranged infantry."},
-    "dragoons":       {"name":"Dragoons",       "attack":20,"defense":10,"hp":80,"speed":4,"cost":{"gold":150,"horses":5},              "requires_tech":3.0,"peace_upkeep":4.0,"desc":"Mobile cavalry."},
-    "field_cannon":   {"name":"Field Cannon",   "attack":35,"defense":3, "hp":60,"speed":1,"cost":{"gold":200,"iron":30,"gunpowder":15},"requires_tech":3.0,"peace_upkeep":5.0,"desc":"Heavy artillery."},
-    "cuirassiers":    {"name":"Cuirassiers",    "attack":28,"defense":16,"hp":100,"speed":4,"cost":{"gold":250,"horses":8,"iron":20},   "requires_tech":4.0,"peace_upkeep":6.0,"desc":"Elite heavy cavalry."},
-    "siege_artillery":{"name":"Siege Artillery","attack":50,"defense":2, "hp":50,"speed":1,"cost":{"gold":300,"iron":50,"gunpowder":25},"requires_tech":5.0,"peace_upkeep":8.0,"desc":"Fortress breaker."},
+    "militia":        {"name":"Militia",        "attack":5, "defense":4, "hp":50,"speed":2,"cost":{"gold":10},                          "requires_tech":0.0,"peace_upkeep":1.0,"desc":"Cheap defence only."},
+    "pikemen":        {"name":"Pikemen",        "attack":10,"defense":8, "hp":70,"speed":2,"cost":{"gold":20,"iron":3},                 "requires_tech":1.0,"peace_upkeep":2.0,"desc":"Anti-cavalry, reliable."},
+    "musketeers":     {"name":"Musketeers",     "attack":18,"defense":6, "hp":65,"speed":2,"cost":{"gold":30,"iron":5,"gunpowder":3},   "requires_tech":2.0,"peace_upkeep":3.0,"desc":"Core ranged infantry."},
+    "dragoons":       {"name":"Dragoons",       "attack":20,"defense":10,"hp":80,"speed":4,"cost":{"gold":40,"horses":3},               "requires_tech":3.0,"peace_upkeep":4.0,"desc":"Mobile cavalry."},
+    "field_cannon":   {"name":"Field Cannon",   "attack":35,"defense":3, "hp":60,"speed":1,"cost":{"gold":60,"iron":15,"gunpowder":8},  "requires_tech":3.0,"peace_upkeep":5.0,"desc":"Heavy artillery."},
+    "cuirassiers":    {"name":"Cuirassiers",    "attack":28,"defense":16,"hp":100,"speed":4,"cost":{"gold":70,"horses":5,"iron":10},    "requires_tech":4.0,"peace_upkeep":6.0,"desc":"Elite heavy cavalry."},
+    "siege_artillery":{"name":"Siege Artillery","attack":50,"defense":2, "hp":50,"speed":1,"cost":{"gold":100,"iron":25,"gunpowder":12},"requires_tech":5.0,"peace_upkeep":8.0,"desc":"Fortress breaker."},
 }
 
 WAR_MULT = 3.0
@@ -341,13 +341,13 @@ class MilitaryCog(commands.Cog):
     @bp_grp.command(name="create_unit", description="Create a land unit blueprint")
     @app_commands.describe(name="Blueprint name", unit_type="Unit type")
     @app_commands.choices(unit_type=[
-        app_commands.Choice(name="Militia (tech 0) — ATK:5 DEF:4 HP:50",           value="militia"),
-        app_commands.Choice(name="Pikemen (tech 1) — ATK:10 DEF:8 HP:70",          value="pikemen"),
-        app_commands.Choice(name="Musketeers (tech 2) — ATK:18 DEF:6 HP:65",       value="musketeers"),
-        app_commands.Choice(name="Dragoons (tech 3) — ATK:20 DEF:10 HP:80",        value="dragoons"),
-        app_commands.Choice(name="Field Cannon (tech 3) — ATK:35 DEF:3 HP:60",     value="field_cannon"),
-        app_commands.Choice(name="Cuirassiers (tech 4) — ATK:28 DEF:16 HP:100",    value="cuirassiers"),
-        app_commands.Choice(name="Siege Artillery (tech 5) — ATK:50 DEF:2 HP:50",  value="siege_artillery"),
+        app_commands.Choice(name="Militia / Milicja (tech 0) — ATK:5 DEF:4 HP:50 | 10g",          value="militia"),
+        app_commands.Choice(name="Pikemen / Pikinierzy (tech 1) — ATK:10 DEF:8 HP:70 | 20g+żelazo", value="pikemen"),
+        app_commands.Choice(name="Musketeers / Muszkieterzy (tech 2) — ATK:18 DEF:6 | 30g+proch",  value="musketeers"),
+        app_commands.Choice(name="Dragoons / Dragoni (tech 3) — ATK:20 DEF:10 HP:80 | 40g+konie",  value="dragoons"),
+        app_commands.Choice(name="Field Cannon / Armata (tech 3) — ATK:35 DEF:3 HP:60 | 60g+proch",value="field_cannon"),
+        app_commands.Choice(name="Cuirassiers / Kirasjerzy (tech 4) — ATK:28 DEF:16 | 70g+konie",  value="cuirassiers"),
+        app_commands.Choice(name="Siege Artillery / Artyleria (tech 5) — ATK:50 DEF:2 | 100g",     value="siege_artillery"),
     ])
     async def create_unit(self, interaction: discord.Interaction,
                           name: str, unit_type: app_commands.Choice[str]):
@@ -373,10 +373,32 @@ class MilitaryCog(commands.Cog):
              f"Created unit blueprint '{name}' (#{bp_id}): {udata['name']} "
              f"ATK:{stats['attack']} DEF:{stats['defense']} HP:{stats['hp']}.")
         embed = discord.Embed(title=f"⚔️ Blueprint Created — {name}", color=discord.Color.dark_red())
-        embed.add_field(name="Type",         value=udata["name"],                        inline=True)
-        embed.add_field(name="ATK/DEF/HP",   value=f"{stats['attack']}/{stats['defense']}/{stats['hp']}", inline=True)
-        embed.add_field(name="Peace upkeep", value=f"{udata['peace_upkeep']:.0f}g/unit", inline=True)
-        embed.set_footer(text=f"Blueprint ID: {bp_id}")
+        pl = hasattr(interaction, 'locale') and interaction.locale and 'pl' in str(interaction.locale)
+        embed.add_field(
+            name="Typ" if pl else "Type",
+            value=i18n.t("pl", f"unit_{ukey}") if pl else udata["name"],
+            inline=True)
+        embed.add_field(
+            name="ATK/OBR/HP" if pl else "ATK/DEF/HP",
+            value=f"{stats['attack']}/{stats['defense']}/{stats['hp']}",
+            inline=True)
+        embed.add_field(
+            name="Utrzymanie (pokój)" if pl else "Peace upkeep",
+            value=f"{udata['peace_upkeep']:.0f}g/jedn." if pl else f"{udata['peace_upkeep']:.0f}g/unit",
+            inline=True)
+        cost_str = ", ".join(f"{v} {k}" for k, v in udata["cost"].items())
+        embed.add_field(
+            name="Koszt" if pl else "Cost",
+            value=cost_str,
+            inline=True)
+        embed.add_field(
+            name="Utrzymanie (wojna)" if pl else "War upkeep",
+            value=f"{udata['peace_upkeep']*WAR_MULT:.0f}g/jedn." if pl else f"{udata['peace_upkeep']*WAR_MULT:.0f}g/unit",
+            inline=True)
+        embed.set_footer(
+            text=f"ID projektu: {bp_id} — użyj /military build {bp_id} <ilość>" if pl
+            else f"Blueprint ID: {bp_id} — use /military build {bp_id} <qty> to train"
+        )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @bp_grp.command(name="delete", description="Delete a blueprint / Usun projekt")
