@@ -840,24 +840,25 @@ class EconomyCog(commands.Cog):
     @tasks.loop(minutes=1)
     async def calendar_loop(self):
         try:
+            # Check if calendar is active
             if _cfg("calendar_running", "0") != "1":
                 return
-            hpm      = float(_cfg("hours_per_month", "24"))
+            
+            hpm = float(_cfg("hours_per_month", "24"))
             last_str = _cfg("last_tick_ts")
             if not last_str:
                 print("[CALENDAR] No last_tick_ts set — run /calendar start", flush=True)
                 return
-            elapsed = (
-                datetime.now(timezone.utc) - datetime.fromisoformat(last_str)
-            ).total_seconds() / 3600
+
+            now_utc = datetime.now(timezone.utc)
+            elapsed = (now_utc - datetime.fromisoformat(last_str)).total_seconds() / 3600
             if elapsed < hpm:
                 return
 
             months = max(1, int(elapsed / hpm))
-            # Cap catch-up to 3 months max per loop to avoid announcement spam
-            # If offline longer, remaining months catch up on next loop iteration
+            # Cap catch-up to 3 months max per loop iteration
             months = min(months, 3)
-            _cfg_set("last_tick_ts", datetime.now(timezone.utc).isoformat())
+            
             print(f"[CALENDAR] {months} month(s) elapsed, running tick...", flush=True)
 
             ch_id = _cfg("announce_channel_id")
@@ -865,40 +866,45 @@ class EconomyCog(commands.Cog):
             ch = self.bot.get_channel(int(ch_id)) if ch_id else None
             print(f"[CALENDAR] Channel object: {ch}", flush=True)
 
+            # Process each month tick
             for i in range(months):
                 month, year, summaries = await asyncio.get_event_loop().run_in_executor(
                     None, lambda: _run_tick(1)
                 )
                 print(f"[CALENDAR] Month {month}/{year} ticked. Summaries: {summaries}", flush=True)
-                if not ch:
-                    print("[CALENDAR] No channel found — skipping announcement.", flush=True)
-                    continue
-                mname = _month_name(month, _lang(interaction) if hasattr(interaction, "locale") else "en")
-                embed = discord.Embed(
-                    title=f"📅 New Month: {mname}, Year {year}",
-                    description="A new month has begun. Nations have collected their income.",
-                    color=discord.Color.gold(),
-                )
-                if summaries:
-                    embed.add_field(
-                        name="⚙️ Resource Tick",
-                        value="\n".join(summaries[:20]),
-                        inline=False,
-                    )
-                try:
-                    await ch.send(embed=embed)
-                    print(f"[CALENDAR] Announcement sent to #{ch.name}", flush=True)
-                except Exception as send_err:
-                    print(f"[CALENDAR] Failed to send announcement: {send_err}", flush=True)
 
+                if ch:
+                    # FIX 1: Explicitly pass "en" or default locale instead of non-existent interaction variable
+                    mname = _month_name(month, "en") 
+                    embed = discord.Embed(
+                        title=f"📅 New Month: {mname}, Year {year}",
+                        description="A new month has begun. Nations have collected their income.",
+                        color=discord.Color.gold(),
+                    )
+                    if summaries:
+                        embed.add_field(
+                            name="⚙️ Resource Tick",
+                            value="\n".join(summaries[:20]),
+                            inline=False,
+                        )
+                    try:
+                        await ch.send(embed=embed)
+                        print(f"[CALENDAR] Announcement sent to #{ch.name}", flush=True)
+                    except Exception as send_err:
+                        print(f"[CALENDAR] Failed to send announcement: {send_err}", flush=True)
+                else:
+                    print("[CALENDAR] No channel found — skipping announcement.", flush=True)
+
+            # FIX 2: Only update last_tick_ts AFTER ticks complete successfully
+            _cfg_set("last_tick_ts", now_utc.isoformat())
+
+        except (psycopg2.OperationalError, psycopg2.DatabaseError) as db_err:
+            # FIX 3: Catch DB connection drops cleanly without printing massive stack trace
+            print(f"[CALENDAR WARNING] Temporary DB disconnect, retrying next minute: {db_err}", flush=True)
         except Exception as e:
             import traceback
             print(f"[CALENDAR ERROR] {e}", flush=True)
             traceback.print_exc()
-
-    @calendar_loop.before_loop
-    async def _before(self):
-        await self.bot.wait_until_ready()
 
     # ---- Command groups -------------------------------------------------
     buildings_grp = app_commands.Group(name="buildings",    description="Building commands / Budynki")
