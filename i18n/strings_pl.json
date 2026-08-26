@@ -186,7 +186,7 @@
 
   "nation_delete_confirm_title": "⚠️ Potwierdz Usuniecie Narodu",
   "nation_delete_confirm_desc": "Spowoduje to trwale usuniecie **{nation}** i zwolnienie wszystkich ich prowincji.\nJednostki wojskowe, projekty, historia i megaprojekty takze zostana usuniete.\n\n**Tej operacji nie mozna cofnac.**",
-  "nation_deleted": "🗑️ Narod **{nation}** usuniety. Prowincje zwolnione."
+  "nation_deleted": "🗑️ Narod **{nation}** usuniety. Prowincje zwolnione.",
   "unit_militia":         "Milicja",
   "unit_pikemen":         "Pikinierzy",
   "unit_musketeers":      "Muszkieterzy",
