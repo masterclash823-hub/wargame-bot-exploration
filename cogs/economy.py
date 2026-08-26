@@ -283,36 +283,59 @@ def _run_tick(months=1):
                     per_tick = {k: v for k, v in eff.items() if k not in ("gold", "gold_per_tick", "resources_per_tick")}
 
                 for k, v in per_tick.items():
-                    res[k] = res.get(k, 0) + v * months
+                    # Safeguard: Extract numeric value if v is a dictionary or string
+                    if isinstance(v, dict):
+                        val = v.get("amount", v.get("value", 0))
+                    else:
+                        val = v
+                    
+                    try:
+                        amount = float(val)
+                    except (ValueError, TypeError):
+                        amount = 0
+
+                    res[k] = res.get(k, 0) + (amount * months)
                 
-                treasury += eff.get("gold_per_tick", eff.get("gold", 0)) * months
+                # Safely extract gold/treasury output
+                gold_val = eff.get("gold_per_tick", eff.get("gold", 0))
+                if isinstance(gold_val, dict):
+                    gold_val = gold_val.get("amount", gold_val.get("value", 0))
+                try:
+                    gold_amount = float(gold_val)
+                except (ValueError, TypeError):
+                    gold_amount = 0
+
+                treasury += gold_amount * months
 
             # 2. Handle ongoing megaproject construction
-            elif mp["status"] == "building" and mp["duration_months"] > 0:
-                new_spent = min(mp["months_spent"] + months, mp["duration_months"])
+            elif mp["status"] == "building" and mp.get("duration_months", 0) > 0:
+                new_spent = min(mp.get("months_spent", 0) + months, mp["duration_months"])
                 if new_spent >= mp["duration_months"]:
                     with db.cursor() as c:
+                        # Fixed PostgreSQL placeholders (%s instead of ?)
                         c.execute(
-                            "UPDATE megaprojects SET status='complete', months_spent=?, "
-                            "completed_at=datetime('now') WHERE id=?",
+                            "UPDATE megaprojects SET status='complete', months_spent=%s, "
+                            "completed_at=NOW() WHERE id=%s",
                             (new_spent, mp["id"])
                         )
                     _apply_mp_effect(nid, mp["effect_json"], mp["name"])
                     
                     # Refetch resources & treasury to catch instant payout changes from _apply_mp_effect
                     with db.cursor() as c:
-                        c.execute("SELECT resources_json, treasury FROM nations WHERE id=?", (nid,))
+                        # Fixed PostgreSQL placeholders (%s instead of ?)
+                        c.execute("SELECT resources_json, treasury FROM nations WHERE id=%s", (nid,))
                         updated_nat = c.fetchone()
                         if updated_nat:
-                            res = json.loads(updated_nat["resources_json"])
+                            res_raw = updated_nat["resources_json"]
+                            res = json.loads(res_raw) if isinstance(res_raw, str) else res_raw
                             treasury = updated_nat["treasury"]
                 else:
                     with db.cursor() as c:
+                        # Fixed PostgreSQL placeholders (%s instead of ?)
                         c.execute(
-                            "UPDATE megaprojects SET months_spent=? WHERE id=?",
+                            "UPDATE megaprojects SET months_spent=%s WHERE id=%s",
                             (new_spent, mp["id"])
                         )
-
         # Military upkeep
         try:
             from cogs.military import compute_military_upkeep
