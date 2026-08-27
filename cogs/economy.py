@@ -876,36 +876,45 @@ class EconomyCog(commands.Cog):
                 )
                 print(f"[CALENDAR] Month {month}/{year} ticked. Summaries: {summaries}", flush=True)
 
-                if ch:
-                    mname = _month_name(month, "en") 
-                    embed = discord.Embed(
-                        title=f"📅 New Month: {mname}, Year {year}",
-                        description="A new month has begun. Nations have collected their income.",
-                        color=discord.Color.gold(),
-                    )
-                    if summaries:
-                        embed.add_field(
-                            name="⚙️ Resource Tick",
-                            value="\n".join(summaries[:20]),
-                            inline=False,
-                        )
-                    try:
-                        await ch.send(embed=embed)
-                        print(f"[CALENDAR] Announcement sent to #{ch.name}", flush=True)
-                    except Exception as send_err:
-                        print(f"[CALENDAR] Failed to send announcement: {send_err}", flush=True)
-                else:
+                if not ch:
                     print("[CALENDAR] No channel found — skipping announcement.", flush=True)
+                    continue
 
-            # Only update last_tick_ts AFTER ticks complete successfully
+                # Safely get language locale without relying on undefined interaction
+                lang = _lang(interaction) if "interaction" in locals() and hasattr(interaction, "locale") else "en"
+                mname = _month_name(month, lang)
+
+                # Original embed formatting
+                embed = discord.Embed(
+                    title=f"📅 New Month: {mname}, Year {year}",
+                    description="A new month has begun. Nations have collected their income.",
+                    color=discord.Color.gold(),
+                )
+                if summaries:
+                    embed.add_field(
+                        name="⚙️ Resource Tick",
+                        value="\n".join(summaries[:20]),
+                        inline=False,
+                    )
+                try:
+                    await ch.send(embed=embed)
+                    print(f"[CALENDAR] Announcement sent to #{ch.name}", flush=True)
+                except Exception as send_err:
+                    print(f"[CALENDAR] Failed to send announcement: {send_err}", flush=True)
+
+            # Update last_tick_ts after ticks succeed
             _cfg_set("last_tick_ts", now_utc.isoformat())
 
         except (psycopg2.OperationalError, psycopg2.DatabaseError, psycopg2.Error) as db_err:
-            print(f"[CALENDAR WARNING] Database connection error, retrying next minute: {db_err}", flush=True)
+            print(f"[CALENDAR WARNING] Temporary DB disconnect, retrying next cycle: {db_err}", flush=True)
         except Exception as e:
             import traceback
-            print(f"[CALENDAR ERROR] Unexpected loop error: {e}", flush=True)
+            print(f"[CALENDAR ERROR] {e}", flush=True)
             traceback.print_exc()
+
+    @calendar_loop.before_loop
+    async def _before(self):
+        await self.bot.wait_until_ready()
 
     # ---- Command groups -------------------------------------------------
     buildings_grp = app_commands.Group(name="buildings",    description="Building commands / Budynki")
