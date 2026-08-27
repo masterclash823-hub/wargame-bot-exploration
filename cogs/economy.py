@@ -2,6 +2,9 @@
 Economy cog: resources, buildings, calendar, megaprojects, trades, admineco.
 All slash commands use @app_commands.command or group subcommands — no hybrid.
 """
+import psycopg2
+import psycopg2.extras
+
 import json, asyncio
 from datetime import datetime, timezone
 
