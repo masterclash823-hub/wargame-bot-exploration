@@ -877,7 +877,6 @@ class EconomyCog(commands.Cog):
                 print(f"[CALENDAR] Month {month}/{year} ticked. Summaries: {summaries}", flush=True)
 
                 if ch:
-                    # FIX 1: Explicitly pass "en" or default locale instead of non-existent interaction variable
                     mname = _month_name(month, "en") 
                     embed = discord.Embed(
                         title=f"📅 New Month: {mname}, Year {year}",
@@ -898,15 +897,14 @@ class EconomyCog(commands.Cog):
                 else:
                     print("[CALENDAR] No channel found — skipping announcement.", flush=True)
 
-            # FIX 2: Only update last_tick_ts AFTER ticks complete successfully
+            # Only update last_tick_ts AFTER ticks complete successfully
             _cfg_set("last_tick_ts", now_utc.isoformat())
 
-        except (psycopg2.OperationalError, psycopg2.DatabaseError) as db_err:
-            # FIX 3: Catch DB connection drops cleanly without printing massive stack trace
-            print(f"[CALENDAR WARNING] Temporary DB disconnect, retrying next minute: {db_err}", flush=True)
+        except (psycopg2.OperationalError, psycopg2.DatabaseError, psycopg2.Error) as db_err:
+            print(f"[CALENDAR WARNING] Database connection error, retrying next minute: {db_err}", flush=True)
         except Exception as e:
             import traceback
-            print(f"[CALENDAR ERROR] {e}", flush=True)
+            print(f"[CALENDAR ERROR] Unexpected loop error: {e}", flush=True)
             traceback.print_exc()
 
     # ---- Command groups -------------------------------------------------
