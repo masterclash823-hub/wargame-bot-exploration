@@ -1271,7 +1271,7 @@ class EconomyCog(commands.Cog):
                 f"Estimated completion: **{mp['duration_months']}** in-game month(s).",
                 ephemeral=False)
 
-    @mp_grp.command(namelist", description="List youraprojects / Lista megaprojektow")
+    @mp_grp.command(name="list", description="List youraprojects / Lista megaprojektow")
     async def mp_list(self, interaction: discord.Interaction):
         lang  = _lang(interaction)
         is_gm = _gm(interaction)
