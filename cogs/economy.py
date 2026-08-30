@@ -1271,78 +1271,86 @@ class EconomyCog(commands.Cog):
                 f"Estimated completion: **{mp['duration_months']}** in-game month(s).",
                 ephemeral=False)
 
-    @mp_grp.command(name="list", description="List youraprojects / Lista megaprojektow")
+    @mp_grp.command(name="list", description="List your megaprojects / Lista megaprojektow")
     async def mp_list(self, interaction: discord.Interaction):
         lang  = _lang(interaction)
         is_gm = _gm(interaction)
         n     = _nation_owner(str(interaction.user.id))
+        
         with db.cursor() as c:
             if is_gm:
                 c.execute(
-                    "SELECT m.*,na.name as nname FROM megaprojects m"
-                    " JOIN nations na ON m.nation_id=na.id ORDER BY m.id DESC"
+                    "SELECT m.*, na.name as nname FROM megaprojects m "
+                    "JOIN nations na ON m.nation_id=na.id ORDER BY m.id DESC"
                 )
             elif n:
                 c.execute(
-                    "SELECT m.*,na.name as nname FROM megaprojects m"
-                    " JOIN nations na ON m.nation_id=na.id"
-                    " WHERE m.nation_id=? ORDER BY m.id DESC",
-                   n["id"],)
+                    "SELECT m.*, na.name as nname FROM megaprojects m "
+                    "JOIN nations na ON m.nation_id=na.id "
+                    "WHERE m.nation_id=%s ORDER BY m.id DESC",
+                    (n["id"],)
                 )
             else:
                 await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
                 return
             rows = c.fetchall()
-        if not rows:
-            interaction.response.send_message("No megaprojects found.", ephemeral=True)
-            return
-        EMOJI = {"proposed":"🟡","approved":"🟢","building":"🔨","complete":"✅"}
-        title_base = "Megaprojects" + (" — All Nations" if is_gm else "")
 
-        # Build lines, then paginate by character limit (embed description max 4096)
+        if not rows:
+            await interaction.response.send_message("No megaprojects found.", ephemeral=True)
+            return
+
+        EMOJI = {"proposed": "🟡", "approved": "🟢", "building": "🔨", "complete": "✅"}
         lines = []
-        for r in rows:
-            cost = json.loads(r["cost_json"])
+        truncated_count = 0
+        current_len = 0
+        MAX_EMBED_CHAR_LIMIT = 3900  # Leave buffer space for title/formatting
+
+        for idx, r in enumerate(rows):
+            # Parse cost safely
+            cost_raw = r["cost_json"]
+            if isinstance(cost_raw, str):
+                try:
+                    cost = json.loads(cost_raw)
+                except Exception:
+                    cost = {}
+            else:
+                cost = cost_raw or {}
+
+            # Progress calculation
             if r["status"] == "building" and r["duration_months"] > 0:
-                pct     = int((r["months_spent"] / r["duration_months"]) * 100)
-                bar     = "█" * (pct // 10) + "░" * (10 - pct // 10)
-                prog    = f"\n  `{bar}` {r['months_spent']}/{r['duration_months']} months ({pct}%)"
+                pct  = int((r["months_spent"] / r["duration_months"]) * 100)
+                bar  = "█" * (pct // 10) + "░" * (10 - (pct // 10))
+                prog = f"\n  `[{bar}]` {r['months_spent']}/{r['duration_months']} months ({pct}%)"
             elif r["status"] == "building":
                 prog = " (instant — pending completion)"
             else:
                 prog = ""
-            lines.append(
-                f"{EMOJI.get(r['status'],'❓')} **[{r['id']}] {r['name']}** ({r['nname']}){prog}\n"
+
+            cost_str = ", ".join(f"{v} {k}" for k, v in cost.items()) if cost else "None"
+            entry = (
+                f"{EMOJI.get(r['status'], '❓')} **[{r['id']}] {r['name']}** ({r['nname']}){prog}\n"
                 f"  {r['proposed_effect']}\n"
-                f"  Cost: {', '.join(f'{v} {k}' for k,v in cost.items())} | {r['status']}"
+                f"  Cost: {cost_str} | {r['status']}"
             )
 
-        pages_lines = []
-        current, current_len = [], 0
-        for line in lines:
-            block_len = len(line) + 2  # "\n\n" separator
-            if current and current_len + block_len > 3900:  # safety margin under 4096
-                pages_lines.append(current)
-                current, current_len = [], 0
-            current.append(line)
-            current_len += block_len
-        if current:
-            pages_lines.append(current)
+            # Check if adding this entry exceeds Discord's embed description limit
+            if current_len + len(entry) + 2 > MAX_EMBED_CHAR_LIMIT:
+                truncated_count = len(rows) - idx
+                break
 
-        pages = []
-        for idx, chunk in enumerate(pages_lines):
-            e = discord.Embed(
-                title=f"{title_base} ({idx+1}/{len(pages_lines)})",
-                description="\n\n".join(chunk),
-                color=discord.Color.purple(),
-            )
-            pages.append(e)
+            lines.append(entry)
+            current_len += len(entry) + 2
 
-        if len(pages) == 1:
-            await interaction.response.send_message(embed=pages[0], ephemeral=True)
-        else:
-            view = PageView(pages)
-            await interaction.response.send_message(embed=pages[0], view=view, ephemeral=True)
+        desc = "\n\n".join(lines)
+        if truncated_count > 0:
+            desc += f"\n\n*... and {truncated_count} more megaprojects.*"
+
+        embed = discord.Embed(
+            title="Megaprojects" + (" — All Nations" if is_gm else ""),
+            description=desc,
+            color=discord.Color.purple(),
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ======================================================================
     # TRADE GROUP
