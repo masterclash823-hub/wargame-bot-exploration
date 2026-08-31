@@ -182,6 +182,62 @@ async def help_cmd(interaction: discord.Interaction):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@tree.command(name="tutorial", description="Quick start guide / Krótki przewodnik dla nowych graczy")
+async def tutorial_cmd(interaction: discord.Interaction):
+    lang = i18n.get_user_language(interaction.user.id)
+ 
+    class TutorialView(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=180)
+            self.section = "buildings"
+            self._refresh()
+ 
+        def _refresh(self):
+            for item in self.children:
+                if hasattr(item, "custom_id"):
+                    item.style = (discord.ButtonStyle.primary
+                                  if item.custom_id == self.section
+                                  else discord.ButtonStyle.secondary)
+ 
+        def _embed(self):
+            if self.section == "buildings":
+                return discord.Embed(
+                    title=i18n.t(lang, "tutorial_buildings_title"),
+                    description=i18n.t(lang, "tutorial_buildings"),
+                    color=discord.Color.green(),
+                ).set_footer(text=i18n.t(lang, "tutorial_footer"))
+            elif self.section == "food":
+                return discord.Embed(
+                    title=i18n.t(lang, "tutorial_food_title"),
+                    description=i18n.t(lang, "tutorial_food"),
+                    color=discord.Color.gold(),
+                ).set_footer(text=i18n.t(lang, "tutorial_footer"))
+            else:
+                return discord.Embed(
+                    title=i18n.t(lang, "tutorial_mega_title"),
+                    description=i18n.t(lang, "tutorial_mega"),
+                    color=discord.Color.purple(),
+                ).set_footer(text=i18n.t(lang, "tutorial_footer"))
+ 
+        @discord.ui.button(label="🏗️ Buildings / Budynki",    style=discord.ButtonStyle.primary,   custom_id="buildings")
+        async def btn_buildings(self, inter: discord.Interaction, btn: discord.ui.Button):
+            self.section = "buildings"; self._refresh()
+            await inter.response.edit_message(embed=self._embed(), view=self)
+ 
+        @discord.ui.button(label="🌾 Food / Żywność",          style=discord.ButtonStyle.secondary, custom_id="food")
+        async def btn_food(self, inter: discord.Interaction, btn: discord.ui.Button):
+            self.section = "food"; self._refresh()
+            await inter.response.edit_message(embed=self._embed(), view=self)
+ 
+        @discord.ui.button(label="🏛️ Megaprojects / Megaprojekty", style=discord.ButtonStyle.secondary, custom_id="mega")
+        async def btn_mega(self, inter: discord.Interaction, btn: discord.ui.Button):
+            self.section = "mega"; self._refresh()
+            await inter.response.edit_message(embed=self._embed(), view=self)
+ 
+    view = TutorialView()
+    await interaction.response.send_message(
+        embed=view._embed(), view=view, ephemeral=True
+    )
 
 if __name__ == "__main__":
     print("[BOOT] Starting keep_alive...", flush=True)
