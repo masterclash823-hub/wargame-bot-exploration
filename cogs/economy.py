@@ -182,10 +182,20 @@ def _seed_buildings():
     with db.cursor() as c:
         for b in DEFAULT_BUILDINGS:
             c.execute(
-                "INSERT INTO building_defs "
-                "(key, name, tier, cost_json, effect_json, upkeep_json, requires_terrain, requires_tech, description) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
-                "ON CONFLICT (key) DO NOTHING",
+                """
+                INSERT INTO building_defs 
+                (key, name, tier, cost_json, effect_json, upkeep_json, requires_terrain, requires_tech, description) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) 
+                ON CONFLICT (key) DO UPDATE SET 
+                    name = EXCLUDED.name,
+                    tier = EXCLUDED.tier,
+                    cost_json = EXCLUDED.cost_json,
+                    effect_json = EXCLUDED.effect_json,
+                    upkeep_json = EXCLUDED.upkeep_json,
+                    requires_terrain = EXCLUDED.requires_terrain,
+                    requires_tech = EXCLUDED.requires_tech,
+                    description = EXCLUDED.description
+                """,
                 (
                     b["key"],
                     b["name"],
