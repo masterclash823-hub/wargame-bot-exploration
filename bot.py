@@ -184,8 +184,6 @@ async def help_cmd(interaction: discord.Interaction):
 
 @tree.command(name="tutorial", description="Quick start guide / Krótki przewodnik dla nowych graczy")
 async def tutorial_cmd(interaction: discord.Interaction):
-    lang = _lang(interaction) if "_lang" in globals() else "en"
-
     class TutorialView(discord.ui.View):
         def __init__(self, author_id: int):
             super().__init__(timeout=180)
@@ -196,7 +194,9 @@ async def tutorial_cmd(interaction: discord.Interaction):
 
         async def interaction_check(self, inter: discord.Interaction) -> bool:
             if inter.user.id != self.author_id:
-                msg = "To nie jest Twój przewodnik." if lang == "pl" else "This is not your tutorial."
+                # Fetch language dynamically for the user trying to click
+                clicker_lang = i18n.get_user_language(inter.user.id) if hasattr(i18n, "get_user_language") else "en"
+                msg = "To nie jest Twój przewodnik." if clicker_lang == "pl" else "This is not your tutorial."
                 await inter.response.send_message(msg, ephemeral=True)
                 return False
             return True
@@ -219,7 +219,10 @@ async def tutorial_cmd(interaction: discord.Interaction):
                         else discord.ButtonStyle.secondary
                     )
 
-        def _embed(self) -> discord.Embed:
+        def _embed(self, user_id: int) -> discord.Embed:
+            # DYNAMICALLY fetch the language for the target user every time the embed is generated
+            lang = i18n.get_user_language(user_id) if hasattr(i18n, "get_user_language") else "en"
+
             footer_text = "Użyj przycisków poniżej, aby zmienić sekcję" if lang == "pl" else "Use the buttons below to switch sections"
 
             if self.section == "buildings":
@@ -299,7 +302,7 @@ async def tutorial_cmd(interaction: discord.Interaction):
         async def btn_buildings(self, inter: discord.Interaction, btn: discord.ui.Button):
             self.section = "buildings"
             self._refresh()
-            await inter.response.edit_message(embed=self._embed(), view=self)
+            await inter.response.edit_message(embed=self._embed(inter.user.id), view=self)
 
         @discord.ui.button(
             label="🌾 Food / Żywność",
@@ -309,7 +312,7 @@ async def tutorial_cmd(interaction: discord.Interaction):
         async def btn_food(self, inter: discord.Interaction, btn: discord.ui.Button):
             self.section = "food"
             self._refresh()
-            await inter.response.edit_message(embed=self._embed(), view=self)
+            await inter.response.edit_message(embed=self._embed(inter.user.id), view=self)
 
         @discord.ui.button(
             label="🏛️ Megaprojects / Megaprojekty",
@@ -319,11 +322,11 @@ async def tutorial_cmd(interaction: discord.Interaction):
         async def btn_mega(self, inter: discord.Interaction, btn: discord.ui.Button):
             self.section = "mega"
             self._refresh()
-            await inter.response.edit_message(embed=self._embed(), view=self)
+            await inter.response.edit_message(embed=self._embed(inter.user.id), view=self)
 
     view = TutorialView(author_id=interaction.user.id)
     await interaction.response.send_message(
-        embed=view._embed(), view=view, ephemeral=True
+        embed=view._embed(interaction.user.id), view=view, ephemeral=True
     )
     view.message = await interaction.original_response()
 
