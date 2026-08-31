@@ -184,60 +184,148 @@ async def help_cmd(interaction: discord.Interaction):
 
 @tree.command(name="tutorial", description="Quick start guide / Krótki przewodnik dla nowych graczy")
 async def tutorial_cmd(interaction: discord.Interaction):
-    lang = i18n.get_user_language(interaction.user.id)
- 
+    lang = _lang(interaction) if "_lang" in globals() else "en"
+
     class TutorialView(discord.ui.View):
-        def __init__(self):
+        def __init__(self, author_id: int):
             super().__init__(timeout=180)
+            self.author_id = author_id
             self.section = "buildings"
+            self.message: discord.InteractionMessage | None = None
             self._refresh()
- 
+
+        async def interaction_check(self, inter: discord.Interaction) -> bool:
+            if inter.user.id != self.author_id:
+                msg = "To nie jest Twój przewodnik." if lang == "pl" else "This is not your tutorial."
+                await inter.response.send_message(msg, ephemeral=True)
+                return False
+            return True
+
+        async def on_timeout(self):
+            for child in self.children:
+                child.disabled = True
+            if self.message:
+                try:
+                    await self.message.edit(view=self)
+                except Exception:
+                    pass
+
         def _refresh(self):
             for item in self.children:
                 if hasattr(item, "custom_id"):
-                    item.style = (discord.ButtonStyle.primary
-                                  if item.custom_id == self.section
-                                  else discord.ButtonStyle.secondary)
- 
-        def _embed(self):
+                    item.style = (
+                        discord.ButtonStyle.primary
+                        if item.custom_id == self.section
+                        else discord.ButtonStyle.secondary
+                    )
+
+        def _embed(self) -> discord.Embed:
+            footer_text = "Użyj przycisków poniżej, aby zmienić sekcję" if lang == "pl" else "Use the buttons below to switch sections"
+
             if self.section == "buildings":
-                return discord.Embed(
-                    title=i18n.t(lang, "tutorial_buildings_title"),
-                    description=i18n.t(lang, "tutorial_buildings"),
-                    color=discord.Color.green(),
-                ).set_footer(text=i18n.t(lang, "tutorial_footer"))
+                if lang == "pl":
+                    title = "🏗️ Przewodnik: Budynki"
+                    desc = (
+                        "**Rozbudowa Twojego Narodu:**\n"
+                        "• Użyj komendy `/build`, aby wznosić nowe budynki.\n"
+                        "• Każdy budynek generuje zasoby (złoto, żywność, produkcję) podczas każdego miesiąca kalendarzowego.\n"
+                        "• Wznoszenie budynków wymaga wolnych pól oraz odpowiednich zasobów początkowych.\n"
+                        "• Pamiętaj, aby dbać o balans między budynkami gospodarczymi a wojskowymi!"
+                    )
+                else:
+                    title = "🏗️ Guide: Buildings"
+                    desc = (
+                        "**Developing Your Nation:**\n"
+                        "• Use `/build` to construct new facilities.\n"
+                        "• Buildings produce resources (gold, food, production) every calendar month.\n"
+                        "• Construction requires free land plots and initial resource investment.\n"
+                        "• Keep a healthy balance between economy and military infrastructure!"
+                    )
+                color = discord.Color.green()
+
             elif self.section == "food":
-                return discord.Embed(
-                    title=i18n.t(lang, "tutorial_food_title"),
-                    description=i18n.t(lang, "tutorial_food"),
-                    color=discord.Color.gold(),
-                ).set_footer(text=i18n.t(lang, "tutorial_footer"))
-            else:
-                return discord.Embed(
-                    title=i18n.t(lang, "tutorial_mega_title"),
-                    description=i18n.t(lang, "tutorial_mega"),
-                    color=discord.Color.purple(),
-                ).set_footer(text=i18n.t(lang, "tutorial_footer"))
- 
-        @discord.ui.button(label="🏗️ Buildings / Budynki",    style=discord.ButtonStyle.primary,   custom_id="buildings")
+                if lang == "pl":
+                    title = "🌾 Przewodnik: Żywność i Gospodarka"
+                    desc = (
+                        "**Zarządzanie Żywnością:**\n"
+                        "• Żywność jest pobierana co miesiąc, aby utrzymać populację oraz wojsko.\n"
+                        "• Niedobór żywności wywołuje głód, obniżając poparcie i osłabiając jednostki.\n"
+                        "• Buduj farmy i nadzoruj biomy rolnicze, by utrzymać nadwyżkę produkcyjną.\n"
+                        "• Nadwyżki żywności możesz handlować lub gromadzić w magazynach."
+                    )
+                else:
+                    title = "🌾 Guide: Food & Economy"
+                    desc = (
+                        "**Managing Food Supplies:**\n"
+                        "• Food is consumed automatically each month by population and military units.\n"
+                        "• Deficits lead to starvation, reducing approval ratings and weakening units.\n"
+                        "• Expand farms and utilize fertile biomes to maintain a surplus.\n"
+                        "• Excess food can be stored in stockpiles or traded to other nations."
+                    )
+                color = discord.Color.gold()
+
+            else:  # megaprojects
+                if lang == "pl":
+                    title = "🏛️ Przewodnik: Megaprojekty"
+                    desc = (
+                        "**Wielkie Inwestycje Państwowe:**\n"
+                        "• Megaprojekty to unikalne, wielkoskalowe struktury dające potężne bonusy.\n"
+                        "• Przełomowe budowy wymagają akceptacji Gamemastera (GM).\n"
+                        "• Wymagają znacznych nakładów surowców i wielu miesięcy budowy.\n"
+                        "• Sprawdzaj postęp swoich projektów za pomocą komendy `/mp list`."
+                    )
+                else:
+                    title = "🏛️ Guide: Megaprojects"
+                    desc = (
+                        "**Large-Scale National Works:**\n"
+                        "• Megaprojects are massive, unique structures providing faction-wide buffs.\n"
+                        "• New proposals require Gamemaster (GM) approval before construction starts.\n"
+                        "• They require heavy investment and take multiple months to complete.\n"
+                        "• Monitor construction status anytime using `/mp list`."
+                    )
+                color = discord.Color.purple()
+
+            return discord.Embed(
+                title=title,
+                description=desc,
+                color=color,
+            ).set_footer(text=footer_text)
+
+        @discord.ui.button(
+            label="🏗️ Buildings / Budynki",
+            style=discord.ButtonStyle.primary,
+            custom_id="buildings"
+        )
         async def btn_buildings(self, inter: discord.Interaction, btn: discord.ui.Button):
-            self.section = "buildings"; self._refresh()
+            self.section = "buildings"
+            self._refresh()
             await inter.response.edit_message(embed=self._embed(), view=self)
- 
-        @discord.ui.button(label="🌾 Food / Żywność",          style=discord.ButtonStyle.secondary, custom_id="food")
+
+        @discord.ui.button(
+            label="🌾 Food / Żywność",
+            style=discord.ButtonStyle.secondary,
+            custom_id="food"
+        )
         async def btn_food(self, inter: discord.Interaction, btn: discord.ui.Button):
-            self.section = "food"; self._refresh()
+            self.section = "food"
+            self._refresh()
             await inter.response.edit_message(embed=self._embed(), view=self)
- 
-        @discord.ui.button(label="🏛️ Megaprojects / Megaprojekty", style=discord.ButtonStyle.secondary, custom_id="mega")
+
+        @discord.ui.button(
+            label="🏛️ Megaprojects / Megaprojekty",
+            style=discord.ButtonStyle.secondary,
+            custom_id="mega"
+        )
         async def btn_mega(self, inter: discord.Interaction, btn: discord.ui.Button):
-            self.section = "mega"; self._refresh()
+            self.section = "mega"
+            self._refresh()
             await inter.response.edit_message(embed=self._embed(), view=self)
- 
-    view = TutorialView()
+
+    view = TutorialView(author_id=interaction.user.id)
     await interaction.response.send_message(
         embed=view._embed(), view=view, ephemeral=True
     )
+    view.message = await interaction.original_response()
 
 if __name__ == "__main__":
     print("[BOOT] Starting keep_alive...", flush=True)
