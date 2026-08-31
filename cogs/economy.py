@@ -123,11 +123,46 @@ def _terrain_ok(terrain, req):
         return True
     return terrain.lower() in [t.strip().lower() for t in req.split(",")]
 
-def _tech_ok(nation, req):
-    if req <= 0:
+def _tech_ok(nation: dict, req_tech: float, building_key: str = "") -> bool:
+    if not req_tech or req_tech <= 0:
         return True
-    t = json.loads(nation["tech_json"])
-    return sum(t.values()) / len(t) >= req
+
+    tech_data = json.loads(nation.get("tech_json", "{}"))
+    
+    # Przypisanie budynków do konkretnych kategorii technologii
+    category_map = {
+        # --- ECONOMY (Gospodarka i nauka) ---
+        "farm": "economy",
+        "pasture": "economy",
+        "lumber_camp": "economy",
+        "mine": "economy",
+        "copper_mine": "economy",
+        "clay_pit": "economy",
+        "textile_mill": "economy",
+        "silk_workshop": "economy",
+        "market": "economy",
+        "university": "economy",
+        "algae_farm": "economy",
+
+        # --- LAND (Militaria lądowe) ---
+        "fort": "land",
+        "powder_mill": "land",
+        "cannon_foundry": "land",
+
+        # --- NAVAL (Morskie i przybrzeżne) ---
+        "port": "naval",
+        "fishing_wharf": "naval",
+        "tar_works": "naval",
+
+        # --- COLONIAL (Egzotyczne i zamorskie) ---
+        "plantation": "colonial",
+    }
+    
+    # Pobranie odpowiedniej kategorii (domyślnie 'economy' w razie braku wpisu)
+    cat = category_map.get(building_key.lower(), "economy")
+    current_level = float(tech_data.get(cat, 3.0))
+
+    return current_level >= float(req_tech)
 
 def _deduct(res, cost):
     for r, a in cost.items():
@@ -1060,7 +1095,7 @@ class EconomyCog(commands.Cog):
                 i18n.t(lang, "build_wrong_terrain",
                         building=bd["name"], terrain=prov["terrain"]), ephemeral=True)
             return
-        if not _tech_ok(n, bd["requires_tech"]):
+        if not _tech_ok(n, bd["requires_tech"], bd["key"]):
             await interaction.response.send_message(
                 i18n.t(lang, "build_need_tech",
                         building=bd["name"], level=bd["requires_tech"]), ephemeral=True)
