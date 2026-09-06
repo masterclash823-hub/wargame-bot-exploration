@@ -12,6 +12,7 @@ import i18n
 from utils import short_date
 from cogs.combat import CombatCog
 from cogs import events
+import event_adventure
 
 
 class BattleEventTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
@@ -115,12 +116,14 @@ class BattleEventTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         with patch.object(events, "_generate_event", AsyncMock(return_value=("Polskie wydarzenie.", '{"stability":2}'))):
             await cog.event_generate.callback(cog, gm, "B")
         self.assertIn("Szkic wydarzenia #1", gm.followup.send.call_args.kwargs["embed"].title)
-        await cog.event_post.callback(cog, gm, 1)
+        with patch.object(event_adventure, "scene", AsyncMock(return_value=("Polskie wydarzenie.", ["A", "B", "C"]))):
+            await cog.event_post.callback(cog, gm, 1)
         embed = channel.send.call_args.kwargs["embed"]
         self.assertIn("Wydarzenie", embed.title)
-        self.assertEqual(embed.fields[0].name, "Efekty")
         self.assertIn("stabilności", embed.fields[0].value)
-        self.assertIn("Nowe wydarzenie", owner.send.call_args.kwargs["embed"].title)
+        self.assertIn("Wydarzenie", owner.send.call_args.kwargs["embed"].title)
+        self.assertEqual(self.nation()["stability"], 50)
+        self.assertEqual(len(channel.send.call_args.kwargs["view"].children), 4)
         original = db._UnifiedCursor.fetchall
         def pg_dates(cursor):
             rows = original(cursor)
