@@ -21,10 +21,7 @@ def _lang(interaction: discord.Interaction) -> str:
     return i18n.get_user_language(interaction.user.id, locale)
 
 
-def _gm(interaction: discord.Interaction) -> bool:
-    if not interaction.guild:
-        return False
-    return any(r.name == config.GM_ROLE_NAME for r in interaction.user.roles)
+from utils import gm_only as _gm
 
 
 def _get_by_name(name: str):
@@ -210,9 +207,7 @@ class NationCog(commands.Cog):
             return
 
         is_owner = nation["owner_id"] == str(interaction.user.id)
-        is_gm    = bool(interaction.guild) and any(
-            r.name == config.GM_ROLE_NAME for r in interaction.user.roles
-        )
+        is_gm = _gm(interaction)
         # trade_private entries visible only to nation owner and GM
         if is_owner or is_gm:
             source_filter = ""
@@ -312,9 +307,7 @@ class NationCog(commands.Cog):
     @app_commands.describe(name="Nation name to delete / Nazwa narodu do usuniecia")
     async def delete(self, interaction: discord.Interaction, name: str):
         lang = _lang(interaction)
-        if not (bool(interaction.guild) and any(
-            r.name == config.GM_ROLE_NAME for r in interaction.user.roles
-        )):
+        if not _gm(interaction):
             await interaction.response.send_message(i18n.t(lang, "gm_only"), ephemeral=True)
             return
         nation = _get_by_name(name)

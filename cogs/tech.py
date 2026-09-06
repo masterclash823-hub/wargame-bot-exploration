@@ -36,10 +36,7 @@ def _lang(interaction):
     locale = interaction.locale.value if interaction.locale else None
     return i18n.get_user_language(interaction.user.id, locale)
 
-def _gm(interaction):
-    return bool(interaction.guild) and any(
-        r.name == config.GM_ROLE_NAME for r in interaction.user.roles
-    )
+from utils import gm_only as _gm
 
 def _nation_owner(uid):
     with db.cursor() as c:

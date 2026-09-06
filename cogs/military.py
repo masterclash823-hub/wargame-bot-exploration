@@ -15,11 +15,13 @@ Units are floating by default - province assignment is optional.
 Upkeep: peace rate per unit, 3x in wartime.
 """
 import json
+from copy import deepcopy
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 import config, db, i18n
+from utils import gm_only
 
 # ---------------------------------------------------------------------------
 # Data tables
@@ -67,7 +69,7 @@ def _lang(i):
     return i18n.get_user_language(i.user.id, i.locale.value if i.locale else None)
 
 def _gm(i):
-    return bool(i.guild) and any(r.name == config.GM_ROLE_NAME for r in i.user.roles)
+    return gm_only(i)
 
 def _nat_owner(uid):
     with db.cursor() as c:
@@ -253,6 +255,37 @@ class ShipDesignerView(discord.ui.View):
 # ---------------------------------------------------------------------------
 # Cog
 # ---------------------------------------------------------------------------
+class ForcesView(discord.ui.View):
+    def __init__(self, pages, owner_id):
+        super().__init__(timeout=180)
+        self.pages, self.owner_id, self.index = pages, owner_id, 0
+        for i, page in enumerate(pages, 1):
+            page.set_footer(text=f"{i} / {len(pages)}")
+        self._refresh()
+
+    def _refresh(self):
+        self.previous.disabled = self.index == 0
+        self.next_page.disabled = self.index == len(self.pages) - 1
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id == self.owner_id:
+            return True
+        await interaction.response.send_message("This is not your military list.", ephemeral=True)
+        return False
+
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
+    async def previous(self, interaction, button):
+        self.index = max(0, self.index - 1)
+        self._refresh()
+        await interaction.response.edit_message(embed=self.pages[self.index], view=self)
+
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
+    async def next_page(self, interaction, button):
+        self.index = min(len(self.pages) - 1, self.index + 1)
+        self._refresh()
+        await interaction.response.edit_message(embed=self.pages[self.index], view=self)
+
+
 class MilitaryCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -519,9 +552,10 @@ class MilitaryCog(commands.Cog):
         if not nat:
             await interaction.response.send_message(
                 i18n.t(lang,"nation_not_found" if nation else "no_nation"), ephemeral=True); return
+        await interaction.response.defer(ephemeral=True)
         with db.cursor() as c:
             c.execute(
-                "SELECT u.*,b.name as bname,b.type as btype,b.hull,"
+                "SELECT u.*,b.name as bname,b.type as btype,b.hull,b.stats_json,"
                 "p.name as pname,p.azgaar_cell_id"
                 " FROM military_units u"
                 " LEFT JOIN blueprints b ON u.blueprint_id=b.id"
@@ -531,7 +565,7 @@ class MilitaryCog(commands.Cog):
             )
             rows = c.fetchall()
         if not rows:
-            await interaction.response.send_message(f"**{nat['name']}** has no units.", ephemeral=True); return
+            await interaction.followup.send(f"**{nat['name']}** has no units.", ephemeral=True); return
         at_war       = _at_war(nat["id"])
         total_upkeep = _upkeep(nat["id"])
         ships = [r for r in rows if r["btype"]=="ship"]
@@ -556,7 +590,7 @@ class MilitaryCog(commands.Cog):
         )
         def loc(r):
             if r["pname"]:          return r["pname"]
-            if r["azgaar_cell_id"]: return f"Cell #{r['azgaar_cell_id']}"
+            if r["azgaar_cell_id"] is not None: return f"Cell #{r['azgaar_cell_id']}"
             return "🌊 Floating"
 
         def upkeep_str(r):
@@ -568,19 +602,20 @@ class MilitaryCog(commands.Cog):
             war   = peace * WAR_MULT
             return f"{peace:.0f}g peace / {war:.0f}g war"
 
-        if ships:
-            embed.add_field(name="⚓ Navy",
-                value="\n".join(
-                    f"`[{r['id']}]` **{r['quantity']}× {r['bname']}** @ {loc(r)} — {upkeep_str(r)}"
-                    for r in ships),
-                inline=False)
-        if units:
-            embed.add_field(name="⚔️ Army",
-                value="\n".join(
-                    f"`[{r['id']}]` **{r['quantity']}× {r['bname']}** @ {loc(r)} — {upkeep_str(r)}"
-                    for r in units),
-                inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        # Keep every group visible without exceeding Discord's field/embed limits.
+        pages = []
+        template = deepcopy(embed)
+        for heading, groups in (("⚓ Navy", ships), ("⚔️ Army", units)):
+            for r in groups:
+                name = r["bname"] or r["unit_type"] or "Unknown blueprint"
+                line = f"`[{r['id']}]` **{r['quantity']}× {name[:200]}** @ {loc(r)[:200]} — {upkeep_str(r)}"
+                if len(embed.fields) >= 20 or len(embed) + len(heading) + len(line) > 5800:
+                    pages.append(embed)
+                    embed = deepcopy(template)
+                embed.add_field(name=heading, value=line, inline=False)
+        pages.append(embed)
+        view = ForcesView(pages, interaction.user.id)
+        await interaction.followup.send(embed=pages[0], view=view, ephemeral=True)
 
     @mil_grp.command(name="move", description="Assign/move units to a province / Przemiesz wojsko")
     @app_commands.describe(unit_id="Unit group ID", cell_id="Destination cell ID")

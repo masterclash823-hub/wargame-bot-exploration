@@ -1,5 +1,24 @@
 # Wargame Bot - Step 1: Skeleton
 
+## GM access and regression checks
+
+The `/help` GM tab and GM commands use the same role check. Set `GM_ROLE_ID`
+to the Discord role ID (recommended; it survives role renaming). If unset,
+`GM_ROLE_NAME` defaults to `Game Master` and ignores outer whitespace and case.
+For a role named `GM`, set `GM_ROLE_NAME=GM`. An explicit ID overrides the name.
+Restart the bot after changing environment variables. Administrator permission
+alone does not grant GM access.
+
+Run offline regression tests after installing `requirements.txt`:
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+Tests use temporary SQLite databases and mocked Discord interactions, never a
+live bot or production game database. PostgreSQL settlement uses row locks and
+`CURRENT_TIMESTAMP`; live PostgreSQL verification remains a deployment check.
+
 What's here so far: bot connects, syncs slash commands, and has `/help` + `/language`
 working end-to-end with the English/Polish localization system. Everything later
 (nations, provinces, economy, combat) builds on this same pattern - a slash command in

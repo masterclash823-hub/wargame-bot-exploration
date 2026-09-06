@@ -11,6 +11,7 @@ from discord.ext import commands
 print("[BOOT] discord.py imported", flush=True)
 
 import config, db, i18n
+from utils import gm_only
 from keep_alive import keep_alive
 print("[BOOT] local modules imported", flush=True)
 
@@ -166,9 +167,7 @@ async def language_cmd(interaction: discord.Interaction, lang: app_commands.Choi
 async def help_cmd(interaction: discord.Interaction):
     try:
         from cogs.economy import HelpView
-        is_gm = bool(interaction.guild) and any(
-            r.name == config.GM_ROLE_NAME for r in interaction.user.roles
-        )
+        is_gm = gm_only(interaction)
         lang  = i18n.get_user_language(interaction.user.id)
         view  = HelpView(is_gm=is_gm, current="general", lang=lang)
         embed = view._embed()
