@@ -17,6 +17,12 @@ from discord.ext import commands
 import config
 import db
 import i18n
+from utils import short_date
+
+
+def _event_language(nat):
+    """Narrative language belongs to the nation owner, not the invoking GM."""
+    return i18n.get_user_language(nat["owner_id"])
 
 
 def _lang(i):
@@ -65,7 +71,7 @@ def _build_nation_context(nat) -> str:
         )
         history = c.fetchall()
     history_str = "\n".join(
-        f"[{r['timestamp'][:10]} {r['source'].upper()}] {r['entry_text']}"
+        f"[{short_date(r['timestamp'])} {r['source'].upper()}] {r['entry_text']}"
         for r in reversed(history)
     ) or "No recorded history yet."
 
@@ -111,6 +117,8 @@ async def _generate_event(nat) -> tuple[str, str]:
     Returns (event_text, effects_json_str).
     """
     context = _build_nation_context(nat)
+    lang = _event_language(nat)
+    language = "Polish" if lang == "pl" else "English"
 
     prompt = f"""You are a narrative game master for a fantasy wargame set in the Age of Exploration.
 Based on the nation's history, stats, and current situation below, generate a compelling
@@ -134,6 +142,9 @@ Example format:
 A drought has struck the eastern farmlands, threatening grain supplies for the coming winter. The government scrambles to import food from allied nations, but reserves are running low. Local nobles grow restless as the people suffer.
 EFFECTS: {{"stability": -8, "resources": {{"food": -50}}, "special_note": "Risk of unrest in eastern provinces"}}
 
+Write the narrative and special_note in {language}, the nation owner's preferred language.
+Keep the literal EFFECTS: separator and all JSON keys/resource identifiers in English.
+The example above illustrates the structure only, not the required output language.
 Write the event now:"""
 
     try:
@@ -182,12 +193,14 @@ Write the event now:"""
     except Exception as e:
         print(f"[EVENTS AI] Gemini failed: {type(e).__name__}: {e}", flush=True)
         return (
-            f"[AI unavailable: {type(e).__name__}] A significant event occurred in {nat['name']}.",
+            (f"[AI niedostępne: {type(e).__name__}] W państwie {nat['name']} miało miejsce ważne wydarzenie."
+             if lang == "pl" else
+             f"[AI unavailable: {type(e).__name__}] A significant event occurred in {nat['name']}."),
             "{}"
         )
 
 
-def _apply_event_effects(nation_id: int, effects_json: str) -> list[str]:
+def _apply_event_effects(nation_id: int, effects_json: str, lang: str = "en") -> list[str]:
     """Apply event effects to a nation. Returns list of applied effect strings."""
     try:
         effects = json.loads(effects_json)
@@ -208,12 +221,12 @@ def _apply_event_effects(nation_id: int, effects_json: str) -> list[str]:
     stab = effects.get("stability", 0)
     if stab:
         stability = max(0.0, min(100.0, stability + stab))
-        applied.append(f"{'+'if stab>0 else ''}{stab} stability")
+        applied.append(f"{'+'if stab>0 else ''}{stab} " + ("stabilności" if lang == "pl" else "stability"))
 
     gold = effects.get("treasury", 0)
     if gold:
         treasury = max(0.0, treasury + gold)
-        applied.append(f"{'+'if gold>0 else ''}{gold} gold")
+        applied.append(f"{'+'if gold>0 else ''}{gold} " + ("złota" if lang == "pl" else "gold"))
 
     res_effects = effects.get("resources", {})
     for res, amt in res_effects.items():
@@ -222,7 +235,7 @@ def _apply_event_effects(nation_id: int, effects_json: str) -> list[str]:
 
     special = effects.get("special_note", "")
     if special:
-        applied.append(f"Note: {special}")
+        applied.append(("Uwaga: " if lang == "pl" else "Note: ") + special)
 
     with db.cursor() as c:
         c.execute(
@@ -260,14 +273,12 @@ class EventsCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         event_text, effects_json = await _generate_event(nat)
+        lang = _event_language(nat)
 
-        with db.cursor() as c:
-            c.execute(
-                "INSERT INTO events(nation_id,ai_draft_text,gm_final_text,effects_json,status)"
-                " VALUES(?,?,?,?,?)",
-                (nat["id"], event_text, event_text, effects_json, "draft")
-            )
-            event_id = c.lastrowid
+        event_id = db.insert_returning_id(
+            "INSERT INTO events(nation_id,ai_draft_text,gm_final_text,effects_json,status)"
+            " VALUES(?,?,?,?,?)",
+            (nat["id"], event_text, event_text, effects_json, "draft"))
 
         effects = {}
         try:
@@ -276,22 +287,25 @@ class EventsCog(commands.Cog):
             pass
 
         embed = discord.Embed(
-            title=f"📜 Event Draft #{event_id} — {nat['flag'] or ''} {nat['name']}",
+            title=("📜 Szkic wydarzenia" if lang == "pl" else "📜 Event Draft")
+                  + f" #{event_id} — {nat['flag'] or ''} {nat['name']}",
             description=event_text,
             color=discord.Color.purple(),
         )
         if effects:
             eff_lines = []
             if effects.get("stability"):
-                eff_lines.append(f"Stability: {'+' if effects['stability']>0 else ''}{effects['stability']}")
+                eff_lines.append(("Stabilność: " if lang == "pl" else "Stability: ")
+                                 + f"{'+' if effects['stability']>0 else ''}{effects['stability']}")
             if effects.get("treasury"):
-                eff_lines.append(f"Treasury: {'+' if effects['treasury']>0 else ''}{effects['treasury']}g")
+                eff_lines.append(("Skarbiec: " if lang == "pl" else "Treasury: ")
+                                 + f"{'+' if effects['treasury']>0 else ''}{effects['treasury']}g")
             for res, amt in effects.get("resources", {}).items():
                 eff_lines.append(f"{res.capitalize()}: {'+' if amt>0 else ''}{amt}")
             if effects.get("special_note"):
-                eff_lines.append(f"Note: {effects['special_note']}")
+                eff_lines.append(("Uwaga: " if lang == "pl" else "Note: ") + effects['special_note'])
             if eff_lines:
-                embed.add_field(name="Suggested Effects", value="\n".join(eff_lines), inline=False)
+                embed.add_field(name="Proponowane efekty" if lang == "pl" else "Suggested Effects", value="\n".join(eff_lines), inline=False)
         embed.set_footer(
             text=f"Event ID: {event_id} | "
                  f"Edit: /event edit {event_id} <text> | "
@@ -382,7 +396,8 @@ class EventsCog(commands.Cog):
             return
 
         # Apply effects
-        applied = _apply_event_effects(ev["nation_id"], ev["effects_json"])
+        lang = _event_language(nat)
+        applied = _apply_event_effects(ev["nation_id"], ev["effects_json"], lang)
 
         # Log to nation history
         log_text = f"Event: {ev['gm_final_text'][:200]}"
@@ -393,25 +408,25 @@ class EventsCog(commands.Cog):
         # Mark posted
         with db.cursor() as c:
             c.execute(
-                "UPDATE events SET status='posted',posted_at=datetime('now') WHERE id=?",
+                "UPDATE events SET status='posted',posted_at=CURRENT_TIMESTAMP WHERE id=?",
                 (event_id,)
             )
 
         # Build public embed
         embed = discord.Embed(
-            title=f"📜 Event — {nat['flag'] or ''} {nat['name']}",
+            title=("📜 Wydarzenie" if lang == "pl" else "📜 Event") + f" — {nat['flag'] or ''} {nat['name']}",
             description=ev["gm_final_text"],
             color=discord.Color.purple(),
         )
         if applied:
             embed.add_field(
-                name="Effects",
+                name="Efekty" if lang == "pl" else "Effects",
                 value="\n".join(applied),
                 inline=False,
             )
         month = _cfg("current_month", "?")
         year  = _cfg("current_year",  "?")
-        embed.set_footer(text=f"Month {month}, Year {year}")
+        embed.set_footer(text=f"Miesiąc {month}, rok {year}" if lang == "pl" else f"Month {month}, Year {year}")
 
         # Post to announce channel if set
         ch_id = _cfg("announce_channel_id")
@@ -428,12 +443,12 @@ class EventsCog(commands.Cog):
             if owner:
                 try:
                     notif = discord.Embed(
-                        title=f"📜 New Event — {nat['flag'] or ''} {nat['name']}",
+                        title=("📜 Nowe wydarzenie" if lang == "pl" else "📜 New Event") + f" — {nat['flag'] or ''} {nat['name']}",
                         description=ev["gm_final_text"],
                         color=discord.Color.purple(),
                     )
                     if applied:
-                        notif.add_field(name="Effects", value="\n".join(applied), inline=False)
+                        notif.add_field(name="Efekty" if lang == "pl" else "Effects", value="\n".join(applied), inline=False)
                     await owner.send(embed=notif)
                 except discord.Forbidden:
                     pass
@@ -500,18 +515,19 @@ class EventsCog(commands.Cog):
             rows = c.fetchall()
 
         if not rows:
-            await interaction.response.send_message("No events found.", ephemeral=True)
+            await interaction.response.send_message("Nie znaleziono wydarzeń." if lang == "pl" else "No events found.", ephemeral=True)
             return
 
         STATUS_EMOJI = {"draft": "📝", "posted": "📜"}
         embed = discord.Embed(
-            title="📜 Events" + (" — GM View" if is_gm else ""),
+            title=("📜 Wydarzenia" if lang == "pl" else "📜 Events")
+                  + ((" — Widok GM" if lang == "pl" else " — GM View") if is_gm else ""),
             color=discord.Color.purple(),
         )
         for r in rows:
             text   = r["gm_final_text"] if is_gm else r["gm_final_text"]
             status = STATUS_EMOJI.get(r["status"], "❓")
-            date   = (r["posted_at"] or r["created_at"])[:10]
+            date   = short_date(r["posted_at"] or r["created_at"])
             embed.add_field(
                 name=f"{status} #{r['id']} — {r['nflag'] or ''} {r['nname']} ({date})",
                 value=text[:200] + ("..." if len(text) > 200 else ""),

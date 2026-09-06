@@ -6,6 +6,46 @@ import discord
 import db
 import i18n
 import config
+from datetime import date, datetime
+
+
+def short_date(value):
+    """Format both PostgreSQL datetime objects and SQLite timestamp strings."""
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()[:10]
+    return str(value)[:10] if value is not None else "—"
+
+
+class EmbedPager(discord.ui.View):
+    """Private, owner-bound navigation for already size-limited embeds."""
+    def __init__(self, pages, owner_id):
+        super().__init__(timeout=180)
+        self.pages, self.owner_id, self.index = pages, owner_id, 0
+        for number, page in enumerate(pages, 1):
+            page.set_footer(text=f"{number} / {len(pages)}")
+        self._refresh()
+
+    def _refresh(self):
+        self.previous.disabled = self.index == 0
+        self.next_page.disabled = self.index == len(self.pages) - 1
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id == self.owner_id:
+            return True
+        await interaction.response.send_message("This is not your menu.", ephemeral=True)
+        return False
+
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
+    async def previous(self, interaction, button):
+        self.index = max(0, self.index - 1)
+        self._refresh()
+        await interaction.response.edit_message(embed=self.pages[self.index], view=self)
+
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
+    async def next_page(self, interaction, button):
+        self.index = min(len(self.pages) - 1, self.index + 1)
+        self._refresh()
+        await interaction.response.edit_message(embed=self.pages[self.index], view=self)
 
 
 def gm_only(interaction: discord.Interaction) -> bool:

@@ -2,6 +2,14 @@
 
 ## GM access and regression checks
 
+`/battle plans_pending` accepts PostgreSQL timestamps and paginates large queues.
+New AI events use the nation owner's saved `/language` preference (`pl` or `en`),
+falling back to `DEFAULT_LANGUAGE` when no preference is saved. The invoking GM's
+language does not control the narrative. Public/DM labels follow the owner;
+`/event list` labels follow its viewer. Existing event text and GM edits are
+preserved, not automatically translated. AI output language is requested in the
+prompt; the GM should still review the draft before posting.
+
 The `/help` GM tab and GM commands use the same role check. Set `GM_ROLE_ID`
 to the Discord role ID (recommended; it survives role renaming). If unset,
 `GM_ROLE_NAME` defaults to `Game Master` and ignores outer whitespace and case.
