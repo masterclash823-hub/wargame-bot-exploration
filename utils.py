@@ -9,10 +9,14 @@ import config
 
 
 def gm_only(interaction: discord.Interaction) -> bool:
-    """Returns True if the user has the configured GM role."""
+    """Recognize only the configured GM role; an explicit ID takes precedence."""
     if not interaction.guild:
         return False
-    return any(r.name == config.GM_ROLE_NAME for r in interaction.user.roles)
+    roles = getattr(interaction.user, "roles", ())
+    if config.GM_ROLE_ID:
+        return any(str(r.id) == config.GM_ROLE_ID for r in roles)
+    name = config.GM_ROLE_NAME.strip().casefold()
+    return bool(name) and any(r.name.strip().casefold() == name for r in roles)
 
 
 def t_interaction(interaction: discord.Interaction) -> str:

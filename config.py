@@ -28,6 +28,8 @@ DISCORD_TOKEN = _require("DISCORD_TOKEN")
 # GM role name that gates GM-only commands (e.g. /battle resolve, /admin ...).
 # Kept as a name rather than a hardcoded ID so it works across servers without editing code.
 GM_ROLE_NAME = os.getenv("GM_ROLE_NAME", "Game Master")
+# Prefer an exact role ID when names differ between Discord and deployment config.
+GM_ROLE_ID = os.getenv("GM_ROLE_ID", "").strip()
 
 # --- Google Gemini ---
 GEMINI_API_KEY = _require("GEMINI_API_KEY")

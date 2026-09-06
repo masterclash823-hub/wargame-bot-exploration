@@ -13,6 +13,8 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 import config, db, i18n
+from utils import gm_only
+from trade_service import parse_resources, validate_gold, accept_trade
 
 MONTH_NAMES = [
     "January","February","March","April","May","June",
@@ -78,9 +80,7 @@ def _lang(interaction):
     return i18n.get_user_language(interaction.user.id, locale)
 
 def _gm(interaction):
-    return bool(interaction.guild) and any(
-        r.name == config.GM_ROLE_NAME for r in interaction.user.roles
-    )
+    return gm_only(interaction)
 
 def _nation_owner(uid):
     with db.cursor() as c:
@@ -1425,13 +1425,14 @@ class EconomyCog(commands.Cog):
             await interaction.response.send_message("Cannot trade with yourself.", ephemeral=True)
             return
         try:
-            give_res = json.loads(give_resources)
-            recv_res = json.loads(receive_resources)
-        except json.JSONDecodeError:
-            await interaction.response.send_message("Invalid JSON for resources.", ephemeral=True)
+            give_res = parse_resources(give_resources)
+            recv_res = parse_resources(receive_resources)
+            validate_gold(give_gold)
+            validate_gold(receive_gold)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
             return
-        with db.cursor() as c:
-            c.execute(
+        trade_id = db.insert_returning_id(
                 "INSERT INTO trades(from_nation_id,to_nation_id,offer_resources_json,offer_gold,"
                 "receive_resources_json,receive_gold,public_note,private_note,status)"
                 " VALUES(?,?,?,?,?,?,?,?,?)",
@@ -1440,7 +1441,6 @@ class EconomyCog(commands.Cog):
                  json.dumps(recv_res), receive_gold,
                  public_note, private_note, "pending")
             )
-            trade_id = c.lastrowid
         _log(fn["id"], "player", f"Sent trade offer #{trade_id} to {tn['name']}.")
         give_str = ", ".join(f"{v} {k}" for k, v in give_res.items())
         if give_gold:
@@ -1478,69 +1478,13 @@ class EconomyCog(commands.Cog):
     @trade_grp.command(name="accept", description="Accept a trade / Zaakceptuj handel")
     @app_commands.describe(trade_id="Trade ID")
     async def trade_accept(self, interaction: discord.Interaction, trade_id: int):
-        lang = _lang(interaction)
-        n    = _nation_owner(str(interaction.user.id))
-        if not n:
-            await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
+        await interaction.response.defer()
+        try:
+            trade, fn, tn, give_res, recv_res, give_gold, recv_gold = accept_trade(
+                trade_id, interaction.user.id, _gm(interaction))
+        except ValueError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
             return
-        with db.cursor() as c:
-            c.execute("SELECT * FROM trades WHERE id=?", (trade_id,))
-            trade = c.fetchone()
-        if not trade:
-            await interaction.response.send_message(f"Trade #{trade_id} not found.", ephemeral=True)
-            return
-        if trade["to_nation_id"] != n["id"] and not _gm(interaction):
-            await interaction.response.send_message(
-                "This trade is not addressed to your nation.", ephemeral=True)
-            return
-        if trade["status"] != "pending":
-            await interaction.response.send_message(
-                f"Trade #{trade_id} is already {trade['status']}.", ephemeral=True)
-            return
-        with db.cursor() as c:
-            c.execute("SELECT * FROM nations WHERE id=?", (trade["from_nation_id"],))
-            fn = c.fetchone()
-            c.execute("SELECT * FROM nations WHERE id=?", (trade["to_nation_id"],))
-            tn = c.fetchone()
-        give_res  = json.loads(trade["offer_resources_json"])
-        recv_res  = json.loads(trade["receive_resources_json"])
-        give_gold = trade["offer_gold"]
-        recv_gold = trade["receive_gold"]
-        fn_res    = json.loads(fn["resources_json"])
-        tn_res    = json.loads(tn["resources_json"])
-        for r, a in give_res.items():
-            if fn_res.get(r, 0) < a:
-                await interaction.response.send_message(
-                    f"{fn['name']} no longer has enough {r}.", ephemeral=True)
-                return
-        if fn["treasury"] < give_gold:
-            await interaction.response.send_message(
-                f"{fn['name']} no longer has enough gold.", ephemeral=True)
-            return
-        for r, a in recv_res.items():
-            if tn_res.get(r, 0) < a:
-                await interaction.response.send_message(
-                    f"{tn['name']} does not have enough {r}.", ephemeral=True)
-                return
-        if tn["treasury"] < recv_gold:
-            await interaction.response.send_message(
-                f"{tn['name']} does not have enough gold.", ephemeral=True)
-            return
-        for r, a in give_res.items():
-            fn_res[r] = fn_res.get(r, 0) - a
-            tn_res[r] = tn_res.get(r, 0) + a
-        for r, a in recv_res.items():
-            tn_res[r] = tn_res.get(r, 0) - a
-            fn_res[r] = fn_res.get(r, 0) + a
-        fn_treasury = fn["treasury"] - give_gold + recv_gold
-        tn_treasury = tn["treasury"] - recv_gold + give_gold
-        with db.cursor() as c:
-            c.execute("UPDATE nations SET resources_json=?,treasury=? WHERE id=?",
-                      (json.dumps(fn_res), fn_treasury, fn["id"]))
-            c.execute("UPDATE nations SET resources_json=?,treasury=? WHERE id=?",
-                      (json.dumps(tn_res), tn_treasury, tn["id"]))
-            c.execute("UPDATE trades SET status='accepted',resolved_at=datetime('now') WHERE id=?",
-                      (trade_id,))
         give_str = ", ".join(f"{v} {k}" for k, v in give_res.items())
         if give_gold:
             give_str += f", {give_gold:.0f} gold"
@@ -1560,7 +1504,7 @@ class EconomyCog(commands.Cog):
         embed.add_field(name=f"{tn['name']} gave", value=recv_str or "—", inline=True)
         if trade["public_note"]:
             embed.add_field(name="Note", value=trade["public_note"], inline=False)
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @trade_grp.command(name="cancel", description="Cancel/decline a trade / Anuluj handel")
     @app_commands.describe(trade_id="Trade ID")
@@ -1574,7 +1518,7 @@ class EconomyCog(commands.Cog):
         if not trade:
             await interaction.response.send_message(f"Trade #{trade_id} not found.", ephemeral=True)
             return
-        if not is_gm and n and trade["from_nation_id"] != n["id"] and trade["to_nation_id"] != n["id"]:
+        if not is_gm and (not n or n["id"] not in (trade["from_nation_id"], trade["to_nation_id"])):
             await interaction.response.send_message("You are not party to this trade.", ephemeral=True)
             return
         if trade["status"] != "pending":
@@ -1582,8 +1526,11 @@ class EconomyCog(commands.Cog):
                 f"Trade #{trade_id} is already {trade['status']}.", ephemeral=True)
             return
         with db.cursor() as c:
-            c.execute("UPDATE trades SET status='cancelled',resolved_at=datetime('now') WHERE id=?",
+            c.execute("UPDATE trades SET status='cancelled',resolved_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'",
                       (trade_id,))
+            if c.rowcount != 1:
+                await interaction.response.send_message("Trade is no longer pending.", ephemeral=True)
+                return
         await interaction.response.send_message(f"Trade #{trade_id} cancelled.", ephemeral=True)
 
     @trade_grp.command(name="list", description="List pending trades / Lista ofert handlowych")

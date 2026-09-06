@@ -75,10 +75,7 @@ def _lang(interaction: discord.Interaction) -> str:
     locale = interaction.locale.value if interaction.locale else None
     return i18n.get_user_language(interaction.user.id, locale)
 
-def _gm(interaction: discord.Interaction) -> bool:
-    if not interaction.guild:
-        return False
-    return any(r.name == config.GM_ROLE_NAME for r in interaction.user.roles)
+from utils import gm_only as _gm
 
 def _get_nation(name: str):
     with db.cursor() as cur:

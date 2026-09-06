@@ -37,8 +37,7 @@ import i18n
 def _lang(i):
     return i18n.get_user_language(i.user.id, i.locale.value if i.locale else None)
 
-def _gm(i):
-    return bool(i.guild) and any(r.name == config.GM_ROLE_NAME for r in i.user.roles)
+from utils import gm_only as _gm
 
 def _nat_owner(uid):
     with db.cursor() as c:
