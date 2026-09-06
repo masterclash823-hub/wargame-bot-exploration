@@ -638,6 +638,7 @@ HELP_SECTIONS = {
             ("/diplomacy status", "View your own diplomatic relations."),
             ("/diplomacy public", "View the world diplomatic landscape — all active wars and alliances."),
             ("/event list [nation]", "View posted events for a nation or your own."),
+            ("/event play <id>", "Resume an event: 3 choices or a custom response, 3 decisions maximum."),
         ],
     },
 }
@@ -658,7 +659,7 @@ GM_HELP_FIELDS = [
     ("/event generate <nation>", "Generate an AI event based on nation history and stats."),
     ("/event edit <id> <text>", "Edit an event draft before posting."),
     ("/event effects <id> <json>", "Set stat effects for an event draft."),
-    ("/event post <id>", "Post an event publicly and apply its effects."),
+    ("/event post <id>", "Start a 3-decision event; effects apply at the end."),
     ("/battle plans_pending", "List all unmatched battle plans."),
     ("/battle match <plan_a> <plan_b>", "Match two plans into a battle, optional context note."),
     ("/battle resolve <id>", "Get AI modifier and resolve battle. GM can override modifiers."),
@@ -761,6 +762,7 @@ HELP_SECTIONS_PL = {
             ("/diplomacy status", "Twoje relacje dyplomatyczne."),
             ("/diplomacy public", "Mapa dyplomatyczna świata — wszystkie aktywne wojny i sojusze."),
             ("/event list [naród]", "Lista opublikowanych eventów dla narodu."),
+            ("/event play <id>", "Wznów event: 3 opcje lub własna odpowiedź, maksymalnie 3 decyzje."),
         ],
     },
     "colonialism": {
@@ -800,7 +802,7 @@ GM_HELP_FIELDS_PL = [
     ("/event generate <naród>", "Generuj event AI na podstawie historii i statystyk narodu."),
     ("/event edit <id> <tekst>", "Edytuj szkic eventu przed publikacją."),
     ("/event effects <id> <json>", "Ustaw efekty statystyk dla eventu."),
-    ("/event post <id>", "Opublikuj event i zastosuj efekty."),
+    ("/event post <id>", "Rozpocznij event z 3 decyzjami; efekty dopiero na końcu."),
     ("/battle plans_pending", "Lista wszystkich niedopasowanych planów bitew."),
     ("/battle match <plan_atk> <plan_def>", "Dopasuj dwa plany — wybierz kto atakuje, kto broni."),
     ("/battle resolve <id>", "Pobierz modyfikator AI i rozstrzygnij bitwę."),
@@ -815,6 +817,7 @@ class HelpView(discord.ui.View):
         self.is_gm   = is_gm
         self.current = current
         self.lang    = lang
+        self.page = 0
         self._build()
 
     def _build(self):
@@ -840,10 +843,33 @@ class HelpView(discord.ui.View):
             )
             gm.callback = self._cb("gm")
             self.add_item(gm)
+        if self.current == "gm":
+            fields = GM_HELP_FIELDS_PL if self.lang == "pl" else GM_HELP_FIELDS
+            count = (len(fields) + 19) // 20
+            for label, offset in (("◀", -1), ("▶", 1)):
+                btn = discord.ui.Button(label=label, row=2,
+                    disabled=not 0 <= self.page + offset < count)
+                btn.callback = self._page_cb(offset)
+                self.add_item(btn)
+
+    def _page_cb(self, offset):
+        async def callback(interaction):
+            if not _gm(interaction):
+                await interaction.response.send_message(i18n.t(self.lang, "gm_only"), ephemeral=True)
+                return
+            fields = GM_HELP_FIELDS_PL if self.lang == "pl" else GM_HELP_FIELDS
+            self.page = max(0, min((len(fields) - 1) // 20, self.page + offset))
+            self._build()
+            await interaction.response.edit_message(embed=self._embed(), view=self)
+        return callback
 
     def _cb(self, key: str):
         async def callback(interaction: discord.Interaction):
+            if key == "gm" and not _gm(interaction):
+                await interaction.response.send_message(i18n.t(self.lang, "gm_only"), ephemeral=True)
+                return
             self.current = key
+            self.page = 0
             self._build()
             embed = self._embed()
             await interaction.response.edit_message(embed=embed, view=self)
@@ -857,8 +883,9 @@ class HelpView(discord.ui.View):
                 title="🔐 Komendy GM" if self.lang == "pl" else "🔐 GM Commands",
                 color=discord.Color.red()
             )
-            for name, value in gm_fields:
+            for name, value in gm_fields[self.page * 20:(self.page + 1) * 20]:
                 e.add_field(name=name, value=value, inline=False)
+            e.set_footer(text=f"{self.page + 1} / {(len(gm_fields) + 19) // 20}")
             return e
         data = sections[self.current]
         e = discord.Embed(title=data["title"], color=data["color"])

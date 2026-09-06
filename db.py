@@ -196,6 +196,12 @@ CREATE TABLE IF NOT EXISTS events (
     posted_at     TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS event_runs (
+    event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL DEFAULT 0,
+    state_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS game_config (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL DEFAULT ''

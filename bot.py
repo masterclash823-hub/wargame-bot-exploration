@@ -165,13 +165,14 @@ async def language_cmd(interaction: discord.Interaction, lang: app_commands.Choi
 
 @tree.command(name="help", description="Show available commands / Pokaz dostepne komendy")
 async def help_cmd(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
     try:
         from cogs.economy import HelpView
         is_gm = gm_only(interaction)
         lang  = i18n.get_user_language(interaction.user.id)
         view  = HelpView(is_gm=is_gm, current="general", lang=lang)
         embed = view._embed()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
     except Exception as e:
         print(f"[HELP ERROR] {e}", flush=True)
         embed = discord.Embed(
@@ -179,7 +180,7 @@ async def help_cmd(interaction: discord.Interaction):
             description="Economy cog failed to load — check Render logs.\n\nWorking: `/language`, `/nation`, `/province`",
             color=discord.Color.red(),
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 @tree.command(name="tutorial", description="Quick start guide / Krótki przewodnik dla nowych graczy")
 async def tutorial_cmd(interaction: discord.Interaction):

@@ -1,5 +1,44 @@
 # Wargame Bot - Step 1: Skeleton
 
+## Interactive events and GM help
+
+GM help now has pages: the old GM tab exceeded Discord's 25-field limit
+(26 English / 27 Polish fields). `GM_ROLE_NAME=Game Master` is sufficient for
+that role; `GM_ROLE_ID` is optional and does not fix embed-size errors.
+
+New event workflow:
+
+1. GM uses `/event generate`, optionally `/event edit` and `/event effects`.
+2. `/event post` starts an interactive event without applying any effects yet.
+3. The nation owner uses buttons 1/2/3 or **Custom response**. Each custom answer
+   counts as one decision, just like a button. `/event play <id>` restores the
+   latest saved state after a timeout, missed DM or a Render restart.
+4. After exactly three accepted decisions, the event ends and applies effects
+   once. Old buttons/repeated submissions cannot pay out again. GM can inspect
+   with `/event play`, but only the nation owner can make choices.
+
+The three mechanical strategies scale the GM-approved base gains **and losses**
+by 0.5, 1, or 1.5. The final multiplier is their average, not three full payouts.
+Choices display accumulated pending effects. Custom text shapes the story and
+AI classifies it into the same bounded strategies; it cannot introduce arbitrary
+rewards. AI failure uses a visible balanced fallback and three default choices.
+The stored event language follows the owner's `/language` setting when posted.
+Existing posted events are left unchanged and are not paid out again.
+
+Deployment: merge and deploy, then startup `db.init_db()` adds `event_runs`
+without deleting existing tables. Run the test suite and try a disposable event
+first; verify no balances change on post or decisions 1/2, and exactly one change
+after decision 3. The GM/owner can inspect the final result through `/event play`.
+Decision views expire after 10 minutes, but saved progress does not expire.
+Resuming after a restart requires retaining the same database (use the configured
+PostgreSQL database on the hosted bot, not a disposable test SQLite file).
+
+See [the economy review](docs/economy-review.md) for confirmed economic issues
+and [the offline diagnostic](scripts/audit_economy.py) to reproduce them.
+**Important:** the old non-atomic monthly tick can overwrite concurrent balance
+updates. This PR protects event settlement itself but does not repair that
+separate economy issue. No production PostgreSQL or Discord tests were run.
+
 ## GM access and regression checks
 
 `/battle plans_pending` accepts PostgreSQL timestamps and paginates large queues.
