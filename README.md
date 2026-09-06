@@ -1,5 +1,23 @@
 # Wargame Bot - Step 1: Skeleton
 
+## Battle resolution
+
+`/battle match` now returns the real PostgreSQL battle ID. `/battle resolve`
+without an ID lists pending battles, including records created by older versions
+that displayed `Battle #None`. Resolve one with `/battle resolve <id>`.
+
+Resolution uses `GEMINI_MODEL` and falls back to neutral modifiers when AI is
+unavailable. AI modifiers are constrained to 0.7–1.4; optional GM overrides must
+be 0.1–3.0 (use 0/blank for AI). The battle row, both plan statuses, logs and
+optional casualties commit atomically. Repeated or concurrent resolution cannot
+apply losses twice. Casualties affect only quantities committed in the two plans,
+not every military unit owned by the nations. The result is saved before Discord
+announcement; a channel delivery failure does not undo the completed battle.
+
+After merging, deploy/restart Render so Discord command parameters synchronize.
+Test first with `apply_casualties: false`, then inspect `/battle view <id>`.
+Offline tests do not call production PostgreSQL, Discord or Gemini.
+
 ## GM access and regression checks
 
 `/battle plans_pending` accepts PostgreSQL timestamps and paginates large queues.

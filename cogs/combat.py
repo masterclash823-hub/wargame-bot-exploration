@@ -18,9 +18,7 @@ Combat formula:
   winner: higher effective value. Casualties proportional to ratio.
 """
 import json
-import random
 import asyncio
-from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
@@ -29,6 +27,7 @@ from discord.ext import commands
 import config
 import db
 import i18n
+import battle_resolution
 from utils import short_date, EmbedPager
 
 
@@ -90,98 +89,6 @@ def _set_relation(a_id, b_id, status):
 # ---------------------------------------------------------------------------
 # Combat resolution
 # ---------------------------------------------------------------------------
-def _forces_power(forces_json: str, nation_id: int) -> tuple[float, float, int]:
-    """
-    Parse a forces string and compute attack, defense, and unit count.
-    Forces is a list of {unit_id, qty} dicts OR a plain text description
-    (in which case we return 0s and let the GM/AI handle it).
-    Returns (attack, defense, total_units).
-    """
-    try:
-        forces = json.loads(forces_json)
-        if not isinstance(forces, list):
-            return 0.0, 0.0, 0
-    except (json.JSONDecodeError, TypeError):
-        return 0.0, 0.0, 0
-
-    with db.cursor() as c:
-        c.execute("SELECT * FROM nations WHERE id=?", (nation_id,))
-        nat = c.fetchone()
-    tech     = json.loads(nat["tech_json"]) if nat else {}
-    land_tech = tech.get("land", 3.0)
-    tech_mod  = 1 + land_tech / 20.0
-
-    total_atk = total_def = total_qty = 0
-
-    for entry in forces:
-        uid = entry.get("unit_id")
-        qty = entry.get("qty", 1)
-        with db.cursor() as c:
-            c.execute(
-                "SELECT u.*,b.stats_json,b.type as btype FROM military_units u "
-                "LEFT JOIN blueprints b ON u.blueprint_id=b.id "
-                "WHERE u.id=? AND u.nation_id=?",
-                (uid, nation_id)
-            )
-            unit = c.fetchone()
-        if not unit:
-            continue
-        stats    = json.loads(unit["stats_json"] or "{}")
-        actual_q = min(qty, unit["quantity"])
-        total_qty += actual_q
-        if unit["btype"] == "ship":
-            total_atk += stats.get("attack", 0) * actual_q
-            total_def += stats.get("hp", 100) * actual_q * 0.1
-        else:
-            total_atk += stats.get("attack", 0) * actual_q
-            total_def += stats.get("defense", 0) * actual_q
-
-    return total_atk * tech_mod, total_def * tech_mod, total_qty
-
-
-def _resolve_combat(
-    atk_power: float,
-    def_power: float,
-    atk_modifier: float,
-    def_modifier: float,
-    fort_bonus: float = 1.0,
-) -> dict:
-    """
-    Run the deterministic formula and return a result dict.
-    """
-    roll          = random.uniform(0.85, 1.15)
-    eff_attack    = atk_power * atk_modifier * roll
-    eff_defense   = def_power * def_modifier * fort_bonus
-
-    if eff_attack == 0 and eff_defense == 0:
-        return {
-            "winner": "draw",
-            "eff_attack": 0, "eff_defense": 0,
-            "atk_casualties_pct": 0, "def_casualties_pct": 0,
-            "roll": round(roll, 3),
-        }
-
-    if eff_attack >= eff_defense:
-        winner = "attacker"
-        margin = eff_attack / max(eff_defense, 1)
-        atk_cas = max(5,  int(30 / margin))
-        def_cas = min(80, int(30 * margin))
-    else:
-        winner = "defender"
-        margin = eff_defense / max(eff_attack, 1)
-        def_cas = max(5,  int(30 / margin))
-        atk_cas = min(80, int(30 * margin))
-
-    return {
-        "winner":             winner,
-        "eff_attack":         round(eff_attack,  1),
-        "eff_defense":        round(eff_defense, 1),
-        "atk_casualties_pct": atk_cas,
-        "def_casualties_pct": def_cas,
-        "roll":               round(roll, 3),
-    }
-
-
 async def _get_ai_modifier(plan_a: dict, plan_b: dict, nat_a: dict, nat_b: dict) -> dict:
     """
     Call Gemini to review battle plans and return structured modifiers.
@@ -215,25 +122,18 @@ Respond ONLY with the JSON object. No markdown, no explanation outside the JSON.
     try:
         from google import genai
         client   = genai.Client(api_key=config.GEMINI_API_KEY)
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: client.models.generate_content(
-                model="gemini-2.0-flash",
+        response = await asyncio.wait_for(
+            asyncio.to_thread(lambda: client.models.generate_content(
+                model=config.GEMINI_MODEL,
                 contents=prompt,
-            )
-        )
+            )), timeout=25)
         raw = response.text.strip()
         # Strip markdown code fences if present
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
-        result = json.loads(raw.strip())
-        return {
-            "attacker_modifier": float(result.get("attacker_modifier", 1.0)),
-            "defender_modifier": float(result.get("defender_modifier", 1.0)),
-            "reasoning":         str(result.get("reasoning", "No reasoning provided.")),
-        }
+        return battle_resolution.normalize_ai(json.loads(raw.strip()))
     except Exception as e:
         print(f"[COMBAT AI] Gemini call failed: {type(e).__name__}: {e}", flush=True)
         return {
@@ -241,20 +141,6 @@ Respond ONLY with the JSON object. No markdown, no explanation outside the JSON.
             "defender_modifier": 1.0,
             "reasoning": f"AI unavailable ({type(e).__name__}) — modifiers defaulted to 1.0.",
         }
-
-
-def _apply_casualties(nation_id: int, casualty_pct: int):
-    """Reduce all military unit quantities by casualty_pct%. Remove groups that hit 0."""
-    with db.cursor() as c:
-        c.execute("SELECT * FROM military_units WHERE nation_id=?", (nation_id,))
-        units = c.fetchall()
-    for u in units:
-        new_qty = max(0, int(u["quantity"] * (1 - casualty_pct / 100)))
-        with db.cursor() as c:
-            if new_qty == 0:
-                c.execute("DELETE FROM military_units WHERE id=?", (u["id"],))
-            else:
-                c.execute("UPDATE military_units SET quantity=? WHERE id=?", (new_qty, u["id"]))
 
 
 # ---------------------------------------------------------------------------
@@ -442,14 +328,15 @@ class CombatCog(commands.Cog):
             await interaction.response.send_message(
                 "Both plans belong to the same nation.", ephemeral=True)
             return
+        if plan_a["status"] != "unmatched" or plan_b["status"] != "unmatched":
+            await interaction.response.send_message(
+                "Both plans must still be unmatched.", ephemeral=True)
+            return
 
+        battle_id = db.insert_returning_id(
+            "INSERT INTO battles(plan_a_id,plan_b_id,gm_note,status) VALUES(?,?,?,?)",
+            (attacker_plan_id, defender_plan_id, gm_note, "pending"))
         with db.cursor() as c:
-            c.execute(
-                "INSERT INTO battles(plan_a_id,plan_b_id,gm_note,status)"
-                " VALUES(?,?,?,?)",
-                (attacker_plan_id, defender_plan_id, gm_note, "pending")
-            )
-            battle_id = c.lastrowid
             c.execute("UPDATE battle_plans SET status='matched' WHERE id=? OR id=?",
                       (attacker_plan_id, defender_plan_id))
 
@@ -555,13 +442,13 @@ class CombatCog(commands.Cog):
     @battle_grp.command(name="resolve",
                         description="[GM] Resolve a battle / [GM] Rozstrzygnij bitwe")
     @app_commands.describe(
-        battle_id="Battle ID",
+        battle_id="Battle ID (leave blank to list pending battles)",
         atk_modifier_override="Override AI attacker modifier (leave blank to use AI)",
         def_modifier_override="Override AI defender modifier (leave blank to use AI)",
         apply_casualties="Apply casualties to units automatically (default True)",
     )
     async def battle_resolve(self, interaction: discord.Interaction,
-                             battle_id: int,
+                             battle_id: int = 0,
                              atk_modifier_override: float = 0.0,
                              def_modifier_override: float = 0.0,
                              apply_casualties: bool = True):
@@ -572,107 +459,68 @@ class CombatCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        with db.cursor() as c:
-            c.execute("SELECT * FROM battles WHERE id=?", (battle_id,))
-            battle = c.fetchone()
-        if not battle or battle["status"] != "pending":
-            await interaction.followup.send(
-                f"Battle #{battle_id} not found or already resolved.", ephemeral=True)
-            return
-
-        with db.cursor() as c:
-            c.execute("SELECT * FROM battle_plans WHERE id=?", (battle["plan_a_id"],))
-            plan_a = c.fetchone()
-            c.execute("SELECT * FROM battle_plans WHERE id=?", (battle["plan_b_id"],))
-            plan_b = c.fetchone()
-
-        nat_a = _nat_id(plan_a["nation_id"])
-        nat_b = _nat_id(plan_b["nation_id"])
-
-        # Build plan dicts for AI
-        def plan_dict(p):
-            loc = json.loads(p["provinces_json"])
-            orders_full = p["orders_text"]
-            orders_disp = orders_full.split(" | Location:")[0]
-            forces_note = ""
-            if " | Forces:" in orders_full:
-                forces_note = orders_full.split(" | Forces:")[-1]
-            return {
-                "location_text": loc[0] if loc else "unknown",
-                "orders_text":   orders_disp,
-                "forces_note":   forces_note,
-            }
-
-        pd_a = plan_dict(plan_a)
-        pd_b = plan_dict(plan_b)
-
-        # Get AI modifier
-        await interaction.followup.send(
-            "⏳ Consulting AI for combat modifier...", ephemeral=True)
-        ai_mod = await _get_ai_modifier(pd_a, pd_b, nat_a, nat_b)
-
-        with db.cursor() as c:
-            c.execute("UPDATE battles SET ai_modifier_json=? WHERE id=?",
-                      (json.dumps(ai_mod), battle_id))
-
-        # Use overrides if provided
-        final_atk_mod = atk_modifier_override if atk_modifier_override > 0 else ai_mod["attacker_modifier"]
-        final_def_mod = def_modifier_override if def_modifier_override > 0 else ai_mod["defender_modifier"]
-
-        # Calculate forces power
-        atk_power, atk_def_unused, atk_units = _forces_power(
-            plan_a["forces_json"], plan_a["nation_id"])
-        def_unused, def_power, def_units = _forces_power(
-            plan_b["forces_json"], plan_b["nation_id"])
-
-        # Fort bonus from any assigned province
-        fort_bonus = 1.0
-        locs_b = json.loads(plan_b["provinces_json"])
-        if locs_b:
+        if battle_id <= 0:
             with db.cursor() as c:
                 c.execute(
-                    "SELECT fortification_level FROM provinces "
-                    "WHERE name LIKE ? AND active=1 LIMIT 1",
-                    (f"%{locs_b[0][:20]}%",)
-                )
-                fort_row = c.fetchone()
-            if fort_row and fort_row["fortification_level"]:
-                fort_bonus = 1.0 + fort_row["fortification_level"] * 0.1
+                    "SELECT b.id,na.name AS attacker,nd.name AS defender "
+                    "FROM battles b JOIN battle_plans pa ON pa.id=b.plan_a_id "
+                    "JOIN battle_plans pd ON pd.id=b.plan_b_id "
+                    "JOIN nations na ON na.id=pa.nation_id JOIN nations nd ON nd.id=pd.nation_id "
+                    "WHERE b.status='pending' ORDER BY b.id LIMIT 25")
+                pending = c.fetchall()
+            if not pending:
+                await interaction.followup.send("No pending battles. / Brak oczekujących bitew.", ephemeral=True)
+                return
+            embed = discord.Embed(title="⚔️ Pending Battles / Oczekujące bitwy", color=discord.Color.red())
+            embed.description = "\n".join(
+                f"`#{row['id']}` {row['attacker']} → {row['defender']}" for row in pending)
+            embed.set_footer(text="Run /battle resolve <id> / Użyj /battle resolve <id>")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
 
-        result = _resolve_combat(atk_power, def_power, final_atk_mod, final_def_mod, fort_bonus)
+        try:
+            battle, plan_a, plan_b, nat_a, nat_b = battle_resolution.load_context(battle_id)
+            if battle["status"] != "pending":
+                raise ValueError(f"Battle #{battle_id} is already {battle['status']}.")
+        except ValueError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
 
-        final_mod_json = json.dumps({
-            "attacker_modifier": final_atk_mod,
-            "defender_modifier": final_def_mod,
-            "overridden": atk_modifier_override > 0 or def_modifier_override > 0,
-        })
+        def plan_dict(plan):
+            try:
+                locations = json.loads(plan["provinces_json"])
+            except (TypeError, ValueError):
+                locations = []
+            orders = str(plan["orders_text"] or "")
+            return {
+                "location_text": str(locations[0]) if locations else "unknown",
+                "orders_text": orders.split(" | Location:", 1)[0],
+                "forces_note": orders.split(" | Forces:", 1)[1] if " | Forces:" in orders else "",
+            }
 
-        with db.cursor() as c:
-            c.execute(
-                "UPDATE battles SET status='resolved',gm_final_modifier_json=?,"
-                "report_json=?,resolved_at=datetime('now') WHERE id=?",
-                (final_mod_json, json.dumps(result), battle_id)
-            )
+        pd_a, pd_b = plan_dict(plan_a), plan_dict(plan_b)
+        await interaction.followup.send("⏳ Consulting AI for combat modifier...", ephemeral=True)
+        ai_mod = await _get_ai_modifier(pd_a, pd_b, nat_a, nat_b)
+        try:
+            settled = battle_resolution.resolve(
+                battle_id, ai_mod, atk_modifier_override, def_modifier_override,
+                apply_casualties)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
 
-        # Apply casualties
-        if apply_casualties:
-            _apply_casualties(plan_a["nation_id"], result["atk_casualties_pct"])
-            _apply_casualties(plan_b["nation_id"], result["def_casualties_pct"])
-
-        # Log to both nations (private — includes modifiers)
-        winner_name = nat_a["name"] if result["winner"]=="attacker" else (
-                      nat_b["name"] if result["winner"]=="defender" else "Draw")
-        for nid, role in [(plan_a["nation_id"],"attacker"),(plan_b["nation_id"],"defender")]:
-            cas = result["atk_casualties_pct"] if role=="attacker" else result["def_casualties_pct"]
-            _log(nid, "system",
-                 f"Battle #{battle_id}: {result['winner'].upper()} wins ({winner_name}). "
-                 f"Your casualties: {cas}%. "
-                 f"Modifiers — ATK:×{final_atk_mod:.2f} DEF:×{final_def_mod:.2f}. "
-                 f"AI reasoning: {ai_mod['reasoning']}")
-
+        battle, plan_a, plan_b = settled["battle"], settled["plan_a"], settled["plan_b"]
+        nat_a, nat_b, ai_mod = settled["nat_a"], settled["nat_b"], settled["ai"]
+        result = settled["result"]
+        final_atk_mod = settled["final"]["attacker_modifier"]
+        final_def_mod = settled["final"]["defender_modifier"]
+        atk_power, def_power, fort_bonus = settled["atk_power"], settled["def_power"], settled["fort_bonus"]
         # Public battle report
         ch_id = _cfg("announce_channel_id")
-        ch    = self.bot.get_channel(int(ch_id)) if ch_id else None
+        try:
+            ch = self.bot.get_channel(int(ch_id)) if ch_id else None
+        except (TypeError, ValueError):
+            ch = None
 
         WINNER_COLOR = {
             "attacker": discord.Color.red(),
@@ -722,7 +570,8 @@ class CombatCog(commands.Cog):
         if ch:
             try:
                 await ch.send(embed=report_embed)
-            except discord.Forbidden:
+            except discord.HTTPException as exc:
+                print(f"[COMBAT] Battle #{battle_id} resolved but announcement failed: {exc}", flush=True)
                 pass
 
         # Also confirm to GM with full details
