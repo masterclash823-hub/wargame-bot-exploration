@@ -29,6 +29,7 @@ from discord.ext import commands
 import config
 import db
 import i18n
+from utils import short_date, EmbedPager
 
 
 # ---------------------------------------------------------------------------
@@ -376,34 +377,39 @@ class CombatCog(commands.Cog):
             await interaction.response.send_message(
                 i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
+        await interaction.response.defer(ephemeral=True)
         with db.cursor() as c:
             c.execute(
                 "SELECT p.*,n.name as nname,n.flag as nflag"
                 " FROM battle_plans p JOIN nations n ON p.nation_id=n.id"
-                " WHERE p.status='unmatched' ORDER BY p.submitted_at",
+                " WHERE p.status='unmatched' ORDER BY p.submitted_at,p.id",
             )
             rows = c.fetchall()
         if not rows:
-            await interaction.response.send_message("No unmatched battle plans.", ephemeral=True)
+            await interaction.followup.send("No unmatched battle plans.", ephemeral=True)
             return
         embed = discord.Embed(title="⚔️ Pending Battle Plans", color=discord.Color.red())
+        pages = []
         for r in rows:
             forces   = json.loads(r["forces_json"])
             loc      = json.loads(r["provinces_json"])
-            loc_str  = loc[0][:150] if loc else "not specified"
+            loc_str  = str(loc[0])[:150] if loc else "not specified"
             orders_full = r["orders_text"]
             orders_disp = orders_full.split(" | Location:")[0][:200]
-            embed.add_field(
-                name=f"Plan #{r['id']} — {r['submitted_at'][:10]}",
-                value=(
-                    f"**Nation:** {r['nflag'] or ''} {r['nname']}\n"
+            name = f"Plan #{r['id']} — {short_date(r['submitted_at'])}"
+            value = (
+                    f"**Nation:** {(r['nflag'] or '')[:80]} {r['nname'][:200]}\n"
                     f"**Location:** {loc_str}\n"
                     f"**Orders:** {orders_disp}\n"
                     f"**Units:** {len(forces)} group(s) committed"
-                ),
-                inline=False,
-            )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+                )
+            if len(embed.fields) >= 20 or len(embed) + len(name) + len(value) > 5800:
+                pages.append(embed)
+                embed = discord.Embed(title="⚔️ Pending Battle Plans", color=discord.Color.red())
+            embed.add_field(name=name, value=value, inline=False)
+        pages.append(embed)
+        await interaction.followup.send(embed=pages[0],
+            view=EmbedPager(pages, interaction.user.id), ephemeral=True)
 
     # -------------------------------------------------- /battle match
     @battle_grp.command(name="match",
