@@ -50,6 +50,31 @@ def load_context(battle_id):
     return battle, plan_a, plan_b, nat_a, nat_b
 
 
+def location_context(location):
+    """Resolve a GM location to map terrain while still allowing free text/sea battles."""
+    text = str(location or "").strip()
+    row = None
+    with db.cursor() as c:
+        if text.isdigit():
+            c.execute("SELECT * FROM provinces WHERE azgaar_cell_id=? AND active=1", (int(text),))
+            row = c.fetchone()
+        if not row and text:
+            c.execute("SELECT * FROM provinces WHERE LOWER(name)=LOWER(?) AND active=1 LIMIT 1", (text,))
+            row = c.fetchone()
+    if not row:
+        return {"input": text, "name": text or i18n.text("Unspecified"), "cell_id": None,
+                "terrain": "unknown", "biome": "unknown", "fortification": 0,
+                "population": 0, "buildings": []}
+    try:
+        buildings = json.loads(row["buildings_json"] or "[]")
+    except (TypeError, ValueError):
+        buildings = []
+    return {"input": text, "name": row["name"] or i18n.text("Cell #{p0}", p0=row["azgaar_cell_id"]),
+            "cell_id": row["azgaar_cell_id"], "terrain": row["terrain"], "biome": row["biome"],
+            "fortification": int(row["fortification_level"] or 0),
+            "population": int(row["population"] or 0), "buildings": buildings}
+
+
 def _entries(raw):
     try:
         entries = json.loads(raw)
@@ -68,6 +93,31 @@ def _entries(raw):
         if unit_id > 0 and qty > 0:
             clean.append((unit_id, qty))
     return clean
+
+
+def force_snapshot(plan, nation):
+    """Human/AI-readable snapshot of the exact unit groups committed in a plan."""
+    rows = []
+    with db.cursor() as c:
+        for unit_id, requested in _entries(plan["forces_json"]):
+            c.execute("SELECT u.*,b.name AS blueprint_name,b.type AS blueprint_type,b.hull,b.stats_json,"
+                      "p.name AS province_name,p.azgaar_cell_id FROM military_units u "
+                      "LEFT JOIN blueprints b ON b.id=u.blueprint_id "
+                      "LEFT JOIN provinces p ON p.id=u.province_id "
+                      "WHERE u.id=? AND u.nation_id=?", (unit_id, nation["id"]))
+            unit = c.fetchone()
+            if not unit:
+                continue
+            try:
+                stats = json.loads(unit["stats_json"] or "{}")
+            except (TypeError, ValueError):
+                stats = {}
+            rows.append({"unit_id": unit_id, "name": unit["blueprint_name"] or unit["unit_type"] or "Unit",
+                         "type": unit["blueprint_type"] or unit["unit_type"] or "unit",
+                         "hull": unit["hull"] or "", "committed": min(requested, int(unit["quantity"])),
+                         "owned": int(unit["quantity"]), "stats": stats,
+                         "stationed_at": unit["province_name"] or unit["azgaar_cell_id"] or "unassigned"})
+    return rows
 
 
 def _power(c, plan, nation):
@@ -96,16 +146,14 @@ def _power(c, plan, nation):
     return attack * tech_mod, defense * tech_mod, committed
 
 
-def _fort_bonus(c, plan):
-    try:
-        locations = json.loads(plan["provinces_json"])
-        location = str(locations[0]).strip() if locations else ""
-    except (TypeError, ValueError):
-        location = ""
+def _fort_bonus(c, location):
+    location = str(location or "").strip()
     if not location:
         return 1.0
-    c.execute("SELECT fortification_level FROM provinces WHERE name LIKE ? AND active=1 LIMIT 1",
-              (f"%{location[:20]}%",))
+    if location.isdigit():
+        c.execute("SELECT fortification_level FROM provinces WHERE azgaar_cell_id=? AND active=1", (int(location),))
+    else:
+        c.execute("SELECT fortification_level FROM provinces WHERE LOWER(name)=LOWER(?) AND active=1 LIMIT 1", (location,))
     row = c.fetchone()
     return 1.0 + float(row["fortification_level"] or 0) * 0.1 if row else 1.0
 
@@ -139,8 +187,10 @@ def _casualties(c, units, percent):
     return applied
 
 
-def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualties=True):
+def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualties=True,
+            final_location=""):
     ai = normalize_ai(ai_raw)
+    battlefield = location_context(final_location)
     atk_mod = modifier(atk_override, override=True) if atk_override else ai["attacker_modifier"]
     def_mod = modifier(def_override, override=True) if def_override else ai["defender_modifier"]
     with db.cursor() as c:
@@ -167,8 +217,9 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
             raise ValueError(i18n.text('One or both nations no longer exist.'))
         atk_power, _, atk_units = _power(c, plan_a, nat_a)
         _, def_power, def_units = _power(c, plan_b, nat_b)
-        fort = _fort_bonus(c, plan_b)
+        fort = _fort_bonus(c, final_location)
         result = _combat(atk_power, def_power, atk_mod, def_mod, fort)
+        result["battlefield"] = battlefield
         result["casualties_applied"] = bool(apply_casualties)
         if apply_casualties:
             result["attacker_losses"] = _casualties(c, atk_units, result["atk_casualties_pct"])
@@ -190,3 +241,21 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
     return {"battle": battle, "plan_a": plan_a, "plan_b": plan_b,
             "nat_a": nat_a, "nat_b": nat_b, "ai": ai, "final": final,
             "result": result, "atk_power": atk_power, "def_power": def_power, "fort_bonus": fort}
+
+
+def attach_narrative(battle_id, narrative, attacker_forces, defender_forces):
+    """Attach the post-settlement story and immutable unit snapshots to report_json."""
+    clean = {key: str((narrative or {}).get(key, ""))[:1000]
+             for key in ("opening", "turning_point", "outcome")}
+    with db.cursor() as c:
+        c.execute("SELECT report_json FROM battles WHERE id=? AND status='resolved'", (battle_id,))
+        row = c.fetchone()
+        if not row:
+            raise ValueError(i18n.text('Resolved battle #{p0} not found.', p0=battle_id))
+        report = json.loads(row["report_json"] or "{}")
+        report["narrative"] = clean
+        report["attacker_forces"] = attacker_forces
+        report["defender_forces"] = defender_forces
+        c.execute("UPDATE battles SET report_json=? WHERE id=? AND status='resolved'",
+                  (json.dumps(report), battle_id))
+    return report
