@@ -728,7 +728,7 @@
   "Colony '{p0}' advanced automatically: {p1} → {p2}.": "Kolonia „{p0}” awansowała automatycznie: {p1} → {p2}.",
   "All requirements were met, so **{p0}** advanced automatically to **{p1}**.": "Wszystkie wymagania zostały spełnione, więc **{p0}** automatycznie awansowała do etapu **{p1}**.",
   "The colony will advance automatically once every requirement, including technology, is met.": "Kolonia awansuje automatycznie po spełnieniu wszystkich wymagań, w tym technologii.",
-  "\n✅ Funded and timed — advancement is automatic when technology is sufficient": "\n✅ Koszt i czas spełnione — awans nastąpi automatycznie przy wystarczającej technologii"
+  "\n✅ Funded and timed — advancement is automatic when technology is sufficient": "\n✅ Koszt i czas spełnione — awans nastąpi automatycznie przy wystarczającej technologii",
   "Final battle location": "Ostateczna lokalizacja bitwy",
   "Province name or cell ID": "Nazwa prowincji lub ID komórki",
   "e.g. Harbor or 55": "np. Port lub 55",

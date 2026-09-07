@@ -2,6 +2,7 @@
 Economy cog: resources, buildings, calendar, megaprojects, trades, admineco.
 All slash commands use @app_commands.command or group subcommands — no hybrid.
 """
+from flags import flag_text, flagged_embed
 import psycopg2
 import psycopg2.extras
 
@@ -1111,11 +1112,11 @@ class EconomyCog(commands.Cog):
         desc = "\n".join(f"**{i18n.term(k)}**: {v:,.1f}"
                          for k, v in other_res.items()) or i18n.text('*No resources yet.*')
 
-        embed = discord.Embed(
-            title=i18n.text('{p0} {p1} — Resources', p0=n['flag'] or '', p1=n['name']).strip(),
+        embed = flagged_embed(discord.Embed(
+            title=i18n.text('{p0} {p1} — Resources', p0=flag_text(n['flag']), p1=n['name']).strip(),
             description=desc,
             color=discord.Color.green(),
-        )
+        ), (n['flag'], n['name']))
         embed.add_field(name=i18n.text('🌾 Food'), value=food_status, inline=False)
         embed.add_field(name=i18n.text('💰 Treasury'), value=i18n.text('{p0:,.0f} gold', p0=n['treasury']), inline=True)
         if luxury_income > 0:
@@ -1669,11 +1670,11 @@ class EconomyCog(commands.Cog):
             return
         is_party = n and (t["from_nation_id"] == n["id"] or t["to_nation_id"] == n["id"])
         STATUS   = {"pending":"🟡","accepted":"✅","cancelled":"❌"}
-        embed = discord.Embed(
+        embed = flagged_embed(discord.Embed(
             title=i18n.text('{p0} Trade #{p1}', p0=STATUS.get(t['status'], '❓'), p1=trade_id),
-            description=f"**{t['fflag'] or ''} {t['fname']}** ↔ **{t['tflag'] or ''} {t['tname']}**",
+            description=f"**{flag_text(t['fflag'])} {t['fname']}** ↔ **{flag_text(t['tflag'])} {t['tname']}**",
             color=discord.Color.orange(),
-        )
+        ), (t['fflag'], t['fname']), (t['tflag'], t['tname']))
         embed.add_field(name=i18n.text('Status'), value=i18n.term(t["status"]), inline=True)
         embed.add_field(name=i18n.text('Date'),   value=short_date(t["created_at"]), inline=True)
         give_res  = json.loads(t["offer_resources_json"])

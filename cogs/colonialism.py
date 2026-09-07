@@ -3,6 +3,7 @@ Colonialism and Trade Route commands.
 Colony stages: outpost(50%) -> settlement(75%) -> colony(90%) -> province(100%)
 Trade routes: income = ship cargo x 2g/tick, fallback 20g if no ships.
 """
+from flags import flag_text, flagged_embed
 import json
 import discord
 from discord import app_commands
@@ -487,7 +488,7 @@ class ColonialismCog(commands.Cog):
         with db.cursor() as c:
             c.execute("SELECT c.*,p.name as pname,p.azgaar_cell_id FROM colonies c JOIN provinces p ON c.province_id=p.id WHERE c.nation_id=? ORDER BY c.id",(nat["id"],)); cols=c.fetchall()
         if not cols: await interaction.response.send_message(i18n.text('**{p0}** has no colonies.', p0=nat['name']),ephemeral=True); return
-        embed=discord.Embed(title=i18n.text('🗺️ Colonies — {p0} {p1}', p0=nat['flag'] or '', p1=nat['name']),color=discord.Color.dark_green())
+        embed=flagged_embed(discord.Embed(title=i18n.text('🗺️ Colonies — {p0} {p1}', p0=flag_text(nat['flag']), p1=nat['name']),color=discord.Color.dark_green()), (nat['flag'], nat['name']))
         for col in cols:
             cfg=STAGE_CONFIG[col["status"]]; inv=json.loads(col["investment_json"])
             adv_cost=cfg["advance_cost"].get("gold",0); adv_mo=cfg["advance_months"]
@@ -513,7 +514,8 @@ class ColonialismCog(commands.Cog):
         base_res=json.loads(prov["base_resources_json"])
         eff_res={k:v*cfg["yield_pct"] for k,v in base_res.items()}
         embed=discord.Embed(title=f"{STAGE_EMOJI.get(col['status'],'🏕️')} {col['name']}",color=discord.Color.dark_green())
-        embed.add_field(name=i18n.text('Owner'),  value=f"{owner['flag'] or ''} {owner['name']}",inline=True)
+        embed.add_field(name=i18n.text('Owner'),  value=f"{flag_text(owner['flag'])} {owner['name']}",inline=True)
+        flagged_embed(embed, (owner['flag'], owner['name']))
         embed.add_field(name=i18n.text('Status'), value=i18n.term(col["status"]),               inline=True)
         embed.add_field(name=i18n.text('Yield'),  value=f"{cfg['yield_pct']*100:.0f}%",          inline=True)
         embed.add_field(name=i18n.text('Resources'),value=", ".join(f"{i18n.term(k)}:{v:.1f}" for k,v in eff_res.items() if v>0) or "—",inline=False)
@@ -547,8 +549,8 @@ class ColonialismCog(commands.Cog):
         with db.cursor() as c:
             c.execute("UPDATE colonies SET status=?,months_in_status=0,investment_json='{}',gm_notes=? WHERE id=?",(new_stage,gm_notes,col["id"]))
         _log(col["nation_id"],"gm",i18n.text("Colony '{p0}' advanced: {p1} → {p2}. {p3}", p0=col['name'], p1=i18n.term(col['status']), p2=i18n.term(new_stage), p3=gm_notes))
-        embed=discord.Embed(title=i18n.text('{p0} Colony Advanced!', p0=STAGE_EMOJI.get(new_stage, '🏛️')),
-            description=i18n.text("**{p0} {p1}**'s **{p2}** advanced to **{p3}**!\nNew yield: {p4:.0f}%", p0=owner['flag'] or '', p1=owner['name'], p2=col['name'], p3=i18n.term(new_stage), p4=next_cfg['yield_pct'] * 100),color=discord.Color.gold())
+        embed=flagged_embed(discord.Embed(title=i18n.text('{p0} Colony Advanced!', p0=STAGE_EMOJI.get(new_stage, '🏛️')),
+            description=i18n.text("**{p0} {p1}**'s **{p2}** advanced to **{p3}**!\nNew yield: {p4:.0f}%", p0=flag_text(owner['flag']), p1=owner['name'], p2=col['name'], p3=i18n.term(new_stage), p4=next_cfg['yield_pct'] * 100),color=discord.Color.gold()), (owner['flag'], owner['name']))
         ch_id=_cfg("announce_channel_id"); ch=self.bot.get_channel(int(ch_id)) if ch_id else None
         if ch:
             try: await ch.send(embed=embed)

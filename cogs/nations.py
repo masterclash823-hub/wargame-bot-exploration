@@ -5,6 +5,7 @@ Nation commands:
   /nation history <name> [page]              - public history log (paginated)
   /nation history_add <name> <text>          - GM only: add a history entry
 """
+from flags import flag_text, flagged_embed
 import json
 import discord
 from discord import app_commands
@@ -119,10 +120,11 @@ class NationCog(commands.Cog):
 
         embed = discord.Embed(
             title=i18n.t(lang, "nation_founded_title"),
-            description=i18n.t(lang, "nation_founded_desc", name=name, flag=flag, government=government),
+            description=i18n.t(lang, "nation_founded_desc", name=name, flag=flag_text(flag), government=government),
             color=discord.Color.green(),
         )
         embed.add_field(name=i18n.text('History / Lore'), value=clean_history, inline=False)
+        flagged_embed(embed, (flag, name))
 
         await interaction.response.send_message(embed=embed)
 
@@ -149,17 +151,13 @@ class NationCog(commands.Cog):
 
         tech = json.loads(nation["tech_json"])
         resources = json.loads(nation["resources_json"])
-        flag = (nation["flag"] or "").strip()
-        is_url = flag.startswith("http://") or flag.startswith("https://")
-        
-        display_title = f"{flag} {nation['name']}".strip() if not is_url else nation["name"]
+        display_title = f"{flag_text(nation['flag'])} {nation['name']}".strip()
 
         embed = discord.Embed(
             title=display_title,
             color=discord.Color.blue(),
         )
-        if is_url:
-            embed.set_thumbnail(url=flag)
+        flagged_embed(embed, (nation['flag'], nation['name']))
 
         stab = nation["stability"]
         if stab >= 80:   stab_str = i18n.text('✅ {p0:.0f}/100 (Stable)', p0=stab)
@@ -273,19 +271,17 @@ class NationCog(commands.Cog):
             )
             return
 
-        lines = []
+        from utils import EmbedPager
+        pages = []
         for r in rows:
-            flag = r["flag"] or ""
+            flag = flag_text(r["flag"])
             owner = f"<@{r['owner_id']}>"
-            lines.append(f"{flag} **{r['name']}** — {r['government_type']} ({owner})")
-
-        embed = discord.Embed(
-            title=i18n.t(lang, "nation_list_title"),
-            description="\n".join(lines),
-            color=discord.Color.blurple(),
-        )
-        embed.set_footer(text=i18n.t(lang, "nation_list_footer", count=len(rows)))
-        await interaction.response.send_message(embed=embed)
+            pages.append(flagged_embed(discord.Embed(
+                title=i18n.t(lang, "nation_list_title"),
+                description=f"{flag} **{r['name']}** — {r['government_type']} ({owner})",
+                color=discord.Color.blurple(),
+            ), (r['flag'], r['name'])))
+        await interaction.response.send_message(embed=pages[0], view=EmbedPager(pages, interaction.user.id))
     @nation_group.command(name="history_add", description="[GM] Add history entry / [GM] Dodaj wpis historii")
     @app_commands.describe(
         name="Nation name / Nazwa narodu",

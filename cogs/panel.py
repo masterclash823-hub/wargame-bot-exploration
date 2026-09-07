@@ -1,5 +1,6 @@
 """Button-first player panel for the everyday game loop."""
 from __future__ import annotations
+from flags import flag_text, flagged_embed
 
 import json
 from collections.abc import Awaitable, Callable
@@ -266,7 +267,8 @@ class PlayerPanel(OwnedView):
             trades = cur.fetchone()["n"]
             cur.execute("SELECT COUNT(*) AS n FROM events WHERE nation_id=? AND status IN ('posted','active')", (nation["id"],))
             events = cur.fetchone()["n"]
-        embed.description = f"{nation['flag'] or '🏳️'} **{nation['name']}**\n{tr(self.lang, 'private')}"
+        embed.description = f"{flag_text(nation['flag'])} **{nation['name']}**\n{tr(self.lang, 'private')}"
+        flagged_embed(embed, (nation['flag'], nation['name']))
         embed.add_field(name="💰 " + ("Skarbiec" if self.lang == "pl" else "Treasury"), value=f"{nation['treasury']:,.0f}")
         embed.add_field(name="⚖️ " + ("Stabilność" if self.lang == "pl" else "Stability"), value=f"{nation['stability']:.0f}/100")
         embed.add_field(name="🗺️/⚔️/🔁/🎭", value=f"{provinces} / {forces} / {trades} / {events}")
@@ -361,7 +363,7 @@ class PlayerPanel(OwnedView):
                 {"label":"Chcesz zasoby / Receive resources","default":"{}"},{"label":"Chcesz złoto / Receive gold","default":"0"},
                 {"label":"Publiczna notatka / Public note","required":False,"max_length":300}],submit))
         await self.rows(i,"SELECT name,flag FROM nations WHERE id<>? ORDER BY name",(n['id'],),
-            lambda r:discord.SelectOption(label=f"{r['flag'] or '🏳️'} {r['name']}"[:100],value=r['name']),target)
+            lambda r:discord.SelectOption(label=f"{flag_text(r['flag'])} {r['name']}"[:100],value=r['name']),target)
 
     async def choose_trade(self,i):
         n=get_nation_by_owner(str(self.owner_id))
@@ -461,7 +463,7 @@ class PlayerPanel(OwnedView):
     async def choose_nation(self,i,command):
         n=get_nation_by_owner(str(self.owner_id))
         async def done(i2,name): await invoke(self.cog("CombatCog"),command,i2,name)
-        await self.rows(i,"SELECT name,flag FROM nations WHERE id<>? ORDER BY name",(n['id'],),lambda r:discord.SelectOption(label=f"{r['flag'] or '🏳️'} {r['name']}"[:100],value=r['name']),done)
+        await self.rows(i,"SELECT name,flag FROM nations WHERE id<>? ORDER BY name",(n['id'],),lambda r:discord.SelectOption(label=f"{flag_text(r['flag'])} {r['name']}"[:100],value=r['name']),done)
 
     async def choose_battle_units(self,i):
         n=get_nation_by_owner(str(self.owner_id))

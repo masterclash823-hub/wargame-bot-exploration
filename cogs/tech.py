@@ -11,6 +11,7 @@ calendar channel (no details revealed publicly — full details in private histo
 Categories: naval, land, economy, colonial
 Tech points resource key: "universal_knowledge"
 """
+from flags import flag_text, flagged_embed
 import json
 import random
 from datetime import datetime, timezone
@@ -212,10 +213,10 @@ class TechCog(commands.Cog):
             bar_str = bar_str.ljust(10, "░")
             return f"`{bar_str}` {level:.1f}/10"
 
-        embed = discord.Embed(
-            title=i18n.text('🔬 Tech Levels — {p0} {p1}', p0=nat['flag'] or '', p1=nat['name']).strip(),
+        embed = flagged_embed(discord.Embed(
+            title=i18n.text('🔬 Tech Levels — {p0} {p1}', p0=flag_text(nat['flag']), p1=nat['name']).strip(),
             color=discord.Color.teal(),
-        )
+        ), (nat['flag'], nat['name']))
         for cat in CATEGORIES:
             level = tech.get(cat, 3.0)
             embed.add_field(

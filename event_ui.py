@@ -4,6 +4,7 @@ import logging
 import i18n
 
 import event_adventure as adventure
+from flags import flagged_embed
 
 
 def render_event(state):
@@ -11,6 +12,7 @@ def render_event(state):
     title = adventure.tr(lang, "Wydarzenie", "Event")
     title += f" #{state['event_id']} — {state['nation'][:150]}"
     embed = discord.Embed(title=title, description=state["text"][:1800], color=discord.Color.purple())
+    flagged_embed(embed, (state.get('flag', ''), state['nation']))
     history = state["history"]
     if history:
         for i, decision in enumerate(history, 1):

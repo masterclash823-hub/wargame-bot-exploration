@@ -41,7 +41,7 @@ def validate_effects(raw):
 
 def load_run(event_id):
     with db.cursor() as c:
-        c.execute("SELECT r.*, e.nation_id, n.owner_id FROM event_runs r "
+        c.execute("SELECT r.*, e.nation_id, n.owner_id, n.flag FROM event_runs r "
                   "JOIN events e ON e.id=r.event_id JOIN nations n ON n.id=e.nation_id WHERE r.event_id=?", (event_id,))
         row = c.fetchone()
     if not row:
@@ -49,6 +49,7 @@ def load_run(event_id):
     state = json.loads(row["state_json"])
     state["version"] = row["version"]
     state["owner_id"] = row["owner_id"]
+    state["flag"] = row["flag"]
     return state
 
 
@@ -178,7 +179,7 @@ async def assess_consequence(state, action, choice):
 
 async def prepare_run(event, nat):
     state = {"event_id": event["id"], "nation_id": nat["id"], "owner_id": nat["owner_id"],
-             "nation": nat["name"], "opening": event["gm_final_text"],
+             "nation": nat["name"], "flag": nat.get("flag", ""), "opening": event["gm_final_text"],
              "lang": i18n.get_user_language(nat["owner_id"]), "history": [], "version": 0,
              "resolved": False, "base_effects": validate_effects(event["effects_json"])}
     state["text"], state["choices"] = await scene(state)

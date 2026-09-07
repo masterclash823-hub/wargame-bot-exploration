@@ -8,6 +8,7 @@ Province commands:
   /province info            - anyone: view a single province by cell ID
   /province list            - anyone: list all provinces owned by a nation
 """
+from flags import flag_text, flagged_embed
 import json
 import aiohttp
 import discord
@@ -608,11 +609,11 @@ class ProvincesCog(commands.Cog):
                     i18n.text('**{p0}**: {p1:.1f}/tick (×{p2:.2f} = {p3:.1f} effective)', p0=k.replace('_', ' ').capitalize(), p1=v, p2=stab_mod, p3=v * stab_mod)
                 )
 
-        embed = discord.Embed(
-            title=i18n.text('📊 Province Yield — {p0} {p1}', p0=nat['flag'] or '', p1=nat['name']),
+        embed = flagged_embed(discord.Embed(
+            title=i18n.text('📊 Province Yield — {p0} {p1}', p0=flag_text(nat['flag']), p1=nat['name']),
             description="\n".join(lines) or i18n.text('*No production yet.*'),
             color=discord.Color.green(),
-        )
+        ), (nat['flag'], nat['name']))
         embed.set_footer(
             text=i18n.text('{p0} province(s) | Stability {p1:.0f}/100 → ×{p2:.2f} modifier', p0=len(provs), p1=nat['stability'], p2=stab_mod)
         )
@@ -641,7 +642,7 @@ class ProvincesCog(commands.Cog):
             return
         resources = json.loads(row["base_resources_json"])
         owner_str = (
-            f"{row['nation_flag'] or ''} {row['nation_name']}".strip()
+            f"{flag_text(row['nation_flag'])} {row['nation_name']}".strip()
             if row["nation_name"] else i18n.text('*Unclaimed*')
         )
         display  = row["name"] or i18n.text('Cell #{p0}', p0=cell_id)
@@ -657,6 +658,7 @@ class ProvincesCog(commands.Cog):
         embed.add_field(name=i18n.text('Population'),     value=f"{row['population']:,}",  inline=True)
         embed.add_field(name=i18n.text('Fortification'),  value=str(row["fortification_level"]), inline=True)
         embed.add_field(name=i18n.text('Base Resources'), value=res_str,                   inline=False)
+        flagged_embed(embed, (row['nation_flag'], row['nation_name']))
         await interaction.response.send_message(embed=embed)
 
     # -------------------------------------------------- /province list
@@ -700,13 +702,14 @@ class ProvincesCog(commands.Cog):
             cid  = r["azgaar_cell_id"]
             name = r["name"] or i18n.text('Cell #{p0}', p0=cid)
             lines.append(i18n.text('`{p0:>6}` **{p1}** — {p2} | pop: {p3:,}', p0=cid, p1=name, p2=i18n.term(r['terrain']), p3=r['population']))
-        flag = nation_row["flag"] or ""
+        flag = flag_text(nation_row["flag"])
         embed = discord.Embed(
             title=i18n.text('{p0} {p1} — Provinces', p0=flag, p1=nation_row['name']).strip(),
             description="\n".join(lines),
             color=discord.Color.blue(),
         )
         embed.set_footer(text=i18n.text('Page {p0}/{p1} · {p2} province(s) total', p0=page, p1=total_pages, p2=total))
+        flagged_embed(embed, (nation_row['flag'], nation_row['name']))
         await interaction.response.send_message(embed=embed)
 
 
