@@ -33,8 +33,8 @@ class BattleResolveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
                     self.atk_unit = committed
                 else:
                     self.def_unit = committed
-            c.execute("INSERT INTO provinces(azgaar_cell_id,name,fortification_level) VALUES(?,?,?)",
-                      (55, "Harbor", 2))
+            c.execute("INSERT INTO provinces(azgaar_cell_id,name,terrain,biome,fortification_level) VALUES(?,?,?,?,?)",
+                      (55, "Harbor", "hills", "temperate", 2))
 
     def plan(self, nation_id, unit_id, status="matched"):
         return db.insert_returning_id(
@@ -72,8 +72,11 @@ class BattleResolveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         inter = interaction(999, [NS(id=12, name=config.GM_ROLE_NAME)])
         with patch.object(combat, "_get_ai_modifier", AsyncMock(return_value={
                 "attacker_modifier": 1, "defender_modifier": 1, "reasoning": "Even"})), \
+             patch.object(combat, "_get_ai_battle_report", AsyncMock(return_value={
+                "opening":"The lines met on the hills.", "turning_point":"A flanking attack broke the line.",
+                "outcome":"The defender withdrew."})), \
              patch.object(resolution.random, "uniform", return_value=1):
-            await CombatCog.battle_resolve.callback(CombatCog(bot), inter, bid)
+            await CombatCog.battle_resolve.callback(CombatCog(bot), inter, bid, "55")
         self.assertEqual(self.quantities(1), [8, 7])
         self.assertEqual(self.quantities(2), [9, 7])
         with db.cursor() as c:
@@ -88,7 +91,23 @@ class BattleResolveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["attacker_losses"][0]["committed"], 4)
         self.assertEqual(report["attacker_losses"][0]["lost"], 2)
         self.assertEqual(report["defender_losses"][0]["lost"], 1)
+        self.assertEqual(report["battlefield"]["terrain"], "hills")
+        self.assertEqual(report["battlefield"]["cell_id"], 55)
+        self.assertIn("flanking", report["narrative"]["turning_point"])
+        self.assertEqual(report["attacker_forces"][0]["name"], "Infantry 1")
         self.assertIn("Resolved", inter.followup.send.call_args.kwargs["embed"].title)
+
+    async def test_missing_final_location_opens_modal_without_resolving(self):
+        bid, _, _ = self.battle()
+        inter = interaction(999, [NS(id=12, name=config.GM_ROLE_NAME)])
+        inter.response.send_modal = AsyncMock()
+        await CombatCog.battle_resolve.callback(
+            CombatCog(NS(get_channel=lambda _: None)), inter, bid)
+        inter.response.send_modal.assert_awaited_once()
+        self.assertIsInstance(inter.response.send_modal.call_args.args[0], combat.BattleLocationModal)
+        with db.cursor() as c:
+            c.execute("SELECT status FROM battles WHERE id=?", (bid,))
+            self.assertEqual(c.fetchone()["status"], "pending")
 
     async def test_resolve_without_id_lists_legacy_pending_battle(self):
         bid, _, _ = self.battle()
@@ -101,9 +120,10 @@ class BattleResolveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
     async def test_no_casualties_mode(self):
         bid, _, _ = self.battle()
         with patch.object(resolution.random, "uniform", return_value=1):
-            settled = resolution.resolve(bid, {}, apply_casualties=False)
+            settled = resolution.resolve(bid, {}, apply_casualties=False, final_location="Harbor")
         self.assertEqual(self.quantities(1), [10, 7])
         self.assertFalse(settled["result"]["casualties_applied"])
+        self.assertEqual(settled["fort_bonus"], 1.2)
 
     async def test_duplicate_and_concurrent_resolution_pay_once(self):
         bid, _, _ = self.battle()
@@ -150,13 +170,39 @@ class BattleResolveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         with db.cursor() as c:
             c.execute("SELECT * FROM nations ORDER BY id")
             nations = c.fetchall()
+        battlefield = resolution.location_context("55")
+        forces = [{"name":"Infantry 1","committed":4}]
         with patch.dict(sys.modules, {"google": google}):
-            result = await combat._get_ai_modifier(plan, plan, nations[0], nations[1])
+            result = await combat._get_ai_modifier(
+                plan, plan, nations[0], nations[1], battlefield, forces, forces)
         self.assertEqual(generate.call_args.kwargs["model"], config.GEMINI_MODEL)
+        prompt = generate.call_args.kwargs["contents"]
+        self.assertIn('"terrain": "hills"', prompt)
+        self.assertIn("Infantry 1", prompt)
+        self.assertIn("Advance", prompt)
         self.assertEqual((result["attacker_modifier"], result["defender_modifier"]), (1.4, 0.7))
         with patch.dict(sys.modules, {"google": NS(genai=NS(Client=Mock(side_effect=RuntimeError("offline"))))}):
             result = await combat._get_ai_modifier(plan, plan, nations[0], nations[1])
         self.assertEqual(result["attacker_modifier"], 1)
+
+    async def test_detailed_report_fallback_names_units_terrain_and_plans(self):
+        plan_a = {"location_text":"Harbor", "orders_text":"Flank the ridge", "forces_note":""}
+        plan_b = {"location_text":"Harbor", "orders_text":"Hold the walls", "forces_note":""}
+        with db.cursor() as c:
+            c.execute("SELECT * FROM nations ORDER BY id")
+            nations = c.fetchall()
+        result = {"winner":"attacker", "eff_attack":120, "eff_defense":90,
+                  "atk_casualties_pct":20, "def_casualties_pct":40}
+        with patch.dict(sys.modules, {"google": NS(genai=NS(Client=Mock(side_effect=RuntimeError("offline"))))}):
+            story = await combat._get_ai_battle_report(
+                plan_a, plan_b, nations[0], nations[1], resolution.location_context("55"),
+                [{"name":"Infantry 1", "committed":4}],
+                [{"name":"Infantry 2", "committed":3}], result, "The ridge favored A.")
+        self.assertIn("Infantry 1", story["opening"])
+        self.assertIn("Flank the ridge", story["opening"])
+        self.assertIn("hills", story["opening"])
+        self.assertIn("120", story["turning_point"])
+        self.assertIn("20%", story["outcome"])
 
     async def test_postgres_specific_sql_is_portable(self):
         source = Path("battle_resolution.py").read_text(encoding="utf-8")
