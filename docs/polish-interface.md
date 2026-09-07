@@ -2,6 +2,8 @@
 
 Po wdrożeniu użyj **`/translate` bez parametrów**, aby włączyć polskie odpowiedzi.
 `/translate lang:pl` i dotychczasowe `/language lang:pl` zapisują to samo ustawienie.
+`/translate` jest aliasem `/language`: obie komendy używają tej samej obsługi,
+listy języków i parametrów. Obie bez parametrów włączają polski.
 Angielski pozostaje dostępny przez wybór `en`. Wybór języka działa także przed
 aktywacją serwera i utrzymuje się po restarcie, jeśli baza danych jest trwała.
 

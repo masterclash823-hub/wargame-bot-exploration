@@ -156,7 +156,8 @@ async def activate_cmd(interaction: discord.Interaction, auth_key: str):
     app_commands.Choice(name="Polski",  value="pl"),
 ])
 @i18n.localized
-async def language_cmd(interaction: discord.Interaction, lang: app_commands.Choice[str]):
+async def language_cmd(interaction: discord.Interaction, lang: app_commands.Choice[str] = None):
+    lang = lang or app_commands.Choice(name="Polski", value="pl")
     if lang.value not in config.SUPPORTED_LANGUAGES:
         current = i18n.get_user_language(interaction.user.id)
         await interaction.response.send_message(
@@ -170,16 +171,13 @@ async def language_cmd(interaction: discord.Interaction, lang: app_commands.Choi
     )
 
 
-@tree.command(name="translate", description="Set your preferred language / Ustaw jezyk")
-@app_commands.describe(lang="en or pl")
-@app_commands.choices(lang=[
-    app_commands.Choice(name="Polski", value="pl"),
-    app_commands.Choice(name="English", value="en"),
-])
-@i18n.localized
-async def translate_cmd(interaction: discord.Interaction, lang: app_commands.Choice[str] = None):
-    # Without parameters, enable the complete Polish interface.
-    await language_cmd.callback(interaction, lang or app_commands.Choice(name="Polski", value="pl"))
+# Compatibility alias: one callback, parameter definition and set of choices.
+translate_cmd = app_commands.Command(
+    name="translate",
+    description=language_cmd.description,
+    callback=language_cmd.callback,
+)
+tree.add_command(translate_cmd)
 
 
 @tree.command(name="help", description="Show available commands / Pokaz dostepne komendy")
