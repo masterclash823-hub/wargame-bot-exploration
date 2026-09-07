@@ -13,7 +13,7 @@ import config
 import db
 import i18n
 import event_adventure
-from command_locale import PolishTranslator, NAMES, PARAMETERS
+from command_locale import PolishTranslator
 from cogs.economy import EconomyCog, HelpView, _building_choices, _seed_buildings
 from cogs.military import ShipDesignerView, MilitaryCog
 from trade_service import parse_resources
@@ -56,6 +56,8 @@ class LocalizationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
             name = payload['name']
             self.assertIn('pl', payload.get('name_localizations', {}), name)
             translated = payload['name_localizations']['pl']
+            self.assertEqual(translated, name)
+            self.assertRegex(translated, r'^[a-z_]+$')
             self.assertTrue(1 <= len(translated) <= 32, translated)
             description = payload.get('description_localizations', {}).get('pl')
             self.assertTrue(description and len(description) <= 100, (name,description))
