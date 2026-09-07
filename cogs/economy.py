@@ -564,6 +564,8 @@ HELP_SECTIONS = {
         "title": "📖 General",
         "color": discord.Color.blurple(),
         "fields": [
+            ("/panel", "Open the private button-first player panel."),
+            ("/panel_publish", "[GM] Post the permanent panel launcher in a channel."),
             ("/help", "Browse commands by section using the buttons below."),
             ("/language", "Set your preferred language (en / pl)."),
             ("/translate", "Choose a language; without parameters, enables Polish."),
@@ -700,6 +702,8 @@ HELP_SECTIONS_PL = {
         "title": "📖 Ogólne",
         "color": discord.Color.blurple(),
         "fields": [
+            ("/panel", "Otwórz prywatny panel gracza obsługiwany przyciskami."),
+            ("/panel_publish", "[GM] Opublikuj na kanale stały przycisk otwierający panel."),
             ("/help", "Przeglądaj komendy używając przycisków poniżej."),
             ("/language", "Ustaw preferowany język odpowiedzi bota (en / pl)."),
             ("/translate", "Włącz polski bez parametrów albo wybierz język z listy."),

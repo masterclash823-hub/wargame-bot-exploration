@@ -1,5 +1,17 @@
 # Wargame Bot
 
+## Panel gracza
+
+Po wdrożeniu GM uruchamia raz `/panel_publish` na wybranym kanale. Bot publikuje
+stały przycisk, z którego każdy gracz otwiera własny prywatny panel. Panel dzieli
+działania na gospodarkę, wojsko i technologię, terytorium, dyplomację i bitwy,
+wydarzenia oraz ustawienia. Państwa, prowincje, jednostki, oferty i eventy wybiera
+się z list; formularze służą jedynie do nazw, liczb i własnych rozkazów.
+
+Alternatywnie gracz może użyć `/panel`. Publiczny przycisk działa także po
+restarcie bota. Szczegółowy projekt znajduje się w
+[docs/player-panel-design.md](docs/player-panel-design.md).
+
 ## Polska wersja interfejsu
 
 Użyj `/translate` bez parametrów, aby zapisać polski język odpowiedzi.
