@@ -13,13 +13,20 @@ def render_event(state):
     embed = discord.Embed(title=title, description=state["text"][:1800], color=discord.Color.purple())
     history = state["history"]
     if history:
-        lines = [f"{i}. {h['action'][:180]} (×{adventure.SCALES[h['choice']]:g})"
-                 for i, h in enumerate(history, 1)]
-        embed.add_field(name=adventure.tr(lang, "Podjęte decyzje", "Decisions"), value="\n".join(lines), inline=False)
+        for i, decision in enumerate(history, 1):
+            contribution = adventure.effects_text(adventure.prospective_effects(state, [decision]), lang)
+            reason = decision.get("reason", "")
+            value = f"{decision['action'][:300]}\n↳ {contribution}"
+            if reason:
+                value += f"\n{reason[:300]}"
+            embed.add_field(
+                name=f"{adventure.tr(lang, 'Decyzja', 'Decision')} {i}/3",
+                value=value[:1024], inline=False,
+            )
         if history[-1].get("fallback"):
             embed.add_field(name="AI", value=adventure.tr(lang,
-                "AI niedostępne: własną odpowiedź rozliczono jako zrównoważoną (×1).",
-                "AI unavailable: your custom response was treated as balanced (×1)."), inline=False)
+                "AI niedostępne: własną odpowiedź przypisano do strategii zrównoważonej.",
+                "AI unavailable: your custom response was treated as balanced."), inline=False)
     if state["resolved"]:
         embed.add_field(name=adventure.tr(lang, "Zastosowane efekty", "Applied effects"),
                         value=adventure.effects_text(state["applied"], lang)[:1000], inline=False)
@@ -29,14 +36,15 @@ def render_event(state):
         embed.set_footer(text=adventure.tr(lang, "Koniec • 3/3 decyzji • efekty naliczone raz", "Finished • 3/3 decisions • effects applied once"))
         return embed
     for i, label in enumerate(state["choices"]):
-        total = adventure.prospective_effects(state, [h["choice"] for h in history] + [i])
         embed.add_field(name=f"{i + 1}. {label}"[:256], value=
-                        f"×{adventure.SCALES[i]:g} — " + adventure.effects_text(total, lang)[:800], inline=False)
+                        adventure.tr(lang, "Skutek zależy od sensu decyzji. Limit: ",
+                                     "Outcome depends on the decision. Limit: ")
+                        + adventure.effect_limits_text(state)[:750], inline=False)
     embed.add_field(name=adventure.tr(lang, "Zasady", "Rules"), value=adventure.tr(lang,
-        "Efekty przy opcjach to suma odłożona do finału, nie natychmiastowa wypłata. Każda decyzja wnosi ⅓ skutków. "
-        "Skala obejmuje zyski i straty. Własna odpowiedź zostaje przypisana przez AI do jednej z tych trzech strategii; nie ustala dowolnych nagród.",
-        "Option effects are the accumulated pending total, not an immediate payout. Each decision contributes ⅓ of effects. "
-        "Scaling covers gains and losses. AI maps a custom response to one of these three strategies; it cannot invent rewards."), inline=False)
+        "Każda decyzja wnosi ⅓ końcowego skutku. AI ocenia osobno wpływ na złoto, stabilność i zasoby, więc znak może się odwrócić. "
+        "GM nadal ustala dozwolone rodzaje oraz maksymalną skalę efektów; AI nie może stworzyć nowych nagród.",
+        "Each decision contributes ⅓ of the final outcome. AI assesses gold, stability and resources separately, so a sign may reverse. "
+        "The GM still controls allowed effect types and maximum magnitude; AI cannot invent new rewards."), inline=False)
     embed.set_footer(text=adventure.tr(lang, "Decyzja", "Decision")
                      + f" {len(history) + 1}/3 • /event play {state['event_id']} • "
                      + adventure.tr(lang, "wznów także po restarcie", "resume even after restart"))

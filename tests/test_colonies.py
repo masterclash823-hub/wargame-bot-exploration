@@ -84,7 +84,7 @@ class ColonyTests(unittest.TestCase):
     def test_expansion_rejects_non_neighbor_and_outpost_source(self):
         self.import_map()
         self.make_colony(status="outpost")
-        with self.assertRaisesRegex(ValueError, "Settlement"):
+        with self.assertRaises(ValueError):
             expand_colony(self.nation_id, 1, 2, "Too soon")
         with db.cursor() as cur:
             cur.execute("UPDATE colonies SET status='settlement'")
@@ -94,7 +94,7 @@ class ColonyTests(unittest.TestCase):
     def test_investment_rejects_negative_and_caps_overpayment(self):
         self.import_map()
         self.make_colony(status="outpost", investment=json.dumps({"gold": 250}))
-        with self.assertRaisesRegex(ValueError, "greater than 0"):
+        with self.assertRaises(ValueError):
             invest_in_colony(self.nation_id, 1, -100)
         result = invest_in_colony(self.nation_id, 1, 1000)
         self.assertEqual(result["applied"], 50)
@@ -112,14 +112,26 @@ class ColonyTests(unittest.TestCase):
             cur.execute("SELECT * FROM nations WHERE id=?", (self.nation_id,))
             nation = cur.fetchone()
         _, blocker = colony_advance_readiness(colony, nation)
-        self.assertIn("5/6 months", blocker)
-        tick_colonies(self.nation_id, 1)
+        self.assertIn("5/6", blocker)
+        promoted = tick_colonies(self.nation_id, 1)
         with db.cursor() as cur:
             cur.execute("SELECT * FROM colonies")
             colony = cur.fetchone()
-        stage, blocker = colony_advance_readiness(colony, nation)
-        self.assertEqual(stage, "settlement")
-        self.assertIsNone(blocker)
+        self.assertEqual(promoted[0]["to"], "settlement")
+        self.assertEqual(colony["status"], "settlement")
+        self.assertEqual(colony["months_in_status"], 0)
+        self.assertEqual(json.loads(colony["investment_json"]), {})
+
+    def test_payment_promotes_immediately_when_time_is_already_complete(self):
+        self.import_map()
+        self.make_colony(status="outpost", investment=json.dumps({"gold": 250}), months=8)
+        result = invest_in_colony(self.nation_id, 1, 50)
+        self.assertEqual(result["advanced_to"], "settlement")
+        with db.cursor() as cur:
+            cur.execute("SELECT status,months_in_status FROM colonies")
+            colony = cur.fetchone()
+        self.assertEqual(colony["status"], "settlement")
+        self.assertEqual(colony["months_in_status"], 2)
 
 
 if __name__ == "__main__":

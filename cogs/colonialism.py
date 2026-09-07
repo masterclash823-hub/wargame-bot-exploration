@@ -69,12 +69,47 @@ def get_colony_yield_modifier(province_id):
     return STAGE_CONFIG.get(col["status"],{}).get("yield_pct",1.0)
 
 def tick_colonies(nation_id, months=1):
+    """Advance colony clocks and automatically promote every ready colony."""
+    if months <= 0:
+        return []
+    promoted = []
+    lock = " FOR UPDATE" if db.USE_POSTGRES else ""
     with db.cursor() as c:
-        c.execute("SELECT * FROM colonies WHERE nation_id=? AND status!='province'", (nation_id,))
-        cols = c.fetchall()
-    for col in cols:
-        with db.cursor() as c:
-            c.execute("UPDATE colonies SET months_in_status=months_in_status+? WHERE id=?", (months, col["id"]))
+        c.execute("SELECT * FROM nations WHERE id=?" + lock, (nation_id,))
+        owner = c.fetchone()
+        if not owner:
+            return promoted
+        c.execute(
+            "SELECT * FROM colonies WHERE nation_id=? AND status!='province'" + lock,
+            (nation_id,),
+        )
+        for col in c.fetchall():
+            updated = dict(col)
+            updated["months_in_status"] = col["months_in_status"] + months
+            new_stage, blocker = colony_advance_readiness(updated, owner)
+            if blocker is None:
+                required_months = STAGE_CONFIG[col["status"]]["advance_months"]
+                carried_months = max(0, updated["months_in_status"] - required_months)
+                c.execute(
+                    "UPDATE colonies SET status=?,months_in_status=?,investment_json='{}' WHERE id=?",
+                    (new_stage, carried_months, col["id"]),
+                )
+                entry = i18n.text(
+                    "Colony '{p0}' advanced automatically: {p1} → {p2}.",
+                    p0=col["name"], p1=i18n.term(col["status"]), p2=i18n.term(new_stage),
+                )
+                c.execute(
+                    "INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,?,?)",
+                    (nation_id, "system", entry),
+                )
+                promoted.append({"id": col["id"], "name": col["name"],
+                                 "from": col["status"], "to": new_stage})
+            else:
+                c.execute(
+                    "UPDATE colonies SET months_in_status=? WHERE id=?",
+                    (updated["months_in_status"], col["id"]),
+                )
+    return promoted
 
 
 def expand_colony(nation_id: int, source_cell_id: int, target_cell_id: int, name: str) -> dict:
@@ -159,14 +194,29 @@ def invest_in_colony(nation_id: int, cell_id: int, requested_gold: int) -> dict:
         invested = max(0, float(inv.get("gold", 0)))
         remaining = max(0, required - invested)
         if remaining <= 0:
-            raise ValueError(i18n.text("This stage is fully funded. Wait for the required months, then ask a GM to advance it."))
+            raise ValueError(i18n.text("This stage is fully funded. It will advance automatically after the remaining time and technology requirements are met."))
         applied = min(float(requested_gold), remaining)
         c.execute("UPDATE nations SET treasury=treasury-? WHERE id=? AND treasury>=?", (applied, nation_id, applied))
         if c.rowcount != 1:
             raise ValueError(i18n.text("Not enough gold for this investment."))
         inv["gold"] = invested + applied
-        c.execute("UPDATE colonies SET investment_json=? WHERE id=?", (json.dumps(inv), col["id"]))
-    return {"colony": col, "applied": applied, "invested": inv["gold"], "required": required}
+        updated = dict(col)
+        updated["investment_json"] = json.dumps(inv)
+        c.execute("SELECT * FROM nations WHERE id=?", (nation_id,))
+        owner = c.fetchone()
+        new_stage, blocker = colony_advance_readiness(updated, owner)
+        advanced_to = None
+        if blocker is None:
+            carried_months = max(0, col["months_in_status"] - cfg["advance_months"])
+            c.execute(
+                "UPDATE colonies SET status=?,months_in_status=?,investment_json='{}' WHERE id=?",
+                (new_stage, carried_months, col["id"]),
+            )
+            advanced_to = new_stage
+        else:
+            c.execute("UPDATE colonies SET investment_json=? WHERE id=?", (json.dumps(inv), col["id"]))
+    return {"colony": col, "applied": applied, "invested": inv["gold"], "required": required,
+            "advanced_to": advanced_to}
 
 
 def colony_advance_readiness(col, owner) -> tuple[str, str | None]:
@@ -385,6 +435,16 @@ class ColonialismCog(commands.Cog):
         col=result["colony"]; applied=result["applied"]; invested=result["invested"]; adv_cost=result["required"]
         adv_mo=STAGE_CONFIG[col["status"]]["advance_months"]
         _log(nat["id"],"player",i18n.text("Invested {p0:.0f}g in colony '{p1}'. Total: {p2:.0f}/{p3}g.", p0=applied, p1=col['name'], p2=invested, p3=adv_cost))
+        if result["advanced_to"]:
+            new_stage=result["advanced_to"]
+            _log(nat["id"],"system",i18n.text("Colony '{p0}' advanced automatically: {p1} → {p2}.",p0=col['name'],p1=i18n.term(col['status']),p2=i18n.term(new_stage)))
+            embed=discord.Embed(
+                title=i18n.text('{p0} Colony Advanced!',p0=STAGE_EMOJI.get(new_stage,'🏛️')),
+                description=i18n.text('All requirements were met, so **{p0}** advanced automatically to **{p1}**.',p0=col['name'],p1=i18n.term(new_stage)),
+                color=discord.Color.gold(),
+            )
+            embed.add_field(name=i18n.text('Invested'),value=f"{applied:.0f}g",inline=True)
+            await interaction.response.send_message(embed=embed); return
         pct=min(100,int(invested/adv_cost*100)) if adv_cost>0 else 100
         bar="█"*(pct//10)+"░"*(10-pct//10)
         next_stage=COLONY_STAGES[COLONY_STAGES.index(col["status"])+1] if col["status"]!="province" else "province"
@@ -393,7 +453,7 @@ class ColonialismCog(commands.Cog):
         embed.add_field(name=i18n.text('Invested'),value=f"{applied:.0f}g",inline=True)
         embed.add_field(name=i18n.text('Total'),   value=f"{invested:.0f}/{adv_cost}g",inline=True)
         embed.add_field(name=f"→ {i18n.term(next_stage)}",value=i18n.text('`{p0}` {p1}% gold | {p2}/{p3} months', p0=bar, p1=pct, p2=col['months_in_status'], p3=adv_mo),inline=False)
-        if ready: embed.add_field(name=i18n.text('✅ Ready!'),value=i18n.text('Ask the GM to run /colonymgr advance.'),inline=False)
+        if ready: embed.add_field(name=i18n.text('✅ Ready!'),value=i18n.text('The colony will advance automatically once every requirement, including technology, is met.'),inline=False)
         await interaction.response.send_message(embed=embed)
 
     @colony_grp.command(name="expand", description="Expand to an adjacent province / Rozszerz kolonie")
@@ -436,7 +496,7 @@ class ColonialismCog(commands.Cog):
             pct_t=min(100,int(col["months_in_status"]/adv_mo*100)) if adv_mo>0 else 100
             ready=pct_g>=100 and pct_t>=100 and col["status"]!="province"
             embed.add_field(name=f"{STAGE_EMOJI.get(col['status'],'🏕️')} {col['name']} — {pname}",
-                value=i18n.text('**{p0}** | {p1:.0f}% yield\n{p2}/{p3}mo | {p4:.0f}/{p5}g', p0=i18n.term(col['status']), p1=cfg['yield_pct'] * 100, p2=col['months_in_status'], p3=adv_mo, p4=inv.get('gold', 0), p5=adv_cost)+(i18n.text('\n✅ Ready — ask GM to advance') if ready else ""),inline=False)
+                value=i18n.text('**{p0}** | {p1:.0f}% yield\n{p2}/{p3}mo | {p4:.0f}/{p5}g', p0=i18n.term(col['status']), p1=cfg['yield_pct'] * 100, p2=col['months_in_status'], p3=adv_mo, p4=inv.get('gold', 0), p5=adv_cost)+(i18n.text('\n✅ Funded and timed — advancement is automatic when technology is sufficient') if ready else ""),inline=False)
         await interaction.response.send_message(embed=embed,ephemeral=True)
 
     @colony_grp.command(name="view", description="View colony details / Szczegoly kolonii")
