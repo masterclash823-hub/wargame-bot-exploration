@@ -63,7 +63,7 @@ separate economy issue. No production PostgreSQL or Discord tests were run.
 without an ID lists pending battles, including records created by older versions
 that displayed `Battle #None`. Resolve one with `/battle resolve <id>`.
 
-Resolution uses `GEMINI_MODEL` and falls back to neutral modifiers when AI is
+When resolving with an ID, the GM also supplies the final battlefield. If it is\nomitted, Discord opens a location form. A province name or Azgaar cell ID loads\nits terrain, biome and fortification; descriptive locations remain available for\nsea and off-map battles. Gemini receives the exact committed units, both plans\nand battlefield data. The saved/public report explains the opening engagement,\nturning point and outcome, and `/battle view` shows the same narrative later.\n\nResolution uses `GEMINI_MODEL` and falls back to neutral modifiers when AI is
 unavailable. AI modifiers are constrained to 0.7–1.4; optional GM overrides must
 be 0.1–3.0 (use 0/blank for AI). The battle row, both plan statuses, logs and
 optional casualties commit atomically. Repeated or concurrent resolution cannot

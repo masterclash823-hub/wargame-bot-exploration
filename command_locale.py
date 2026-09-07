@@ -13,7 +13,7 @@ PARAMETERS = {
     'from_cell':'komórka_początkowa','give_gold':'oddawane_złoto','give_resources':'oddawane_zasoby',
     'gm_note':'uwaga_gm','gm_notes':'uwagi_gm','gold_amount':'ilość_złota','gold_budget':'budżet_złota',
     'government':'ustrój','history':'historia','hours_per_month':'godziny_na_miesiąc','hull':'kadłub',
-    'ids':'identyfikatory','key':'klucz','lang':'język','level':'poziom','location':'miejsce',
+    'ids':'identyfikatory','key':'klucz','lang':'język','level':'poziom','location':'miejsce','final_location':'ostateczne_miejsce',
     'months':'miesiące','mp_id':'id_megaprojektu','name':'nazwa','nation':'naród','orders':'rozkazy',
     'page':'strona','private_note':'uwaga_prywatna','public_note':'uwaga_publiczna',
     'quantity':'liczba','reason':'powód','receive_gold':'otrzymywane_złoto',

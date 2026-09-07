@@ -89,7 +89,8 @@ def _set_relation(a_id, b_id, status):
 # ---------------------------------------------------------------------------
 # Combat resolution
 # ---------------------------------------------------------------------------
-async def _get_ai_modifier(plan_a: dict, plan_b: dict, nat_a: dict, nat_b: dict) -> dict:
+async def _get_ai_modifier(plan_a: dict, plan_b: dict, nat_a: dict, nat_b: dict,
+                           battlefield=None, forces_a=None, forces_b=None) -> dict:
     """
     Call Gemini to review battle plans and return structured modifiers.
     Uses the google-genai SDK which is already installed.
@@ -114,6 +115,15 @@ Land tech: {tech_b.get('land', 3):.1f} | Naval tech: {tech_b.get('naval', 3):.1f
 Location/direction: {plan_b['location_text']}
 Orders: {plan_b['orders_text']}
 Forces note: {plan_b.get('forces_note', 'not specified')}
+
+Final battlefield selected by the GM:
+{json.dumps(battlefield or {}, ensure_ascii=False)}
+
+Exact committed attacker units:
+{json.dumps(forces_a or [], ensure_ascii=False)}
+
+Exact committed defender units:
+{json.dumps(forces_b or [], ensure_ascii=False)}
 
 Consider: terrain (from location text), tactical creativity, supply lines, flanking,
 weather if mentioned, and anything else tactically relevant.
@@ -143,6 +153,76 @@ Respond ONLY with the JSON object. No markdown, no explanation outside the JSON.
             "defender_modifier": 1.0,
             "reasoning": i18n.text('AI unavailable ({p0}) — modifiers defaulted to 1.0.', p0=type(e).__name__),
         }
+
+
+async def _get_ai_battle_report(plan_a, plan_b, nat_a, nat_b, battlefield,
+                                forces_a, forces_b, result, reasoning):
+    """Narrate the calculated result without allowing AI to change it."""
+    language = "Polish" if i18n.current_language() == "pl" else "English"
+    prompt = f"""You are writing the official report of a fantasy Age of Exploration battle.
+The mechanical outcome below is final. Do not change the winner, casualties, units or numbers.
+Explain concretely how the battle unfolded, connecting terrain, each side's actual units and plans.
+Do not invent reinforcements, commanders, weapons or weather that are absent from the data.
+Return ONLY JSON with exactly three string keys: opening, turning_point, outcome.
+Each value must be vivid but concise (maximum 700 characters) and written in {language}.
+
+Attacker: {nat_a['name']}
+Plan: {json.dumps(plan_a, ensure_ascii=False)}
+Units: {json.dumps(forces_a, ensure_ascii=False)}
+Defender: {nat_b['name']}
+Plan: {json.dumps(plan_b, ensure_ascii=False)}
+Units: {json.dumps(forces_b, ensure_ascii=False)}
+Battlefield: {json.dumps(battlefield, ensure_ascii=False)}
+Final mechanical result: {json.dumps(result, ensure_ascii=False)}
+Tactical assessment: {reasoning}
+"""
+    try:
+        from google import genai
+        client = genai.Client(api_key=config.GEMINI_API_KEY)
+        response = await asyncio.wait_for(asyncio.to_thread(lambda: client.models.generate_content(
+            model=config.GEMINI_MODEL, contents=prompt)), timeout=25)
+        raw = response.text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        data = json.loads(raw.strip())
+        if not isinstance(data, dict) or not all(
+                isinstance(data.get(key), str) and data[key].strip()
+                for key in ("opening", "turning_point", "outcome")):
+            raise ValueError("incomplete battle narrative")
+        return {key: str(data.get(key, ""))[:1000] for key in ("opening", "turning_point", "outcome")}
+    except Exception as exc:
+        print(f"[COMBAT REPORT AI] Gemini call failed: {type(exc).__name__}: {exc}", flush=True)
+        winner = (nat_a["name"] if result["winner"] == "attacker" else
+                  nat_b["name"] if result["winner"] == "defender" else i18n.text("neither side"))
+        place = battlefield.get("name") or battlefield.get("input") or i18n.text("the battlefield")
+        terrain = i18n.term(battlefield.get("terrain", "unknown"))
+        attacker_names = ", ".join(f"{u['committed']}× {u['name']}" for u in forces_a) or i18n.text("unspecified forces")
+        defender_names = ", ".join(f"{u['committed']}× {u['name']}" for u in forces_b) or i18n.text("unspecified forces")
+        return {
+            "opening": i18n.text("At {p0}, {p1} followed '{p2}', while {p3} answered with '{p4}'. The fight developed across {p5} terrain.", p0=place, p1=attacker_names, p2=plan_a['orders_text'], p3=defender_names, p4=plan_b['orders_text'], p5=terrain),
+            "turning_point": i18n.text("The committed units met directly; effective attack reached {p0}, against {p1} defense. {p2}", p0=result['eff_attack'], p1=result['eff_defense'], p2=reasoning),
+            "outcome": i18n.text("{p0} held the advantage. Attacker casualties were about {p1}%, and defender casualties about {p2}% of committed forces.", p0=winner, p1=result['atk_casualties_pct'], p2=result['def_casualties_pct']),
+        }
+
+
+class BattleLocationModal(discord.ui.Modal):
+    def __init__(self, cog, battle_id, atk_override, def_override, apply_casualties):
+        super().__init__(title=i18n.text("Final battle location"), timeout=300)
+        self.cog, self.battle_id = cog, battle_id
+        self.atk_override, self.def_override = atk_override, def_override
+        self.apply_casualties = apply_casualties
+        self.location = discord.ui.TextInput(
+            label=i18n.text("Province name or cell ID"),
+            placeholder=i18n.text("e.g. Harbor or 55"), max_length=150)
+        self.add_item(self.location)
+
+    @i18n.localized
+    async def on_submit(self, interaction: discord.Interaction):
+        await CombatCog.battle_resolve.callback(
+            self.cog, interaction, self.battle_id, str(self.location),
+            self.atk_override, self.def_override, self.apply_casualties)
 
 
 # ---------------------------------------------------------------------------
@@ -403,6 +483,18 @@ class CombatCog(commands.Cog):
             embed.add_field(name=i18n.text('Roll'),           value=str(report.get("roll","?")),           inline=True)
             embed.add_field(name=i18n.text('Atk casualties'), value=f"{report.get('atk_casualties_pct',0)}%", inline=True)
             embed.add_field(name=i18n.text('Def casualties'), value=f"{report.get('def_casualties_pct',0)}%", inline=True)
+            field = report.get("battlefield", {})
+            if field:
+                embed.add_field(name=i18n.text('📍 Final battlefield'),
+                    value=i18n.text('{p0} · {p1} · fortification {p2}',
+                        p0=field.get('name', '?'), p1=i18n.term(field.get('terrain', 'unknown')),
+                        p2=field.get('fortification', 0)), inline=False)
+            story = report.get("narrative", {})
+            for key, title in (("opening", i18n.text("Opening engagement")),
+                               ("turning_point", i18n.text("Turning point")),
+                               ("outcome", i18n.text("Final outcome"))):
+                if story.get(key):
+                    embed.add_field(name=title, value=story[key][:1024], inline=False)
 
         if is_party or is_gm:
             def plan_field(p, nat_p, label):
@@ -442,6 +534,7 @@ class CombatCog(commands.Cog):
                         description="[GM] Resolve a battle / [GM] Rozstrzygnij bitwe")
     @app_commands.describe(
         battle_id="Battle ID (leave blank to list pending battles)",
+        final_location="Final battlefield: province name, cell ID, or descriptive location",
         atk_modifier_override="Override AI attacker modifier (leave blank to use AI)",
         def_modifier_override="Override AI defender modifier (leave blank to use AI)",
         apply_casualties="Apply casualties to units automatically (default True)",
@@ -449,12 +542,18 @@ class CombatCog(commands.Cog):
     @i18n.localized
     async def battle_resolve(self, interaction: discord.Interaction,
                              battle_id: int = 0,
+                             final_location: str = "",
                              atk_modifier_override: float = 0.0,
                              def_modifier_override: float = 0.0,
                              apply_casualties: bool = True):
         if not _gm(interaction):
             await interaction.response.send_message(
                 i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
+            return
+
+        if battle_id > 0 and not final_location.strip():
+            await interaction.response.send_modal(BattleLocationModal(
+                self, battle_id, atk_modifier_override, def_modifier_override, apply_casualties))
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -499,12 +598,15 @@ class CombatCog(commands.Cog):
             }
 
         pd_a, pd_b = plan_dict(plan_a), plan_dict(plan_b)
+        battlefield = battle_resolution.location_context(final_location)
+        forces_a = battle_resolution.force_snapshot(plan_a, nat_a)
+        forces_b = battle_resolution.force_snapshot(plan_b, nat_b)
         await interaction.followup.send(i18n.text('⏳ Consulting AI for combat modifier...'), ephemeral=True)
-        ai_mod = await _get_ai_modifier(pd_a, pd_b, nat_a, nat_b)
+        ai_mod = await _get_ai_modifier(pd_a, pd_b, nat_a, nat_b, battlefield, forces_a, forces_b)
         try:
             settled = battle_resolution.resolve(
                 battle_id, ai_mod, atk_modifier_override, def_modifier_override,
-                apply_casualties)
+                apply_casualties, final_location)
         except ValueError as exc:
             await interaction.followup.send(str(exc), ephemeral=True)
             return
@@ -515,6 +617,10 @@ class CombatCog(commands.Cog):
         final_atk_mod = settled["final"]["attacker_modifier"]
         final_def_mod = settled["final"]["defender_modifier"]
         atk_power, def_power, fort_bonus = settled["atk_power"], settled["def_power"], settled["fort_bonus"]
+        await interaction.followup.send(i18n.text('📝 Writing the detailed battle report...'), ephemeral=True)
+        narrative = await _get_ai_battle_report(
+            pd_a, pd_b, nat_a, nat_b, battlefield, forces_a, forces_b, result, ai_mod["reasoning"])
+        battle_resolution.attach_narrative(battle_id, narrative, forces_a, forces_b)
         # Public battle report
         ch_id = _cfg("announce_channel_id")
         try:
@@ -540,14 +646,21 @@ class CombatCog(commands.Cog):
         )
         if battle["gm_note"]:
             report_embed.add_field(name=i18n.text('Conditions'), value=battle["gm_note"], inline=False)
-        report_embed.add_field(
-            name=i18n.text('📍 Locations'),
-            value=(
-                f"**{nat_a['name']}:** {pd_a['location_text']}\n"
-                f"**{nat_b['name']}:** {pd_b['location_text']}"
-            ),
-            inline=False,
-        )
+        report_embed.add_field(name=i18n.text('📍 Final battlefield'),
+            value=i18n.text('**{p0}** · terrain: {p1} · biome: {p2} · fortification: {p3}',
+                p0=battlefield['name'], p1=i18n.term(battlefield['terrain']),
+                p2=i18n.term(battlefield['biome']), p3=battlefield['fortification']), inline=False)
+        def unit_line(units):
+            return (", ".join(f"**{u['committed']}×** {u['name']}" for u in units) or
+                    i18n.text("No registered unit groups"))[:1024]
+        report_embed.add_field(name=i18n.text('Forces — {p0}', p0=nat_a['name']),
+                               value=unit_line(forces_a), inline=False)
+        report_embed.add_field(name=i18n.text('Forces — {p0}', p0=nat_b['name']),
+                               value=unit_line(forces_b), inline=False)
+        for key, title in (("opening", i18n.text("Opening engagement")),
+                           ("turning_point", i18n.text("Turning point")),
+                           ("outcome", i18n.text("Final outcome"))):
+            report_embed.add_field(name=title, value=narrative[key] or "—", inline=False)
         report_embed.add_field(
             name=i18n.text('🏆 Outcome'),
             value=f"**{i18n.text('DRAW') if result['winner']=='draw' else (nat_a['name'] if result['winner']=='attacker' else nat_b['name']) + i18n.text(' WINS')}**",
