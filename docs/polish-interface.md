@@ -7,9 +7,10 @@ listy języków i parametrów. Obie bez parametrów włączają polski.
 Angielski pozostaje dostępny przez wybór `en`. Wybór języka działa także przed
 aktywacją serwera i utrzymuje się po restarcie, jeśli baza danych jest trwała.
 
-W polskiej wersji Discorda nazwy komend również są polskie: `/pomoc`, `/wojsko
-lista`, `/bitwa rozstrzygnij`, `/wydarzenie graj`, `/tłumaczenie`. Discord dobiera
-nazwy, opisy formularzy i stałe opcje do **języka aplikacji Discord**. Zapisany
+Nazwy komend i podkomend pozostają angielskie w każdej wersji Discorda:
+`/help`, `/military list`, `/battle resolve`, `/event play`, `/translate`.
+Discord dobiera nazwy parametrów, opisy formularzy i stałe opcje do
+**języka aplikacji Discord**. Zapisany
 przez bota język odpowiada za wiadomości, dynamiczne podpowiedzi i przyciski.
 Użytkownik angielskiego Discorda może nadal otrzymywać polskie odpowiedzi;
 aby mieć także polskie formularze, powinien wybrać polski w ustawieniach Discorda.

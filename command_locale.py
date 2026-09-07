@@ -1,11 +1,7 @@
-"""Discord-native Polish command names, descriptions, parameters and choices."""
+"""English command names with Polish descriptions, parameters and choices."""
 from discord import Locale, app_commands
 import i18n
 
-NAMES = dict(zip(
-    'accept activate add admin admineco advance alliance battle blueprint build building_new building_set buildings calendar cancel claim colony colonymgr create_unit delete design_ship develop diplomacy disband edit effects event found generate grant help history history_add info language list map_export_markers map_import map_resync match megaproject military move mp_advance mp_approve nation offer peace plan plans_pending play post propose province remove research resolve resources set setback start starter_pack stats status stop tech tech_set tick trade traderoute tutorial unassign unclaim view war yield translate'.split(),
-    'akceptuj aktywuj dodaj administracja gospodarka_gm awansuj sojusz bitwa projekt buduj nowy_budynek edytuj_budynek budynki kalendarz anuluj przyznaj kolonia kolonie_gm stwórz_jednostkę usuń projektuj_okręt rozwijaj dyplomacja rozwiąż edytuj efekty wydarzenie załóż generuj przydziel pomoc historia dodaj_historię informacje język lista eksport_znaczników import_mapy aktualizuj_mapę połącz megaprojekt wojsko przemieść przyspiesz_projekt zatwierdź_projekt naród oferta pokój plan oczekujące_plany graj publikuj zaproponuj prowincja usuń badaj rozstrzygnij zasoby ustaw cofnij uruchom zestaw_startowy statystyki status zatrzymaj technologia ustaw_technologię rozlicz wymiana szlak poradnik cofnij_przydział odbierz pokaż wojna produkcja tłumaczenie'.split(),
-))
 PARAMETERS = {
     'amount':'ilość','apply_casualties':'zastosuj_straty','atk_modifier_override':'mnożnik_ataku',
     'attacker_plan_id':'plan_atakującego','auth_key':'klucz','battle_id':'id_bitwy',
@@ -37,7 +33,8 @@ class PolishTranslator(app_commands.Translator):
         source = string.message
         location = context.location.name
         if location in ('command_name', 'group_name'):
-            return NAMES.get(source)
+            # Explicitly replace previously synchronized Polish names as well.
+            return source
         if location == 'parameter_name':
             return PARAMETERS.get(source)
         if location == 'parameter_description' and source == '…':
