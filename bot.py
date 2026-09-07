@@ -25,6 +25,7 @@ COGS = [
     "cogs.combat",
     "cogs.events",
     "cogs.colonialism",
+    "cogs.panel",
 ]
 
 intents = discord.Intents.default()
@@ -34,7 +35,7 @@ print("[BOOT] bot object created", flush=True)
 
 @i18n.localized
 async def global_guild_check(interaction: discord.Interaction) -> bool:
-    if interaction.command and interaction.command.name in ("help", "language", "translate", "activate"):
+    if interaction.command and interaction.command.name in ("help", "language", "translate", "activate", "panel"):
         return True
     if not interaction.guild:
         return False
