@@ -80,11 +80,11 @@ async def _maybe_announce(bot, nation_name: str, tier: int):
     if not ch:
         return
     flavours = [
-        f"Scholars in **{nation_name}** report significant advances in knowledge.",
-        f"Word spreads of breakthroughs emerging from **{nation_name}**.",
-        f"**{nation_name}** appears to have made a notable technological leap.",
-        f"Rumours from **{nation_name}** speak of new discoveries and mastery.",
-        f"Observers note that **{nation_name}** has grown more capable in some regard.",
+        i18n.text('Scholars in **{p0}** report significant advances in knowledge.', p0=nation_name),
+        i18n.text('Word spreads of breakthroughs emerging from **{p0}**.', p0=nation_name),
+        i18n.text('**{p0}** appears to have made a notable technological leap.', p0=nation_name),
+        i18n.text('Rumours from **{p0}** speak of new discoveries and mastery.', p0=nation_name),
+        i18n.text('Observers note that **{p0}** has grown more capable in some regard.', p0=nation_name),
     ]
     embed = discord.Embed(
         description=random.choice(flavours),
@@ -160,8 +160,7 @@ class TechCog(commands.Cog):
                 print(f"[TECH] Daily drift executed. {len(crossings)} tier crossing(s).", flush=True)
             for nid, nname, cat, old, new, tier in crossings:
                 _log(nid, "system",
-                     f"Tech milestone: {cat.capitalize()} reached tier {tier} "
-                     f"(was {old:.1f}, now {new:.1f}).")
+                     i18n.text('Tech milestone: {p0} reached tier {p1} (was {p2:.1f}, now {p3:.1f}).', p0=i18n.term(cat), p1=tier, p2=old, p3=new))
                 await _maybe_announce(self.bot, nname, tier)
         except Exception as e:
             import traceback
@@ -179,13 +178,14 @@ class TechCog(commands.Cog):
     @tech_grp.command(name="status",
                       description="View your tech levels (private) / Poziomy technologii (prywatne)")
     @app_commands.describe(nation="Nation name — GM only / Nazwa narodu — tylko GM")
+    @i18n.localized
     async def tech_status(self, interaction: discord.Interaction, nation: str = ""):
         lang  = _lang(interaction)
         is_gm = _gm(interaction)
 
         if nation and not is_gm:
             await interaction.response.send_message(
-                "Tech levels are private. You can only view your own.", ephemeral=True)
+                i18n.text('Tech levels are private. You can only view your own.'), ephemeral=True)
             return
 
         if nation:
@@ -213,24 +213,23 @@ class TechCog(commands.Cog):
             return f"`{bar_str}` {level:.1f}/10"
 
         embed = discord.Embed(
-            title=f"🔬 Tech Levels — {nat['flag'] or ''} {nat['name']}".strip(),
+            title=i18n.text('🔬 Tech Levels — {p0} {p1}', p0=nat['flag'] or '', p1=nat['name']).strip(),
             color=discord.Color.teal(),
         )
         for cat in CATEGORIES:
             level = tech.get(cat, 3.0)
             embed.add_field(
-                name=cat.capitalize(),
+                name=i18n.term(cat),
                 value=bar(level),
                 inline=False,
             )
         embed.add_field(
-            name="📚 Universal Knowledge",
-            value=f"{uk:.0f} points",
+            name=i18n.text('📚 Universal Knowledge'),
+            value=i18n.text('{p0:.0f} points', p0=uk),
             inline=False,
         )
         embed.set_footer(
-            text=f"Passive drift: +{DRIFT_PER_DAY}/day per category. "
-                 f"Research costs {RESEARCH_GOLD}g + {RESEARCH_UK} UK per +0.1."
+            text=i18n.text('Passive drift: +{p0}/day per category. Research costs {p1}g + {p2} UK per +0.1.', p0=DRIFT_PER_DAY, p1=RESEARCH_GOLD, p2=RESEARCH_UK)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -247,6 +246,7 @@ class TechCog(commands.Cog):
         app_commands.Choice(name="Economy",  value="economy"),
         app_commands.Choice(name="Colonial", value="colonial"),
     ])
+    @i18n.localized
     async def tech_research(self, interaction: discord.Interaction,
                             category: app_commands.Choice[str], steps: int = 1):
         lang = _lang(interaction)
@@ -264,7 +264,7 @@ class TechCog(commands.Cog):
         max_steps = int((TECH_MAX - current) / 0.1)
         if max_steps <= 0:
             await interaction.response.send_message(
-                f"{cat.capitalize()} is already at max (Tier {TECH_MAX:.0f}).", ephemeral=True)
+                i18n.text('{p0} is already at max (Tier {p1:.0f}).', p0=i18n.term(cat), p1=TECH_MAX), ephemeral=True)
             return
         steps = min(steps, max_steps)
 
@@ -273,15 +273,14 @@ class TechCog(commands.Cog):
 
         if nat["treasury"] < gold_cost:
             await interaction.response.send_message(
-                f"Not enough gold. Need **{gold_cost:,}g**, have **{nat['treasury']:,.0f}g**.",
+                i18n.text('Not enough gold. Need **{p0:,}g**, have **{p1:,.0f}g**.', p0=gold_cost, p1=nat['treasury']),
                 ephemeral=True)
             return
 
         uk_have = res.get("universal_knowledge", 0)
         if uk_have < uk_cost:
             await interaction.response.send_message(
-                f"Not enough Universal Knowledge. Need **{uk_cost}**, have **{uk_have:.0f}**.\n"
-                "Build Universities to generate Universal Knowledge each tick.",
+                i18n.text('Not enough Universal Knowledge. Need **{p0}**, have **{p1:.0f}**.\nBuild Universities to generate Universal Knowledge each tick.', p0=uk_cost, p1=uk_have),
                 ephemeral=True)
             return
 
@@ -290,21 +289,20 @@ class TechCog(commands.Cog):
 
         # Confirmation embed before spending
         confirm_embed = discord.Embed(
-            title="🔬 Confirm Research",
+            title=i18n.text('🔬 Confirm Research'),
             description=(
-                f"**{cat.capitalize()}**: {old:.1f} → **{new:.1f}**\n"
-                f"Cost: **{gold_cost:,}g** + **{uk_cost} Universal Knowledge**\n\n"
-                "Click Confirm to proceed."
+                i18n.text('**{p0}**: {p1:.1f} → **{p2:.1f}**\nCost: **{p3:,}g** + **{p4} Universal Knowledge**\n\nClick Confirm to proceed.', p0=i18n.term(cat), p1=old, p2=new, p3=gold_cost, p4=uk_cost)
             ),
             color=discord.Color.teal(),
         )
 
-        class ConfirmView(discord.ui.View):
+        class ConfirmView(i18n.LocalizedView):
             def __init__(self):
                 super().__init__(timeout=60)
                 self.confirmed = False
 
             @discord.ui.button(label="✅ Confirm", style=discord.ButtonStyle.success)
+            @i18n.localized
             async def confirm(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
                 self.confirmed = True
                 self.stop()
@@ -317,26 +315,25 @@ class TechCog(commands.Cog):
                         (json.dumps(tech), json.dumps(res), nat["treasury"] - gold_cost, nat["id"])
                     )
                 _log(nat["id"], "player",
-                     f"Researched {cat.capitalize()}: {old:.1f} → {new:.1f} "
-                     f"(cost: {gold_cost}g + {uk_cost} UK).")
+                     i18n.text('Researched {p0}: {p1:.1f} → {p2:.1f} (cost: {p3}g + {p4} UK).', p0=i18n.term(cat), p1=old, p2=new, p3=gold_cost, p4=uk_cost))
                 for tier in _tier_crossed(old, new):
-                    _log(nat["id"], "system", f"Tech milestone: {cat.capitalize()} reached tier {tier}.")
+                    _log(nat["id"], "system", i18n.text('Tech milestone: {p0} reached tier {p1}.', p0=i18n.term(cat), p1=tier))
                     await _maybe_announce(self.view_bot, nat["name"], tier)
                 result_embed = discord.Embed(
-                    title="🔬 Research Complete",
+                    title=i18n.text('🔬 Research Complete'),
                     description=(
-                        f"**{cat.capitalize()}**: {old:.1f} → **{new:.1f}**\n"
-                        f"Cost: {gold_cost:,}g + {uk_cost} Universal Knowledge"
+                        i18n.text('**{p0}**: {p1:.1f} → **{p2:.1f}**\nCost: {p3:,}g + {p4} Universal Knowledge', p0=i18n.term(cat), p1=old, p2=new, p3=gold_cost, p4=uk_cost)
                     ),
                     color=discord.Color.teal(),
                 )
                 await btn_interaction.response.edit_message(embed=result_embed, view=None)
 
             @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
+            @i18n.localized
             async def cancel(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
                 self.stop()
                 await btn_interaction.response.edit_message(
-                    content="Research cancelled.", embed=None, view=None)
+                    content=i18n.text('Research cancelled.'), embed=None, view=None)
 
         view = ConfirmView()
         view.view_bot = self.bot

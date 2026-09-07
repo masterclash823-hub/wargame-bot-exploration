@@ -13,7 +13,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 import config, db, i18n
-from utils import gm_only
+from utils import gm_only, short_date
 from trade_service import parse_resources, validate_gold, accept_trade
 
 MONTH_NAMES = [
@@ -25,8 +25,8 @@ MONTH_NAMES_PL = [
     "Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień",
 ]
 
-def _month_name(month: int, lang: str = "en") -> str:
-    names = MONTH_NAMES_PL if lang == "pl" else MONTH_NAMES
+def _month_name(month: int, lang: str = None) -> str:
+    names = MONTH_NAMES_PL if (lang or i18n.current_language()) == "pl" else MONTH_NAMES
     try:
         return names[month - 1]
     except (IndexError, TypeError):
@@ -93,9 +93,32 @@ def _nation_name(name):
         return c.fetchone()
 
 def _bdef(key):
+    key = i18n.normalize_key(key)
     with db.cursor() as c:
         c.execute("SELECT * FROM building_defs WHERE key=?", (key.lower(),))
         return c.fetchone()
+
+
+def _building_label(row, lang=None):
+    """Only localize built-in names; retain custom names entered by the GM."""
+    default = next((b for b in DEFAULT_BUILDINGS if b['key'] == row['key']), None)
+    if default and row['name'] == default['name']:
+        return i18n.term(row['key'], lang)
+    return row['name']
+
+
+def _terrain_label(value):
+    return ', '.join(i18n.term(t.strip()) for t in value.split(','))
+
+
+@i18n.localized
+async def _building_choices(interaction: discord.Interaction, current: str):
+    with db.cursor() as c:
+        c.execute("SELECT * FROM building_defs ORDER BY tier, name")
+        rows = c.fetchall()
+    needle = current.casefold()
+    return [app_commands.Choice(name=_building_label(row)[:100], value=row['key'])
+            for row in rows if needle in _building_label(row).casefold() or needle in row['key']][:25]
 
 def _cfg(key, default=""):
     with db.cursor() as c:
@@ -188,26 +211,26 @@ def _apply_mp_effect(nid, effect_str, mp_name):
     parts     = []
     for k, v in effect.get("resources_once", {}).items():
         res[k] = res.get(k, 0) + v
-        parts.append(f"+{v} {k}")
+        parts.append(f"+{v} {i18n.term(k)}")
     gold_once = effect.get("gold_once", 0)
     if gold_once:
         treasury += gold_once
-        parts.append(f"+{gold_once} gold")
+        parts.append(i18n.text('+{p0} gold', p0=gold_once))
     stab = effect.get("stability", 0)
     if stab:
         stability = min(100.0, stability + stab)
-        parts.append(f"+{stab} stability")
+        parts.append(i18n.text('+{p0} stability', p0=stab))
     with db.cursor() as c:
         c.execute(
             "UPDATE nations SET resources_json=?,treasury=?,stability=? WHERE id=?",
             (json.dumps(res), treasury, stability, nid)
         )
-    entry = f"Megaproject '{mp_name}' completed."
+    entry = i18n.text("Megaproject '{p0}' completed.", p0=mp_name)
     if parts:
-        entry += f" Granted: {', '.join(parts)}."
+        entry += i18n.text(' Granted: {p0}.', p0=', '.join(parts))
     res_tick = effect.get("resources_per_tick", {})
     if res_tick:
-        entry += f" Ongoing: {', '.join(f'+{v} {k}/tick' for k, v in res_tick.items())}."
+        entry += i18n.text(' Ongoing: {p0}.', p0=', '.join((i18n.text('+{p0} {p1}/tick', p0=v, p1=i18n.term(k)) for k, v in res_tick.items())))
     special = effect.get("special_note", "")
     if special:
         entry += f" {special}"
@@ -220,7 +243,7 @@ def _seed_buildings():
                 """
                 INSERT INTO building_defs 
                 (key, name, tier, cost_json, effect_json, upkeep_json, requires_terrain, requires_tech, description) 
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (key) DO UPDATE SET 
                     name = EXCLUDED.name,
                     tier = EXCLUDED.tier,
@@ -477,10 +500,8 @@ def _run_tick(months=1):
                                 )
 
                 _log(nid, "system",
-                     f"Food shortage! Needed {food_needed:.0f} (pop {total_pop:,} + "
-                     f"{total_units} units), had {food_have:.0f}. "
-                     f"Stability -{stab_penalty}."
-                     + (" Population declining." if shortage_ratio < 0.5 else ""))
+                     i18n.text('Food shortage! Needed {p0:.0f} (pop {p1:,} + {p2} units), had {p3:.0f}. Stability -{p4}.', p0=food_needed, p1=total_pop, p2=total_units, p3=food_have, p4=stab_penalty)
+                     + (i18n.text(' Population declining.') if shortage_ratio < 0.5 else ""))
         except Exception as e:
             print(f"[TICK] Food calc error for nation {nid}: {e}", flush=True)
 
@@ -497,20 +518,20 @@ def _run_tick(months=1):
                 "UPDATE nations SET resources_json=?,treasury=?,population=? WHERE id=?",
                 (json.dumps(res), treasury, total_pop, nid)
             )
-        summary_parts = [f"{nat['name']}: -{upkeep:.0f}g upkeep, {treasury:.0f}g treasury"]
+        summary_parts = [i18n.text('{p0}: -{p1:.0f}g upkeep, {p2:.0f}g treasury', p0=nat['name'], p1=upkeep, p2=treasury)]
         if luxury_income > 0:
-            summary_parts.append(f"+{luxury_income:.0f}g luxury")
+            summary_parts.append(i18n.text('+{p0:.0f}g luxury', p0=luxury_income))
         _log(nid, "system",
-             f"Month {month}/{year}: upkeep -{upkeep:.0f}g"
-             + (f", luxury income +{luxury_income:.0f}g" if luxury_income > 0 else "")
-             + f", treasury {treasury:.0f}g.")
+             i18n.text('Month {p0}/{p1}: upkeep -{p2:.0f}g', p0=month, p1=year, p2=upkeep)
+             + (i18n.text(', luxury income +{p0:.0f}g', p0=luxury_income) if luxury_income > 0 else "")
+             + i18n.text(', treasury {p0:.0f}g.', p0=treasury))
         summaries.append(", ".join(summary_parts))
     return month, year, summaries
 
 # ---------------------------------------------------------------------------
 # UI: paginated buildings list
 # ---------------------------------------------------------------------------
-class PageView(discord.ui.View):
+class PageView(i18n.LocalizedView):
     def __init__(self, pages):
         super().__init__(timeout=120)
         self.pages = pages
@@ -522,12 +543,14 @@ class PageView(discord.ui.View):
         self.next_btn.disabled = (self.page == len(self.pages) - 1)
 
     @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary)
+    @i18n.localized
     async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.page -= 1
         self._refresh()
         await interaction.response.edit_message(embed=self.pages[self.page], view=self)
 
     @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
+    @i18n.localized
     async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.page += 1
         self._refresh()
@@ -543,6 +566,7 @@ HELP_SECTIONS = {
         "fields": [
             ("/help", "Browse commands by section using the buttons below."),
             ("/language", "Set your preferred language (en / pl)."),
+            ("/translate", "Choose a language; without parameters, enables Polish."),
             ("/calendar status", "View current in-game date."),
         ],
     },
@@ -638,6 +662,7 @@ HELP_SECTIONS = {
             ("/diplomacy status", "View your own diplomatic relations."),
             ("/diplomacy public", "View the world diplomatic landscape — all active wars and alliances."),
             ("/event list [nation]", "View posted events for a nation or your own."),
+            ("/event play <id>", "Resume an event: 3 choices or a custom response, 3 decisions maximum."),
         ],
     },
 }
@@ -658,7 +683,7 @@ GM_HELP_FIELDS = [
     ("/event generate <nation>", "Generate an AI event based on nation history and stats."),
     ("/event edit <id> <text>", "Edit an event draft before posting."),
     ("/event effects <id> <json>", "Set stat effects for an event draft."),
-    ("/event post <id>", "Post an event publicly and apply its effects."),
+    ("/event post <id>", "Start a 3-decision event; effects apply at the end."),
     ("/battle plans_pending", "List all unmatched battle plans."),
     ("/battle match <plan_a> <plan_b>", "Match two plans into a battle, optional context note."),
     ("/battle resolve <id>", "Get AI modifier and resolve battle. GM can override modifiers."),
@@ -677,6 +702,7 @@ HELP_SECTIONS_PL = {
         "fields": [
             ("/help", "Przeglądaj komendy używając przycisków poniżej."),
             ("/language", "Ustaw preferowany język odpowiedzi bota (en / pl)."),
+            ("/translate", "Włącz polski bez parametrów albo wybierz język z listy."),
             ("/calendar status", "Sprawdź aktualną datę w grze."),
             ("/activate <klucz>", "Aktywuj bota na tym serwerze (tylko GM)."),
         ],
@@ -761,6 +787,7 @@ HELP_SECTIONS_PL = {
             ("/diplomacy status", "Twoje relacje dyplomatyczne."),
             ("/diplomacy public", "Mapa dyplomatyczna świata — wszystkie aktywne wojny i sojusze."),
             ("/event list [naród]", "Lista opublikowanych eventów dla narodu."),
+            ("/event play <id>", "Wznów event: 3 opcje lub własna odpowiedź, maksymalnie 3 decyzje."),
         ],
     },
     "colonialism": {
@@ -800,31 +827,31 @@ GM_HELP_FIELDS_PL = [
     ("/event generate <naród>", "Generuj event AI na podstawie historii i statystyk narodu."),
     ("/event edit <id> <tekst>", "Edytuj szkic eventu przed publikacją."),
     ("/event effects <id> <json>", "Ustaw efekty statystyk dla eventu."),
-    ("/event post <id>", "Opublikuj event i zastosuj efekty."),
+    ("/event post <id>", "Rozpocznij event z 3 decyzjami; efekty dopiero na końcu."),
     ("/battle plans_pending", "Lista wszystkich niedopasowanych planów bitew."),
     ("/battle match <plan_atk> <plan_def>", "Dopasuj dwa plany — wybierz kto atakuje, kto broni."),
     ("/battle resolve <id>", "Pobierz modyfikator AI i rozstrzygnij bitwę."),
     ("/calendar set", "Skonfiguruj prędkość kalendarza, kanał i datę startową."),
     ("/calendar start/stop", "Uruchom lub zatrzymaj kalendarz."),
 ]
-class HelpView(discord.ui.View):
+class HelpView(i18n.LocalizedView):
     PLAYER_KEYS = ["general", "nation", "province", "economy", "trade", "military", "combat", "colonialism"]
 
-    def __init__(self, is_gm: bool, current: str = "general", lang: str = "en"):
+    def __init__(self, is_gm: bool, current: str = "general", lang: str = None):
         super().__init__(timeout=180)
         self.is_gm   = is_gm
         self.current = current
         self.lang    = lang
+        self.page = 0
         self._build()
 
     def _build(self):
         self.clear_items()
-        labels = {"general":"General","nation":"Nation",
-                  "province":"Province","economy":"Economy",
-                  "trade":"Trade","military":"Military","combat":"Combat","colonialism":"Colonialism"}
+        labels = {"general":"General", "nation":"Nation", "province":"Province", "economy":"Economy",
+                  "trade":"Trade", "military":"Military", "combat":"Combat", "colonialism":"Colonialism"}
         for key, label in labels.items():
             btn = discord.ui.Button(
-                label=label,
+                label=i18n.text(label, lang=self.lang),
                 style=(discord.ButtonStyle.primary
                        if key == self.current
                        else discord.ButtonStyle.secondary),
@@ -840,10 +867,35 @@ class HelpView(discord.ui.View):
             )
             gm.callback = self._cb("gm")
             self.add_item(gm)
+        if self.current == "gm":
+            fields = GM_HELP_FIELDS_PL if self.lang == "pl" else GM_HELP_FIELDS
+            count = (len(fields) + 19) // 20
+            for label, offset in (("◀", -1), ("▶", 1)):
+                btn = discord.ui.Button(label=label, row=2,
+                    disabled=not 0 <= self.page + offset < count)
+                btn.callback = self._page_cb(offset)
+                self.add_item(btn)
+
+    def _page_cb(self, offset):
+        @i18n.localized
+        async def callback(interaction):
+            if not _gm(interaction):
+                await interaction.response.send_message(i18n.t(self.lang, "gm_only"), ephemeral=True)
+                return
+            fields = GM_HELP_FIELDS_PL if self.lang == "pl" else GM_HELP_FIELDS
+            self.page = max(0, min((len(fields) - 1) // 20, self.page + offset))
+            self._build()
+            await interaction.response.edit_message(embed=self._embed(), view=self)
+        return callback
 
     def _cb(self, key: str):
+        @i18n.localized
         async def callback(interaction: discord.Interaction):
+            if key == "gm" and not _gm(interaction):
+                await interaction.response.send_message(i18n.t(self.lang, "gm_only"), ephemeral=True)
+                return
             self.current = key
+            self.page = 0
             self._build()
             embed = self._embed()
             await interaction.response.edit_message(embed=embed, view=self)
@@ -854,11 +906,12 @@ class HelpView(discord.ui.View):
         gm_fields = GM_HELP_FIELDS_PL if self.lang == "pl" else GM_HELP_FIELDS
         if self.current == "gm":
             e = discord.Embed(
-                title="🔐 Komendy GM" if self.lang == "pl" else "🔐 GM Commands",
+                title="🔐 Komendy GM" if self.lang == "pl" else i18n.text('🔐 GM Commands'),
                 color=discord.Color.red()
             )
-            for name, value in gm_fields:
+            for name, value in gm_fields[self.page * 20:(self.page + 1) * 20]:
                 e.add_field(name=name, value=value, inline=False)
+            e.set_footer(text=f"{self.page + 1} / {(len(gm_fields) + 19) // 20}")
             return e
         data = sections[self.current]
         e = discord.Embed(title=data["title"], color=data["color"])
@@ -919,18 +972,18 @@ class EconomyCog(commands.Cog):
                     continue
 
                 # Safely get language locale without relying on undefined interaction
-                lang = _lang(interaction) if "interaction" in locals() and hasattr(interaction, "locale") else "en"
+                lang = config.DEFAULT_LANGUAGE
                 mname = _month_name(month, lang)
 
                 # Original embed formatting
                 embed = discord.Embed(
-                    title=f"📅 New Month: {mname}, Year {year}",
-                    description="A new month has begun. Nations have collected their income.",
+                    title=i18n.text('📅 New Month: {p0}, Year {p1}', p0=mname, p1=year),
+                    description=i18n.text('A new month has begun. Nations have collected their income.'),
                     color=discord.Color.gold(),
                 )
                 if summaries:
                     embed.add_field(
-                        name="⚙️ Resource Tick",
+                        name=i18n.text('⚙️ Resource Tick'),
                         value="\n".join(summaries[:20]),
                         inline=False,
                     )
@@ -966,6 +1019,7 @@ class EconomyCog(commands.Cog):
     # ======================================================================
 
     @app_commands.command(name="resources", description="View your resources / Twoje zasoby")
+    @i18n.localized
     async def resources(self, interaction: discord.Interaction):
         lang = _lang(interaction)
         n = _nation_owner(str(interaction.user.id))
@@ -1014,25 +1068,23 @@ class EconomyCog(commands.Cog):
         food_balance = food_prod - food_needed
 
         if total_pop == 0 and total_units == 0:
-            food_status = f"✅ No population ({food_have:.0f} stored, +{food_prod:.0f}/tick)"
+            food_status = i18n.text('✅ No population ({p0:.0f} stored, +{p1:.0f}/tick)', p0=food_have, p1=food_prod)
 
         if food_needed > 0:
             food_ratio = food_have / food_needed if food_have > 0 else 0
             if food_ratio >= 1.2:
-                food_status = f"✅ Well-fed ({food_have:.0f} stored)"
+                food_status = i18n.text('✅ Well-fed ({p0:.0f} stored)', p0=food_have)
             elif food_ratio >= 1.0:
-                food_status = f"🟡 Sufficient ({food_have:.0f} stored)"
+                food_status = i18n.text('🟡 Sufficient ({p0:.0f} stored)', p0=food_have)
             elif food_ratio >= 0.5:
-                food_status = f"🟠 Shortage ({food_have:.0f} stored) — stability declining"
+                food_status = i18n.text('🟠 Shortage ({p0:.0f} stored) — stability declining', p0=food_have)
             else:
-                food_status = f"🔴 Severe shortage ({food_have:.0f} stored) — population declining"
+                food_status = i18n.text('🔴 Severe shortage ({p0:.0f} stored) — population declining', p0=food_have)
             food_status += (
-                f"\nNeeds: {food_needed:.0f}/tick | "
-                f"Produces: {food_prod:.0f}/tick | "
-                f"Balance: {food_balance:+.0f}/tick"
+                i18n.text('\nNeeds: {p0:.0f}/tick | Produces: {p1:.0f}/tick | Balance: {p2:+.0f}/tick', p0=food_needed, p1=food_prod, p2=food_balance)
             )
         else:
-            food_status = f"✅ No population ({food_have:.0f} stored, +{food_prod:.0f}/tick)"
+            food_status = i18n.text('✅ No population ({p0:.0f} stored, +{p1:.0f}/tick)', p0=food_have, p1=food_prod)
 
         # Luxury income preview
         silk_income   = min(50.0, res.get("silk",   0) / 5)
@@ -1041,34 +1093,36 @@ class EconomyCog(commands.Cog):
 
         # Build resource display — exclude food (shown separately)
         other_res = {k: v for k, v in sorted(res.items()) if k != "food" and v > 0}
-        desc = "\n".join(f"**{k.replace('_',' ').capitalize()}**: {v:,.1f}"
-                         for k, v in other_res.items()) or "*No resources yet.*"
+        desc = "\n".join(f"**{i18n.term(k)}**: {v:,.1f}"
+                         for k, v in other_res.items()) or i18n.text('*No resources yet.*')
 
         embed = discord.Embed(
-            title=f"{n['flag'] or ''} {n['name']} — Resources".strip(),
+            title=i18n.text('{p0} {p1} — Resources', p0=n['flag'] or '', p1=n['name']).strip(),
             description=desc,
             color=discord.Color.green(),
         )
-        embed.add_field(name="🌾 Food", value=food_status, inline=False)
-        embed.add_field(name="💰 Treasury", value=f"{n['treasury']:,.0f} gold", inline=True)
+        embed.add_field(name=i18n.text('🌾 Food'), value=food_status, inline=False)
+        embed.add_field(name=i18n.text('💰 Treasury'), value=i18n.text('{p0:,.0f} gold', p0=n['treasury']), inline=True)
         if luxury_income > 0:
             embed.add_field(
-                name="💎 Luxury Income",
-                value=f"+{luxury_income:.0f}g/tick (silk+spices)",
+                name=i18n.text('💎 Luxury Income'),
+                value=i18n.text('+{p0:.0f}g/tick (silk+spices)', p0=luxury_income),
                 inline=True,
             )
         embed.add_field(
-            name="👥 Population",
-            value=f"{total_pop:,} total | {total_units} military units",
+            name=i18n.text('👥 Population'),
+            value=i18n.text('{p0:,} total | {p1} military units', p0=total_pop, p1=total_units),
             inline=True,
         )
         embed.set_footer(
-            text=f"In-game: Month {_cfg('current_month','?')}, Year {_cfg('current_year','?')}"
+            text=i18n.text('In-game: Month {p0}, Year {p1}', p0=_cfg('current_month', '?'), p1=_cfg('current_year', '?'))
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="build", description="Construct a building / Buduj w prowincji")
     @app_commands.describe(cell_id="Province cell ID", building="Building key e.g. farm, mine")
+    @app_commands.autocomplete(building=_building_choices)
+    @i18n.localized
     async def build(self, interaction: discord.Interaction, cell_id: int, building: str):
         lang = _lang(interaction)
         n = _nation_owner(str(interaction.user.id))
@@ -1090,20 +1144,21 @@ class EconomyCog(commands.Cog):
             await interaction.response.send_message(
                 i18n.t(lang, "build_unknown", key=building), ephemeral=True)
             return
+        building = bd['key']
         if not _terrain_ok(prov["terrain"], bd["requires_terrain"]):
             await interaction.response.send_message(
                 i18n.t(lang, "build_wrong_terrain",
-                        building=bd["name"], terrain=prov["terrain"]), ephemeral=True)
+                        building=_building_label(bd), terrain=i18n.term(prov["terrain"])), ephemeral=True)
             return
         if not _tech_ok(n, bd["requires_tech"], bd["key"]):
             await interaction.response.send_message(
                 i18n.t(lang, "build_need_tech",
-                        building=bd["name"], level=bd["requires_tech"]), ephemeral=True)
+                        building=_building_label(bd), level=bd["requires_tech"]), ephemeral=True)
             return
         bldgs = json.loads(prov["buildings_json"])
         if building.lower() in bldgs:
             await interaction.response.send_message(
-                i18n.t(lang, "build_already_exists", building=bd["name"]), ephemeral=True)
+                i18n.t(lang, "build_already_exists", building=_building_label(bd)), ephemeral=True)
             return
         cost      = json.loads(bd["cost_json"])
         gold_cost = cost.get("gold", 0)
@@ -1115,7 +1170,7 @@ class EconomyCog(commands.Cog):
         ok, missing = _deduct(res, cost)
         if not ok:
             await interaction.response.send_message(
-                i18n.t(lang, "build_no_resource", resource=missing), ephemeral=True)
+                i18n.t(lang, "build_no_resource", resource=i18n.term(missing)), ephemeral=True)
             return
         bldgs.append(building.lower())
         fort_bonus = 1 if building.lower() == "fort" else 0
@@ -1129,14 +1184,14 @@ class EconomyCog(commands.Cog):
                 "UPDATE nations SET resources_json=?,treasury=? WHERE id=?",
                 (json.dumps(res), n["treasury"] - gold_cost, n["id"])
             )
-        _log(n["id"], "system", f"Built {bd['name']} in province {prov['name'] or cell_id}.")
+        _log(n["id"], "system", i18n.text('Built {p0} in province {p1}.', p0=_building_label(bd), p1=prov['name'] or cell_id))
         effects  = json.loads(bd["effect_json"])
-        eff_str  = ", ".join(f"+{v} {k}/month" for k, v in effects.items()) or "special"
+        eff_str  = ", ".join(i18n.text('+{p0} {p1}/month', p0=v, p1=i18n.term(k)) for k, v in effects.items()) or i18n.term("special")
         embed = discord.Embed(
             title=i18n.t(lang, "build_success_title"),
             description=i18n.t(lang, "build_success_desc",
-                                building=bd["name"],
-                                province=prov["name"] or f"Cell #{cell_id}",
+                                building=_building_label(bd),
+                                province=prov["name"] or i18n.text('Cell #{p0}', p0=cell_id),
                                 effects=eff_str),
             color=discord.Color.green(),
         )
@@ -1147,42 +1202,43 @@ class EconomyCog(commands.Cog):
     # ======================================================================
 
     @buildings_grp.command(name="list", description="Browse building types / Lista budynkow")
+    @i18n.localized
     async def buildings_list(self, interaction: discord.Interaction):
         with db.cursor() as c:
             c.execute("SELECT * FROM building_defs ORDER BY tier, name")
             rows = c.fetchall()
         pages = []
         lang = _lang(interaction)
-        title_base = "🏗️ Dostępne Budynki" if lang == "pl" else "🏗️ Available Buildings"
+        title_base = "🏗️ Dostępne Budynki" if lang == "pl" else i18n.text('🏗️ Available Buildings')
         cur_embed = discord.Embed(
                     title=f"{title_base} ({len(pages)+1}/…)",
                     color=discord.Color.blue(),
                 )
         for i, b in enumerate(rows):
-            cost_str = ", ".join(f"{v} {k}" for k, v in json.loads(b["cost_json"]).items())
-            eff_str  = ", ".join(f"+{v} {k}/tick" for k, v in json.loads(b["effect_json"]).items()) or "special"
+            cost_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in json.loads(b["cost_json"]).items())
+            eff_str  = ", ".join(i18n.text('+{p0} {p1}/tick', p0=v, p1=i18n.term(k)) for k, v in json.loads(b["effect_json"]).items()) or i18n.term("special")
             terrain  = b["requires_terrain"] or "any"
-            tech     = f" | Tech≥{b['requires_tech']}" if b["requires_tech"] > 0 else ""
+            tech     = i18n.text(' | Tech≥{p0}', p0=b['requires_tech']) if b["requires_tech"] > 0 else ""
             lang = _lang(interaction)
             if lang == "pl" and b["key"] in BUILDING_TRANSLATIONS_PL:
                 bname, bdesc = BUILDING_TRANSLATIONS_PL[b["key"]]
             else:
                 bname, bdesc = b["name"], b["description"]
-            terrain_label = "dowolny" if terrain == "any" and lang == "pl" else terrain
+            terrain_label = _terrain_label(terrain)
             cur_embed.add_field(
                 name=f"T{b['tier']} `{b['key']}` — {bname}",
                 value=(
                     f"{bdesc}\n"
-                    f"{'Koszt' if lang=='pl' else 'Cost'}: {cost_str} | "
-                    f"{'Teren' if lang=='pl' else 'Terrain'}: {terrain_label}{tech}\n"
-                    f"{'Produkuje' if lang=='pl' else 'Produces'}: {eff_str}"
+                    f"{'Koszt' if lang=='pl' else i18n.text('Cost')}: {cost_str} | "
+                    f"{'Teren' if lang=='pl' else i18n.text('Terrain')}: {terrain_label}{tech}\n"
+                    f"{'Produkuje' if lang=='pl' else i18n.text('Produces')}: {eff_str}"
                 ),
                 inline=False,
             )
             if (i + 1) % 5 == 0:
                 pages.append(cur_embed)
                 cur_embed = discord.Embed(
-                    title=f"🏗️ Available Buildings ({len(pages)+1}/…)",
+                    title=i18n.text('🏗️ Available Buildings ({p0}/…)', p0=len(pages) + 1),
                     color=discord.Color.blue(),
                 )
         if cur_embed.fields:
@@ -1194,6 +1250,7 @@ class EconomyCog(commands.Cog):
 
     @buildings_grp.command(name="province", description="Buildings in a province / Budynki w prowincji")
     @app_commands.describe(cell_id="Province cell ID")
+    @i18n.localized
     async def buildings_province(self, interaction: discord.Interaction, cell_id: int):
         with db.cursor() as c:
             c.execute("SELECT * FROM provinces WHERE azgaar_cell_id=? AND active=1", (cell_id,))
@@ -1205,23 +1262,23 @@ class EconomyCog(commands.Cog):
         bldgs = json.loads(prov["buildings_json"])
         if not bldgs:
             await interaction.response.send_message(
-                f"No buildings in **{prov['name'] or f'Cell #{cell_id}'}**.", ephemeral=True)
+                i18n.text('No buildings in **{p0}**.', p0=prov['name'] or i18n.text('Cell #{p0}', p0=cell_id)), ephemeral=True)
             return
         lines = []
         for bkey in bldgs:
             bd  = _bdef(bkey)
-            nm  = bd["name"] if bd else bkey
+            nm  = _building_label(bd) if bd else bkey
             eff = json.loads(bd["effect_json"]) if bd else {}
             lines.append(
                 f"**{nm}** — "
-                + (", ".join(f"+{v} {k}/tick" for k, v in eff.items()) or "special")
+                + (", ".join(i18n.text('+{p0} {p1}/tick', p0=v, p1=i18n.term(k)) for k, v in eff.items()) or i18n.term("special"))
             )
         embed = discord.Embed(
-            title=f"Buildings — {prov['name'] or f'Cell #{cell_id}'}",
+            title=i18n.text('Buildings — {p0}', p0=prov['name'] or i18n.text('Cell #{p0}', p0=cell_id)),
             description="\n".join(lines),
             color=discord.Color.blue(),
         )
-        embed.add_field(name="Fortification", value=str(prov["fortification_level"]), inline=True)
+        embed.add_field(name=i18n.text('Fortification'), value=str(prov["fortification_level"]), inline=True)
         await interaction.response.send_message(embed=embed)
 
     # ======================================================================
@@ -1230,6 +1287,7 @@ class EconomyCog(commands.Cog):
 
     @mp_grp.command(name="propose", description="Propose a megaproject / Zaproponuj megaprojekt")
     @app_commands.describe(name="Project name", effect="Desired effect", gold_budget="Gold budget")
+    @i18n.localized
     async def mp_propose(self, interaction: discord.Interaction,
                          name: str, effect: str, gold_budget: int):
         lang = _lang(interaction)
@@ -1245,12 +1303,11 @@ class EconomyCog(commands.Cog):
             )
             mp_id = c.lastrowid
         _log(n["id"], "player",
-             f"Proposed megaproject '{name}' (#{mp_id}): {effect}. Budget: {gold_budget}g.")
+             i18n.text("Proposed megaproject '{p0}' (#{p1}): {p2}. Budget: {p3}g.", p0=name, p1=mp_id, p2=effect, p3=gold_budget))
         embed = discord.Embed(
-            title="Megaproject Proposed",
+            title=i18n.text('Megaproject Proposed'),
             description=(
-                f"**{name}** (ID: {mp_id})\n{effect}\n"
-                f"Budget: {gold_budget:,} gold\n\nAwaiting GM approval."
+                i18n.text('**{p0}** (ID: {p1})\n{p2}\nBudget: {p3:,} gold\n\nAwaiting GM approval.', p0=name, p1=mp_id, p2=effect, p3=gold_budget)
             ),
             color=discord.Color.orange(),
         )
@@ -1258,6 +1315,7 @@ class EconomyCog(commands.Cog):
 
     @mp_grp.command(name="build", description="Start building an approved megaproject / Rozpocznij budowe")
     @app_commands.describe(mp_id="Megaproject ID")
+    @i18n.localized
     async def mp_build(self, interaction: discord.Interaction, mp_id: int):
         lang = _lang(interaction)
         nat  = _nation_owner(str(interaction.user.id))
@@ -1268,24 +1326,24 @@ class EconomyCog(commands.Cog):
             c.execute("SELECT * FROM megaprojects WHERE id=? AND nation_id=?", (mp_id, nat["id"]))
             mp = c.fetchone()
         if not mp:
-            await interaction.response.send_message(f"Megaproject #{mp_id} not found.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('Megaproject #{p0} not found.', p0=mp_id), ephemeral=True)
             return
         if mp["status"] != "approved":
             await interaction.response.send_message(
-                f"Megaproject #{mp_id} is **{mp['status']}** — only approved projects can be started.",
+                i18n.text('Megaproject #{p0} is **{p1}** — only approved projects can be started.', p0=mp_id, p1=i18n.term(mp['status'])),
                 ephemeral=True)
             return
         cost      = json.loads(mp["cost_json"])
         gold_cost = cost.get("gold", 0)
         if nat["treasury"] < gold_cost:
             await interaction.response.send_message(
-                f"Not enough gold. Need **{gold_cost:,}g**, have **{nat['treasury']:,.0f}g**.",
+                i18n.text('Not enough gold. Need **{p0:,}g**, have **{p1:,.0f}g**.', p0=gold_cost, p1=nat['treasury']),
                 ephemeral=True)
             return
         res = json.loads(nat["resources_json"])
         ok, missing = _deduct(res, cost)
         if not ok:
-            await interaction.response.send_message(f"Not enough **{missing}**.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('Not enough **{p0}**.', p0=i18n.term(missing)), ephemeral=True)
             return
         new_status = "building" if mp["duration_months"] > 0 else "complete"
         with db.cursor() as c:
@@ -1297,19 +1355,18 @@ class EconomyCog(commands.Cog):
                       (json.dumps(res), nat["treasury"] - gold_cost, nat["id"]))
         if new_status == "complete":
             _apply_mp_effect(nat["id"], mp["effect_json"], mp["name"])
-            _log(nat["id"], "system", f"Megaproject '{mp['name']}' completed instantly.")
+            _log(nat["id"], "system", i18n.text("Megaproject '{p0}' completed instantly.", p0=mp['name']))
             await interaction.response.send_message(
-                f"✅ **{mp['name']}** built and completed! Effects applied.", ephemeral=False)
+                i18n.text('✅ **{p0}** built and completed! Effects applied.', p0=mp['name']), ephemeral=False)
         else:
             _log(nat["id"], "player",
-                 f"Started construction of megaproject '{mp['name']}' "
-                 f"({mp['duration_months']} months). Cost paid.")
+                 i18n.text("Started construction of megaproject '{p0}' ({p1} months). Cost paid.", p0=mp['name'], p1=mp['duration_months']))
             await interaction.response.send_message(
-                f"🔨 **{mp['name']}** construction started! "
-                f"Estimated completion: **{mp['duration_months']}** in-game month(s).",
+                i18n.text('🔨 **{p0}** construction started! Estimated completion: **{p1}** in-game month(s).', p0=mp['name'], p1=mp['duration_months']),
                 ephemeral=False)
 
     @mp_grp.command(name="list", description="List your megaprojects / Lista megaprojektow")
+    @i18n.localized
     async def mp_list(self, interaction: discord.Interaction):
         lang  = _lang(interaction)
         is_gm = _gm(interaction)
@@ -1334,7 +1391,7 @@ class EconomyCog(commands.Cog):
             rows = c.fetchall()
 
         if not rows:
-            await interaction.response.send_message("No megaprojects found.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('No megaprojects found.'), ephemeral=True)
             return
 
         EMOJI = {"proposed": "🟡", "approved": "🟢", "building": "🔨", "complete": "✅"}
@@ -1358,17 +1415,15 @@ class EconomyCog(commands.Cog):
             if r["status"] == "building" and r["duration_months"] > 0:
                 pct  = int((r["months_spent"] / r["duration_months"]) * 100)
                 bar  = "█" * (pct // 10) + "░" * (10 - (pct // 10))
-                prog = f"\n  `[{bar}]` {r['months_spent']}/{r['duration_months']} months ({pct}%)"
+                prog = i18n.text('\n  `[{p0}]` {p1}/{p2} months ({p3}%)', p0=bar, p1=r['months_spent'], p2=r['duration_months'], p3=pct)
             elif r["status"] == "building":
-                prog = " (instant — pending completion)"
+                prog = i18n.text(' (instant — pending completion)')
             else:
                 prog = ""
 
-            cost_str = ", ".join(f"{v} {k}" for k, v in cost.items()) if cost else "None"
+            cost_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in cost.items()) if cost else i18n.text('None')
             entry = (
-                f"{EMOJI.get(r['status'], '❓')} **[{r['id']}] {r['name']}** ({r['nname']}){prog}\n"
-                f"  {r['proposed_effect']}\n"
-                f"  Cost: {cost_str} | {r['status']}"
+                i18n.text('{p0} **[{p1}] {p2}** ({p3}){p4}\n  {p5}\n  Cost: {p6} | {p7}', p0=EMOJI.get(r['status'], '❓'), p1=r['id'], p2=r['name'], p3=r['nname'], p4=prog, p5=r['proposed_effect'], p6=cost_str, p7=i18n.term(r['status']))
             )
 
             # Check if adding this entry exceeds Discord's embed description limit
@@ -1381,10 +1436,10 @@ class EconomyCog(commands.Cog):
 
         desc = "\n\n".join(lines)
         if truncated_count > 0:
-            desc += f"\n\n*... and {truncated_count} more megaprojects.*"
+            desc += i18n.text('\n\n*... and {p0} more megaprojects.*', p0=truncated_count)
 
         embed = discord.Embed(
-            title="Megaprojects" + (" — All Nations" if is_gm else ""),
+            title=i18n.text('Megaprojects') + (i18n.text(' — All Nations') if is_gm else ""),
             description=desc,
             color=discord.Color.purple(),
         )
@@ -1404,6 +1459,7 @@ class EconomyCog(commands.Cog):
         public_note="Note visible to everyone",
         private_note="Note visible only to both parties and GM",
     )
+    @i18n.localized
     async def trade_offer(self, interaction: discord.Interaction,
                           to_nation: str,
                           give_resources: str = "{}",
@@ -1422,7 +1478,7 @@ class EconomyCog(commands.Cog):
             await interaction.response.send_message(i18n.t(lang, "nation_not_found"), ephemeral=True)
             return
         if tn["id"] == fn["id"]:
-            await interaction.response.send_message("Cannot trade with yourself.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('Cannot trade with yourself.'), ephemeral=True)
             return
         try:
             give_res = parse_resources(give_resources)
@@ -1441,42 +1497,44 @@ class EconomyCog(commands.Cog):
                  json.dumps(recv_res), receive_gold,
                  public_note, private_note, "pending")
             )
-        _log(fn["id"], "player", f"Sent trade offer #{trade_id} to {tn['name']}.")
-        give_str = ", ".join(f"{v} {k}" for k, v in give_res.items())
+        _log(fn["id"], "player", i18n.text('Sent trade offer #{p0} to {p1}.', p0=trade_id, p1=tn['name']))
+        give_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in give_res.items())
         if give_gold:
-            give_str += f", {give_gold:.0f} gold"
-        recv_str = ", ".join(f"{v} {k}" for k, v in recv_res.items())
+            give_str += i18n.text(', {p0:.0f} gold', p0=give_gold)
+        recv_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in recv_res.items())
         if receive_gold:
-            recv_str += f", {receive_gold:.0f} gold"
-        embed = discord.Embed(title=f"Trade Offer #{trade_id}", color=discord.Color.blue())
-        embed.add_field(name=f"{fn['name']} gives", value=give_str or "—", inline=True)
-        embed.add_field(name=f"{tn['name']} gives", value=recv_str or "—", inline=True)
+            recv_str += i18n.text(', {p0:.0f} gold', p0=receive_gold)
+        embed = discord.Embed(title=i18n.text('Trade Offer #{p0}', p0=trade_id), color=discord.Color.blue())
+        embed.add_field(name=i18n.text('{p0} gives', p0=fn['name']), value=give_str or "—", inline=True)
+        embed.add_field(name=i18n.text('{p0} gives', p0=tn['name']), value=recv_str or "—", inline=True)
         if public_note:
-            embed.add_field(name="Public note", value=public_note, inline=False)
-        embed.set_footer(text=f"Use /trade accept {trade_id} to accept.")
+            embed.add_field(name=i18n.text('Public note'), value=public_note, inline=False)
+        embed.set_footer(text=i18n.text('Use /trade accept {p0} to accept.', p0=trade_id))
         await interaction.response.send_message(embed=embed)
         # DM the receiver with private terms
         if interaction.guild:
             member = interaction.guild.get_member(int(tn["owner_id"]))
             if member:
-                dm = discord.Embed(
-                    title=f"Trade Offer #{trade_id} from {fn['name']}",
-                    color=discord.Color.blue()
-                )
-                dm.add_field(name="They give", value=give_str or "—", inline=True)
-                dm.add_field(name="They want", value=recv_str or "—", inline=True)
-                if public_note:
-                    dm.add_field(name="Public note", value=public_note, inline=False)
-                if private_note:
-                    dm.add_field(name="🔒 Private note", value=private_note, inline=False)
-                dm.set_footer(text=f"Use /trade accept {trade_id} or /trade cancel {trade_id}")
-                try:
-                    await member.send(embed=dm)
-                except discord.Forbidden:
-                    pass
+                with i18n.using_language(i18n.get_user_language(tn["owner_id"])):
+                    dm = discord.Embed(
+                        title=i18n.text('Trade Offer #{p0} from {p1}', p0=trade_id, p1=fn['name']),
+                        color=discord.Color.blue()
+                    )
+                    dm.add_field(name=i18n.text('They give'), value=i18n.resource_list(dict(give_res, **({"gold":give_gold} if give_gold else {}))), inline=True)
+                    dm.add_field(name=i18n.text('They want'), value=i18n.resource_list(dict(recv_res, **({"gold":receive_gold} if receive_gold else {}))), inline=True)
+                    if public_note:
+                        dm.add_field(name=i18n.text('Public note'), value=public_note, inline=False)
+                    if private_note:
+                        dm.add_field(name=i18n.text('🔒 Private note'), value=private_note, inline=False)
+                    dm.set_footer(text=i18n.text('Use /trade accept {p0} or /trade cancel {p1}', p0=trade_id, p1=trade_id))
+                    try:
+                        await member.send(embed=dm)
+                    except discord.Forbidden:
+                        pass
 
     @trade_grp.command(name="accept", description="Accept a trade / Zaakceptuj handel")
     @app_commands.describe(trade_id="Trade ID")
+    @i18n.localized
     async def trade_accept(self, interaction: discord.Interaction, trade_id: int):
         await interaction.response.defer()
         try:
@@ -1485,29 +1543,29 @@ class EconomyCog(commands.Cog):
         except ValueError as exc:
             await interaction.followup.send(str(exc), ephemeral=True)
             return
-        give_str = ", ".join(f"{v} {k}" for k, v in give_res.items())
+        give_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in give_res.items())
         if give_gold:
-            give_str += f", {give_gold:.0f} gold"
-        recv_str = ", ".join(f"{v} {k}" for k, v in recv_res.items())
+            give_str += i18n.text(', {p0:.0f} gold', p0=give_gold)
+        recv_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in recv_res.items())
         if recv_gold:
-            recv_str += f", {recv_gold:.0f} gold"
-        log_priv = (f"Trade #{trade_id} with {tn['name']}. Gave: {give_str or '—'}."
-                    f" Received: {recv_str or '—'}.")
+            recv_str += i18n.text(', {p0:.0f} gold', p0=recv_gold)
+        log_priv = (i18n.text('Trade #{p0} with {p1}. Gave: {p2}. Received: {p3}.', p0=trade_id, p1=tn['name'], p2=give_str or '—', p3=recv_str or '—'))
         if trade["private_note"]:
-            log_priv += f" (Private: {trade['private_note']})"
+            log_priv += i18n.text(' (Private: {p0})', p0=trade['private_note'])
         _log(fn["id"], "trade_private", log_priv)
         _log(tn["id"], "trade_private", log_priv)
-        _log(fn["id"], "system", f"Trade #{trade_id} accepted by {tn['name']}.")
-        _log(tn["id"], "system", f"Trade #{trade_id} accepted.")
-        embed = discord.Embed(title=f"✅ Trade #{trade_id} Accepted", color=discord.Color.green())
-        embed.add_field(name=f"{fn['name']} gave", value=give_str or "—", inline=True)
-        embed.add_field(name=f"{tn['name']} gave", value=recv_str or "—", inline=True)
+        _log(fn["id"], "system", i18n.text('Trade #{p0} accepted by {p1}.', p0=trade_id, p1=tn['name']))
+        _log(tn["id"], "system", i18n.text('Trade #{p0} accepted.', p0=trade_id))
+        embed = discord.Embed(title=i18n.text('✅ Trade #{p0} Accepted', p0=trade_id), color=discord.Color.green())
+        embed.add_field(name=i18n.text('{p0} gave', p0=fn['name']), value=give_str or "—", inline=True)
+        embed.add_field(name=i18n.text('{p0} gave', p0=tn['name']), value=recv_str or "—", inline=True)
         if trade["public_note"]:
-            embed.add_field(name="Note", value=trade["public_note"], inline=False)
+            embed.add_field(name=i18n.text('Note'), value=trade["public_note"], inline=False)
         await interaction.followup.send(embed=embed)
 
     @trade_grp.command(name="cancel", description="Cancel/decline a trade / Anuluj handel")
     @app_commands.describe(trade_id="Trade ID")
+    @i18n.localized
     async def trade_cancel(self, interaction: discord.Interaction, trade_id: int):
         lang  = _lang(interaction)
         n     = _nation_owner(str(interaction.user.id))
@@ -1516,24 +1574,25 @@ class EconomyCog(commands.Cog):
             c.execute("SELECT * FROM trades WHERE id=?", (trade_id,))
             trade = c.fetchone()
         if not trade:
-            await interaction.response.send_message(f"Trade #{trade_id} not found.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('Trade #{p0} not found.', p0=trade_id), ephemeral=True)
             return
         if not is_gm and (not n or n["id"] not in (trade["from_nation_id"], trade["to_nation_id"])):
-            await interaction.response.send_message("You are not party to this trade.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('You are not party to this trade.'), ephemeral=True)
             return
         if trade["status"] != "pending":
             await interaction.response.send_message(
-                f"Trade #{trade_id} is already {trade['status']}.", ephemeral=True)
+                i18n.text('Trade #{p0} is already {p1}.', p0=trade_id, p1=i18n.term(trade['status'])), ephemeral=True)
             return
         with db.cursor() as c:
             c.execute("UPDATE trades SET status='cancelled',resolved_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'",
                       (trade_id,))
             if c.rowcount != 1:
-                await interaction.response.send_message("Trade is no longer pending.", ephemeral=True)
+                await interaction.response.send_message(i18n.text('Trade is no longer pending.'), ephemeral=True)
                 return
-        await interaction.response.send_message(f"Trade #{trade_id} cancelled.", ephemeral=True)
+        await interaction.response.send_message(i18n.text('Trade #{p0} cancelled.', p0=trade_id), ephemeral=True)
 
     @trade_grp.command(name="list", description="List pending trades / Lista ofert handlowych")
+    @i18n.localized
     async def trade_list(self, interaction: discord.Interaction):
         lang  = _lang(interaction)
         n     = _nation_owner(str(interaction.user.id))
@@ -1560,7 +1619,7 @@ class EconomyCog(commands.Cog):
                 )
             rows = c.fetchall()
         if not rows:
-            await interaction.response.send_message("No pending trades.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('No pending trades.'), ephemeral=True)
             return
         lines = []
         for r in rows:
@@ -1568,15 +1627,16 @@ class EconomyCog(commands.Cog):
             other = r["tname"] if (n and r["from_nation_id"] == n["id"]) else r["fname"]
             lines.append(f"**#{r['id']}** {arrow} **{other}** | {r['public_note'] or '—'}")
         embed = discord.Embed(
-            title="Pending Trades",
+            title=i18n.text('Pending Trades'),
             description="\n".join(lines),
             color=discord.Color.blue(),
         )
-        embed.set_footer(text="Use /trade view <id> for full details.")
+        embed.set_footer(text=i18n.text('Use /trade view <id> for full details.'))
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @trade_grp.command(name="view", description="View trade details / Szczegoly transakcji")
     @app_commands.describe(trade_id="Trade ID")
+    @i18n.localized
     async def trade_view(self, interaction: discord.Interaction, trade_id: int):
         lang  = _lang(interaction)
         n     = _nation_owner(str(interaction.user.id))
@@ -1590,39 +1650,39 @@ class EconomyCog(commands.Cog):
             )
             t = c.fetchone()
         if not t:
-            await interaction.response.send_message(f"Trade #{trade_id} not found.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('Trade #{p0} not found.', p0=trade_id), ephemeral=True)
             return
         is_party = n and (t["from_nation_id"] == n["id"] or t["to_nation_id"] == n["id"])
         STATUS   = {"pending":"🟡","accepted":"✅","cancelled":"❌"}
         embed = discord.Embed(
-            title=f"{STATUS.get(t['status'],'❓')} Trade #{trade_id}",
+            title=i18n.text('{p0} Trade #{p1}', p0=STATUS.get(t['status'], '❓'), p1=trade_id),
             description=f"**{t['fflag'] or ''} {t['fname']}** ↔ **{t['tflag'] or ''} {t['tname']}**",
             color=discord.Color.orange(),
         )
-        embed.add_field(name="Status", value=t["status"].capitalize(), inline=True)
-        embed.add_field(name="Date",   value=t["created_at"][:10],     inline=True)
+        embed.add_field(name=i18n.text('Status'), value=i18n.term(t["status"]), inline=True)
+        embed.add_field(name=i18n.text('Date'),   value=short_date(t["created_at"]), inline=True)
         give_res  = json.loads(t["offer_resources_json"])
         recv_res  = json.loads(t["receive_resources_json"])
-        give_str  = ", ".join(f"{v} {k}" for k, v in give_res.items())
+        give_str  = ", ".join(f"{v} {i18n.term(k)}" for k, v in give_res.items())
         if t["offer_gold"]:
-            give_str += f", {t['offer_gold']:.0f} gold"
-        recv_str = ", ".join(f"{v} {k}" for k, v in recv_res.items())
+            give_str += i18n.text(', {p0:.0f} gold', p0=t['offer_gold'])
+        recv_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in recv_res.items())
         if t["receive_gold"]:
-            recv_str += f", {t['receive_gold']:.0f} gold"
-        embed.add_field(name=f"{t['fname']} gives", value=give_str or "—", inline=True)
-        embed.add_field(name=f"{t['tname']} gives", value=recv_str or "—", inline=True)
+            recv_str += i18n.text(', {p0:.0f} gold', p0=t['receive_gold'])
+        embed.add_field(name=i18n.text('{p0} gives', p0=t['fname']), value=give_str or "—", inline=True)
+        embed.add_field(name=i18n.text('{p0} gives', p0=t['tname']), value=recv_str or "—", inline=True)
         if t["public_note"]:
-            embed.add_field(name="Public note", value=t["public_note"], inline=False)
+            embed.add_field(name=i18n.text('Public note'), value=t["public_note"], inline=False)
         if is_party or is_gm:
             embed.add_field(
-                name="🔒 Private terms",
+                name=i18n.text('🔒 Private terms'),
                 value=t["private_note"] or "—",
                 inline=False,
             )
         else:
             embed.add_field(
-                name="🔒 Private terms",
-                value="*Hidden — visible to parties and GM only.*",
+                name=i18n.text('🔒 Private terms'),
+                value=i18n.text('*Hidden — visible to parties and GM only.*'),
                 inline=False,
             )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1638,6 +1698,7 @@ class EconomyCog(commands.Cog):
         start_month="Starting month (1-12)",
         start_year="Starting year",
     )
+    @i18n.localized
     async def calendar_set(self, interaction: discord.Interaction,
                            hours_per_month: float, channel: discord.TextChannel,
                            start_month: int = 1, start_year: int = 1):
@@ -1649,30 +1710,31 @@ class EconomyCog(commands.Cog):
         _cfg_set("current_month",      start_month)
         _cfg_set("current_year",       start_year)
         await interaction.response.send_message(
-            f"✅ Calendar: **{hours_per_month}h** IRL = 1 month → {channel.mention}\n"
-            f"Starting: Month {start_month}, Year {start_year}\n"
-            "Use `/calendar start` to begin.",
+            i18n.text('✅ Calendar: **{p0}h** IRL = 1 month → {p1}\nStarting: Month {p2}, Year {p3}\nUse `/calendar start` to begin.', p0=hours_per_month, p1=channel.mention, p2=start_month, p3=start_year),
             ephemeral=True,
         )
 
     @calendar_grp.command(name="start", description="[GM] Start the calendar / [GM] Uruchom kalendarz")
+    @i18n.localized
     async def calendar_start(self, interaction: discord.Interaction):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
         _cfg_set("calendar_running", "1")
         _cfg_set("last_tick_ts", datetime.now(timezone.utc).isoformat())
-        await interaction.response.send_message("✅ Calendar started.", ephemeral=True)
+        await interaction.response.send_message(i18n.text('✅ Calendar started.'), ephemeral=True)
 
     @calendar_grp.command(name="stop", description="[GM] Pause the calendar / [GM] Zatrzymaj kalendarz")
+    @i18n.localized
     async def calendar_stop(self, interaction: discord.Interaction):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
         _cfg_set("calendar_running", "0")
-        await interaction.response.send_message("⏸️ Calendar paused.", ephemeral=True)
+        await interaction.response.send_message(i18n.text('⏸️ Calendar paused.'), ephemeral=True)
 
     @calendar_grp.command(name="status", description="Current in-game date / Aktualna data w grze")
+    @i18n.localized
     async def calendar_status(self, interaction: discord.Interaction):
         month   = _cfg("current_month", "1")
         year    = _cfg("current_year",  "1")
@@ -1681,11 +1743,11 @@ class EconomyCog(commands.Cog):
         try:
             mname = _month_name(int(month), _lang(interaction))
         except (ValueError, IndexError):
-            mname = f"Month {month}"
-        embed = discord.Embed(title="📅 In-Game Calendar", color=discord.Color.gold())
-        embed.add_field(name="Current Date", value=f"{mname}, Year {year}", inline=True)
-        embed.add_field(name="Status",       value="▶️ Running" if running else "⏸️ Paused", inline=True)
-        embed.add_field(name="Speed",        value=f"{hpm}h IRL = 1 month", inline=True)
+            mname = i18n.text('Month {p0}', p0=month)
+        embed = discord.Embed(title=i18n.text('📅 In-Game Calendar'), color=discord.Color.gold())
+        embed.add_field(name=i18n.text('Current Date'), value=i18n.text('{p0}, Year {p1}', p0=mname, p1=year), inline=True)
+        embed.add_field(name=i18n.text('Status'),       value=i18n.text('▶️ Running') if running else i18n.text('⏸️ Paused'), inline=True)
+        embed.add_field(name=i18n.text('Speed'),        value=i18n.text('{p0}h IRL = 1 month', p0=hpm), inline=True)
         await interaction.response.send_message(embed=embed)
 
     # ======================================================================
@@ -1694,6 +1756,7 @@ class EconomyCog(commands.Cog):
 
     @admineco_grp.command(name="tick", description="[GM] Manual resource tick / [GM] Recznie uruchom tick")
     @app_commands.describe(months="Months to advance (default 1)")
+    @i18n.localized
     async def admin_tick(self, interaction: discord.Interaction, months: int = 1):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
@@ -1709,13 +1772,13 @@ class EconomyCog(commands.Cog):
                 if ch:
                     mname = _month_name(month, _lang(interaction) if hasattr(interaction, "locale") else "en")
                     embed = discord.Embed(
-                        title=f"📅 New Month: {mname}, Year {year}",
-                        description="A new month has begun. Nations have collected their income.",
+                        title=i18n.text('📅 New Month: {p0}, Year {p1}', p0=mname, p1=year),
+                        description=i18n.text('A new month has begun. Nations have collected their income.'),
                         color=discord.Color.gold(),
                     )
                     if summaries:
                         embed.add_field(
-                            name="⚙️ Resource Tick",
+                            name=i18n.text('⚙️ Resource Tick'),
                             value="\n".join(summaries[:20]),
                             inline=False,
                         )
@@ -1723,28 +1786,27 @@ class EconomyCog(commands.Cog):
                         await ch.send(embed=embed)
                     except discord.Forbidden:
                         await interaction.followup.send(
-                            f"⚠️ Tick ran but bot lacks **Send Messages** / **Embed Links** "
-                            f"permission in <#{ch.id}>. Fix the channel permissions in Discord.",
+                            i18n.text('⚠️ Tick ran but bot lacks **Send Messages** / **Embed Links** permission in <#{p0}>. Fix the channel permissions in Discord.', p0=ch.id),
                             ephemeral=True,
                         )
                     except Exception as send_err:
                         await interaction.followup.send(
-                            f"⚠️ Tick ran but announcement failed: {send_err}", ephemeral=True
+                            i18n.text('⚠️ Tick ran but announcement failed: {p0}', p0=send_err), ephemeral=True
                         )
             report = "\n".join(summaries) if summaries else "No nations."
             await interaction.followup.send(
-                f"✅ Advanced **{months}** month(s) → {_month_name(month, _lang(interaction))}, Year {year}\n"
-                f"```\n{report}\n```",
+                i18n.text('✅ Advanced **{p0}** month(s) → {p1}, Year {p2}\n```\n{p3}\n```', p0=months, p1=_month_name(month, _lang(interaction)), p2=year, p3=report),
                 ephemeral=True,
             )
         except Exception as e:
-            await interaction.followup.send(f"❌ Tick failed: {e}", ephemeral=True)
+            await interaction.followup.send(i18n.text('❌ Tick failed: {p0}', p0=e), ephemeral=True)
 
     @admineco_grp.command(name="grant", description="[GM] Give resources to a nation / [GM] Dodaj zasoby")
     @app_commands.describe(
         nation="Nation name", resource="Resource name or 'gold'",
         amount="Amount", reason="Reason (logged)"
     )
+    @i18n.localized
     async def admin_grant(self, interaction: discord.Interaction,
                           nation: str, resource: str, amount: float, reason: str = "GM grant"):
         if not _gm(interaction):
@@ -1760,13 +1822,13 @@ class EconomyCog(commands.Cog):
             "cloth", "tar", "gunpowder", "horses", "spices", "silk", "algae",
             "universal_knowledge",
         }
-        resource_key = resource.lower().strip()
+        resource_key = i18n.normalize_key(resource)
+        if reason == "GM grant":
+            reason = i18n.text("GM grant")
         warning = ""
         if resource_key != "gold" and resource_key not in KNOWN_RESOURCES:
             warning = (
-                f"\n⚠️ **'{resource_key}'** is not a recognised resource name. "
-                f"It was added anyway — double-check the spelling.\n"
-                f"Known resources: {', '.join(sorted(KNOWN_RESOURCES - {'gold'}))}."
+                i18n.text("\n⚠️ **'{p0}'** is not a recognised resource name. It was added anyway — double-check the spelling.\nKnown resources: {p1}.", p0=resource_key, p1=', '.join(i18n.term(k) for k in sorted(KNOWN_RESOURCES - {'gold'})))
             )
 
         if resource_key == "gold":
@@ -1780,9 +1842,9 @@ class EconomyCog(commands.Cog):
             with db.cursor() as c:
                 c.execute("UPDATE nations SET resources_json=? WHERE id=?",
                           (json.dumps(res), n["id"]))
-        _log(n["id"], "gm", f"GM grant: +{amount} {resource_key}. Reason: {reason}")
+        _log(n["id"], "gm", i18n.text('GM grant: +{p0} {p1}. Reason: {p2}', p0=amount, p1=i18n.term(resource_key), p2=reason))
         await interaction.response.send_message(
-            f"✅ Granted **{amount} {resource_key}** to **{n['name']}**.\nReason: {reason}{warning}",
+            i18n.text('✅ Granted **{p0} {p1}** to **{p2}**.\nReason: {p3}{p4}', p0=amount, p1=i18n.term(resource_key), p2=n['name'], p3=reason, p4=warning),
             ephemeral=True,
         )
 
@@ -1795,6 +1857,7 @@ class EconomyCog(commands.Cog):
         duration_months="Months to build (0 = instant)",
         gm_notes="Private GM notes",
     )
+    @i18n.localized
     async def mp_approve(self, interaction: discord.Interaction,
                          mp_id: int, final_effect: str, effect_json: str,
                          cost_json: str = "{}", duration_months: int = 0, gm_notes: str = ""):
@@ -1802,22 +1865,24 @@ class EconomyCog(commands.Cog):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
         try:
-            parsed_effect = json.loads(effect_json)
-        except json.JSONDecodeError as e:
-            await interaction.response.send_message(f"❌ Invalid effect_json: {e}\nExample: {{\"resources_once\":{{\"gold\":500}},\"stability\":5}}", ephemeral=True)
+            parsed_effect = i18n.game_json(effect_json)
+            effect_json = json.dumps(parsed_effect)
+        except (ValueError, TypeError) as e:
+            await interaction.response.send_message(i18n.text('❌ Invalid effect_json: {p0}\nExample: {{"resources_once":{{"gold":500}},"stability":5}}', p0=e), ephemeral=True)
             return
         try:
-            cost = json.loads(cost_json)
+            cost = i18n.game_json(cost_json)
+            cost_json = json.dumps(cost)
             if not isinstance(cost, dict):
-                raise ValueError("cost_json must be a JSON object like {} or {\"gold\":100}")
+                raise ValueError(i18n.text('cost_json must be a JSON object like {} or {"gold":100}'))
         except (json.JSONDecodeError, ValueError) as e:
-            await interaction.response.send_message(f"❌ Invalid cost_json: {e}\nUse {{}} for free, or {{\"gold\":100}} etc.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('❌ Invalid cost_json: {p0}\nUse {{}} for free, or {{"gold":100}} etc.', p0=e), ephemeral=True)
             return
         with db.cursor() as c:
             c.execute("SELECT * FROM megaprojects WHERE id=?", (mp_id,))
             mp = c.fetchone()
         if not mp:
-            await interaction.response.send_message(f"Megaproject #{mp_id} not found.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('Megaproject #{p0} not found.', p0=mp_id), ephemeral=True)
             return
         with db.cursor() as c:
             c.execute("SELECT * FROM nations WHERE id=?", (mp["nation_id"],))
@@ -1825,14 +1890,14 @@ class EconomyCog(commands.Cog):
         gold = cost.get("gold", 0)
         if gold > 0 and nat["treasury"] < gold:
             await interaction.response.send_message(
-                f"{nat['name']} cannot afford this ({gold:.0f}g needed, {nat['treasury']:.0f}g available).",
+                i18n.text('{p0} cannot afford this ({p1:.0f}g needed, {p2:.0f}g available).', p0=nat['name'], p1=gold, p2=nat['treasury']),
                 ephemeral=True)
             return
         res = json.loads(nat["resources_json"])
         if cost:
             ok, missing = _deduct(res, cost)
             if not ok:
-                await interaction.response.send_message(f"{nat['name']} lacks enough {missing}.", ephemeral=True)
+                await interaction.response.send_message(i18n.text('{p0} lacks enough {p1}.', p0=nat['name'], p1=i18n.term(missing)), ephemeral=True)
                 return
         new_status = "approved"
         with db.cursor() as c:
@@ -1843,21 +1908,15 @@ class EconomyCog(commands.Cog):
                  json.dumps(cost), duration_months, gm_notes, mp_id)
             )
         _log(mp["nation_id"], "gm",
-             f"Megaproject '{mp['name']}' approved by GM. "
-             f"Effect: {final_effect}. Cost: {json.dumps(cost)}. "
-             f"Duration: {duration_months} month(s). "
-             f"Player must run /megaproject build {mp_id} to start.")
+             i18n.text("Megaproject '{p0}' approved by GM. Effect: {p1}. Cost: {p2}. Duration: {p3} month(s). Player must run /megaproject build {p4} to start.", p0=mp['name'], p1=final_effect, p2=json.dumps(cost), p3=duration_months, p4=mp_id))
         await interaction.response.send_message(
-            f"✅ **{mp['name']}** approved.\n"
-            f"Effect: {final_effect}\n"
-            f"Cost: {', '.join(f'{v} {k}' for k,v in cost.items()) or 'free'}\n"
-            f"Duration: {duration_months} month(s)\n\n"
-            f"The player can now run `/megaproject build {mp_id}` to pay and start construction.",
+            i18n.text('✅ **{p0}** approved.\nEffect: {p1}\nCost: {p2}\nDuration: {p3} month(s)\n\nThe player can now run `/megaproject build {p4}` to pay and start construction.', p0=mp['name'], p1=final_effect, p2=', '.join((f'{v} {i18n.term(k)}' for k, v in cost.items())) or i18n.term('free'), p3=duration_months, p4=mp_id),
             ephemeral=True,
         )
 
     @admineco_grp.command(name="mp_advance", description="[GM] Advance megaproject / [GM] Przyspiesz budowe")
     @app_commands.describe(mp_id="Megaproject ID", months="Months to advance")
+    @i18n.localized
     async def mp_advance(self, interaction: discord.Interaction, mp_id: int, months: int):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
@@ -1867,7 +1926,7 @@ class EconomyCog(commands.Cog):
             mp = c.fetchone()
         if not mp or mp["status"] != "building":
             await interaction.response.send_message(
-                f"Megaproject #{mp_id} not found or not under construction.", ephemeral=True)
+                i18n.text('Megaproject #{p0} not found or not under construction.', p0=mp_id), ephemeral=True)
             return
         new_spent = min(mp["months_spent"] + months, mp["duration_months"])
         complete  = new_spent >= mp["duration_months"]
@@ -1883,10 +1942,10 @@ class EconomyCog(commands.Cog):
         if complete:
             _apply_mp_effect(mp["nation_id"], mp["effect_json"], mp["name"])
             await interaction.response.send_message(
-                f"✅ **{mp['name']}** completed! Effects applied.", ephemeral=True)
+                i18n.text('✅ **{p0}** completed! Effects applied.', p0=mp['name']), ephemeral=True)
         else:
             await interaction.response.send_message(
-                f"⏩ Advanced **{mp['name']}** by {months} month(s). ({new_spent}/{mp['duration_months']})",
+                i18n.text('⏩ Advanced **{p0}** by {p1} month(s). ({p2}/{p3})', p0=mp['name'], p1=months, p2=new_spent, p3=mp['duration_months']),
                 ephemeral=True)
 
     @admineco_grp.command(name="tech_set", description="[GM] Set a nation's tech level / [GM] Ustaw poziom technologii")
@@ -1901,6 +1960,7 @@ class EconomyCog(commands.Cog):
         app_commands.Choice(name="Economy",  value="economy"),
         app_commands.Choice(name="Colonial", value="colonial"),
     ])
+    @i18n.localized
     async def tech_set(self, interaction: discord.Interaction,
                        nation: str, category: app_commands.Choice[str], level: float):
         if not _gm(interaction):
@@ -1917,15 +1977,16 @@ class EconomyCog(commands.Cog):
         with db.cursor() as c:
             c.execute("UPDATE nations SET tech_json=? WHERE id=?", (json.dumps(tech), n["id"]))
         _log(n["id"], "gm",
-             f"GM set {category.value.capitalize()} tech: {old:.1f} → {level:.1f}.")
+             i18n.text('GM set {p0} tech: {p1:.1f} → {p2:.1f}.', p0=i18n.term(category.value), p1=old, p2=level))
         await interaction.response.send_message(
-            f"✅ **{n['name']}** {category.name} tech set to **{level:.1f}**.", ephemeral=True)
+            i18n.text('✅ **{p0}** {p1} tech set to **{p2:.1f}**.', p0=n['name'], p1=i18n.term(category.value), p2=level), ephemeral=True)
 
     @admineco_grp.command(name="starter_pack",
                           description="[GM] Give starting resources to a nation or all nations")
     @app_commands.describe(
         nation="Nation name, or 'all' for every nation / Nazwa narodu lub 'all'",
     )
+    @i18n.localized
     async def starter_pack(self, interaction: discord.Interaction, nation: str = "all"):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
@@ -1949,7 +2010,7 @@ class EconomyCog(commands.Cog):
         STARTER_GOLD = 500
 
         with db.cursor() as c:
-            if nation.lower() == "all":
+            if nation.lower() in ("all", "wszyscy", "wszystkie"):
                 c.execute("SELECT * FROM nations")
             else:
                 c.execute("SELECT * FROM nations WHERE LOWER(name)=LOWER(?)", (nation,))
@@ -1957,7 +2018,7 @@ class EconomyCog(commands.Cog):
 
         if not targets:
             await interaction.response.send_message(
-                "No nations found." if nation.lower() != "all" else "No nations exist yet.",
+                i18n.text('No nations found.') if nation.lower() != "all" else i18n.text('No nations exist yet.'),
                 ephemeral=True)
             return
 
@@ -1973,34 +2034,43 @@ class EconomyCog(commands.Cog):
                 c.execute(
                     "INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,?,?)",
                     (nat["id"], "gm",
-                     f"Received starter pack: {STARTER_GOLD}g + "
-                     + ", ".join(f"{v} {k}" for k, v in STARTER.items()) + ".")
+                     i18n.text('Received starter pack: {p0}g + ', p0=STARTER_GOLD)
+                     + ", ".join(f"{v} {i18n.term(k)}" for k, v in STARTER.items()) + ".")
                 )
 
-        res_preview = ", ".join(f"{v} {k}" for k, v in STARTER.items())
-        target_str  = "all nations" if nation.lower() == "all" else f"**{targets[0]['name']}**"
+        res_preview = ", ".join(f"{v} {i18n.term(k)}" for k, v in STARTER.items())
+        target_str  = i18n.text('all nations') if nation.lower() in ("all", "wszyscy", "wszystkie") else f"**{targets[0]['name']}**"
         await interaction.response.send_message(
-            f"✅ Starter pack given to {target_str} ({len(targets)} nation(s)).\n"
-            f"**Gold:** +{STARTER_GOLD}g\n"
-            f"**Resources:** {res_preview}",
+            i18n.text('✅ Starter pack given to {p0} ({p1} nation(s)).\n**Gold:** +{p2}g\n**Resources:** {p3}', p0=target_str, p1=len(targets), p2=STARTER_GOLD, p3=res_preview),
             ephemeral=True,
         )
 
     @admineco_grp.command(name="building_set", description="[GM] Edit building definition")
     @app_commands.describe(key="Building key", field="Field to change", value="New value")
+    @i18n.localized
     async def building_set(self, interaction: discord.Interaction, key: str, field: str, value: str):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
         allowed = {"cost_json","effect_json","upkeep_json","description",
                    "requires_terrain","requires_tech","name","tier"}
+        field = i18n.normalize_key(field)
+        key = i18n.normalize_key(key)
         if field not in allowed:
             await interaction.response.send_message(
-                f"Unknown field. Allowed: {', '.join(sorted(allowed))}", ephemeral=True)
+                i18n.text('Unknown field. Allowed: {p0}', p0=', '.join(i18n.term(k) for k in sorted(allowed))), ephemeral=True)
             return
         if not _bdef(key):
-            await interaction.response.send_message(f"Building `{key}` not found.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('Building `{p0}` not found.', p0=key), ephemeral=True)
             return
+        if field.endswith('_json'):
+            try:
+                value = json.dumps(i18n.game_json(value))
+            except ValueError:
+                await interaction.response.send_message(i18n.text('Invalid JSON: {p0}', p0=i18n.text('Check the JSON syntax.')), ephemeral=True)
+                return
+        if field == 'requires_terrain':
+            value = ','.join(i18n.normalize_key(t) for t in value.split(','))
         with db.cursor() as c:
             c.execute(f"UPDATE building_defs SET {field}=? WHERE key=?", (value, key))
         await interaction.response.send_message(f"✅ `{key}.{field}` = `{value}`", ephemeral=True)
@@ -2011,6 +2081,7 @@ class EconomyCog(commands.Cog):
         cost_json='e.g. {"gold":100}', effect_json='e.g. {"food":10}',
         requires_terrain="Comma list or blank", description="Short description"
     )
+    @i18n.localized
     async def building_new(self, interaction: discord.Interaction,
                            key: str, name: str, tier: int,
                            cost_json: str, effect_json: str,
@@ -2019,13 +2090,14 @@ class EconomyCog(commands.Cog):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
         try:
-            json.loads(cost_json)
-            json.loads(effect_json)
-        except json.JSONDecodeError as e:
-            await interaction.response.send_message(f"Invalid JSON: {e}", ephemeral=True)
+            cost_json = json.dumps(i18n.game_json(cost_json))
+            effect_json = json.dumps(i18n.game_json(effect_json))
+            requires_terrain = ','.join(i18n.normalize_key(t) for t in requires_terrain.split(','))
+        except (ValueError, TypeError) as e:
+            await interaction.response.send_message(i18n.text('Invalid JSON: {p0}', p0=e), ephemeral=True)
             return
         if _bdef(key.lower()):
-            await interaction.response.send_message(f"Building `{key}` already exists.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('Building `{p0}` already exists.', p0=key), ephemeral=True)
             return
         with db.cursor() as c:
             c.execute(
@@ -2033,7 +2105,7 @@ class EconomyCog(commands.Cog):
                 "requires_terrain,requires_tech,description) VALUES(?,?,?,?,?,'{}',?,0.0,?)",
                 (key.lower(), name, tier, cost_json, effect_json, requires_terrain, description)
             )
-        await interaction.response.send_message(f"✅ Building `{key}` created.", ephemeral=True)
+        await interaction.response.send_message(i18n.text('✅ Building `{p0}` created.', p0=key), ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

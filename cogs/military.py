@@ -147,7 +147,7 @@ def compute_military_upkeep(nid): return _upkeep(nid)
 # ---------------------------------------------------------------------------
 # Ship designer UI
 # ---------------------------------------------------------------------------
-class ShipDesignerView(discord.ui.View):
+class ShipDesignerView(i18n.LocalizedView):
     def __init__(self, nation_id, hull_key, blueprint_name, slots, base_stats):
         super().__init__(timeout=300)
         self.nation_id     = nation_id
@@ -165,7 +165,7 @@ class ShipDesignerView(discord.ui.View):
         for i, (mkey, mdata) in enumerate(MODULES.items()):
             disabled = used >= self.slots
             btn = discord.ui.Button(
-                label=f"{mdata['name']} ({mdata['desc']})",
+                label=f"{i18n.text(mdata['name'])} ({i18n.text(mdata['desc'])})",
                 style=discord.ButtonStyle.secondary,
                 disabled=disabled,
                 row=i // 3,
@@ -174,7 +174,7 @@ class ShipDesignerView(discord.ui.View):
             self.add_item(btn)
         # Clear last
         clear = discord.ui.Button(
-            label="↩ Remove last",
+            label=i18n.text('↩ Remove last'),
             style=discord.ButtonStyle.danger,
             disabled=len(self.selected) == 0,
             row=2,
@@ -183,7 +183,7 @@ class ShipDesignerView(discord.ui.View):
         self.add_item(clear)
         # Save
         save = discord.ui.Button(
-            label=f"💾 Save Blueprint ({used}/{self.slots} slots)",
+            label=i18n.text('💾 Save Blueprint ({p0}/{p1} slots)', p0=used, p1=self.slots),
             style=discord.ButtonStyle.success,
             row=3,
         )
@@ -191,18 +191,21 @@ class ShipDesignerView(discord.ui.View):
         self.add_item(save)
 
     def _add_cb(self, mkey):
+        @i18n.localized
         async def callback(interaction: discord.Interaction):
             self.selected.append(mkey)
             self._rebuild()
             await interaction.response.edit_message(embed=self._embed(), view=self)
         return callback
 
+    @i18n.localized
     async def _remove_last(self, interaction: discord.Interaction):
         if self.selected:
             self.selected.pop()
         self._rebuild()
         await interaction.response.edit_message(embed=self._embed(), view=self)
 
+    @i18n.localized
     async def _save(self, interaction: discord.Interaction):
         stats = _ship_stats(self.hull_key, self.selected)
         with db.cursor() as c:
@@ -214,48 +217,46 @@ class ShipDesignerView(discord.ui.View):
             )
             bp_id = c.lastrowid
         _log(self.nation_id, "player",
-             f"Designed ship blueprint '{self.bp_name}' (#{bp_id}): "
-             f"{HULLS[self.hull_key]['name']} + {len(self.selected)} module(s). "
-             f"ATK:{stats['attack']} HP:{stats['hp']} SPD:{stats['speed']} CARGO:{stats['cargo']}.")
+             i18n.text("Designed ship blueprint '{p0}' (#{p1}): {p2} + {p3} module(s). ATK:{p4} HP:{p5} SPD:{p6} CARGO:{p7}.", p0=self.bp_name, p1=bp_id, p2=i18n.text(HULLS[self.hull_key]['name']), p3=len(self.selected), p4=stats['attack'], p5=stats['hp'], p6=stats['speed'], p7=stats['cargo']))
         for item in self.children:
             item.disabled = True
         final = self._embed()
-        final.title = f"✅ Blueprint Saved — {self.bp_name} (#{bp_id})"
+        final.title = i18n.text('✅ Blueprint Saved — {p0} (#{p1})', p0=self.bp_name, p1=bp_id)
         final.color = discord.Color.green()
         await interaction.response.edit_message(embed=final, view=self)
 
     def _embed(self):
         stats    = _ship_stats(self.hull_key, self.selected)
         hull     = HULLS[self.hull_key]
-        mods_str = (", ".join(MODULES[m]["name"] for m in self.selected)
-                    if self.selected else "none")
-        cost_str = ", ".join(f"{v} {k}" for k, v in hull["cost"].items())
+        mods_str = (", ".join(i18n.text(MODULES[m]["name"]) for m in self.selected)
+                    if self.selected else i18n.term("none"))
+        cost_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in hull["cost"].items())
         mod_cost: dict[str, float] = {}
         for m in self.selected:
             for r, a in MODULES.get(m, {}).get("cost", {}).items():
                 mod_cost[r] = mod_cost.get(r, 0) + a
         if mod_cost:
-            cost_str += " + " + ", ".join(f"{v} {k}" for k, v in mod_cost.items())
+            cost_str += " + " + ", ".join(f"{v} {i18n.term(k)}" for k, v in mod_cost.items())
         embed = discord.Embed(
-            title=f"⚓ Designing: {self.bp_name}",
-            description=f"Hull: **{hull['name']}** | {len(self.selected)}/{self.slots} slots used",
+            title=i18n.text('⚓ Designing: {p0}', p0=self.bp_name),
+            description=i18n.text('Hull: **{p0}** | {p1}/{p2} slots used', p0=i18n.text(hull['name']), p1=len(self.selected), p2=self.slots),
             color=discord.Color.dark_blue(),
         )
-        embed.add_field(name="Modules",       value=mods_str,              inline=False)
-        embed.add_field(name="Total Cost",    value=cost_str,              inline=False)
-        embed.add_field(name="ATK",           value=str(stats["attack"]),  inline=True)
-        embed.add_field(name="HP",            value=str(stats["hp"]),      inline=True)
-        embed.add_field(name="Speed",         value=str(stats["speed"]),   inline=True)
-        embed.add_field(name="Cargo",         value=str(stats["cargo"]),   inline=True)
-        embed.add_field(name="Peace upkeep",  value=f"{hull['peace_upkeep']:.0f}g/unit", inline=True)
-        embed.add_field(name="War upkeep",    value=f"{hull['peace_upkeep']*WAR_MULT:.0f}g/unit", inline=True)
-        embed.set_footer(text="Click modules to add them. Each click uses one slot.")
+        embed.add_field(name=i18n.text('Modules'),       value=mods_str,              inline=False)
+        embed.add_field(name=i18n.text('Total Cost'),    value=cost_str,              inline=False)
+        embed.add_field(name=i18n.text('ATK'),           value=str(stats["attack"]),  inline=True)
+        embed.add_field(name=i18n.text('HP'),            value=str(stats["hp"]),      inline=True)
+        embed.add_field(name=i18n.text('Speed'),         value=str(stats["speed"]),   inline=True)
+        embed.add_field(name=i18n.text('Cargo'),         value=str(stats["cargo"]),   inline=True)
+        embed.add_field(name=i18n.text('Peace upkeep'),  value=i18n.text('{p0:.0f}g/unit', p0=hull['peace_upkeep']), inline=True)
+        embed.add_field(name=i18n.text('War upkeep'),    value=i18n.text('{p0:.0f}g/unit', p0=hull['peace_upkeep'] * WAR_MULT), inline=True)
+        embed.set_footer(text=i18n.text('Click modules to add them. Each click uses one slot.'))
         return embed
 
 # ---------------------------------------------------------------------------
 # Cog
 # ---------------------------------------------------------------------------
-class ForcesView(discord.ui.View):
+class ForcesView(i18n.LocalizedView):
     def __init__(self, pages, owner_id):
         super().__init__(timeout=180)
         self.pages, self.owner_id, self.index = pages, owner_id, 0
@@ -267,19 +268,22 @@ class ForcesView(discord.ui.View):
         self.previous.disabled = self.index == 0
         self.next_page.disabled = self.index == len(self.pages) - 1
 
+    @i18n.localized
     async def interaction_check(self, interaction):
         if interaction.user.id == self.owner_id:
             return True
-        await interaction.response.send_message("This is not your military list.", ephemeral=True)
+        await interaction.response.send_message(i18n.text('This is not your military list.'), ephemeral=True)
         return False
 
     @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
+    @i18n.localized
     async def previous(self, interaction, button):
         self.index = max(0, self.index - 1)
         self._refresh()
         await interaction.response.edit_message(embed=self.pages[self.index], view=self)
 
     @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
+    @i18n.localized
     async def next_page(self, interaction, button):
         self.index = min(len(self.pages) - 1, self.index + 1)
         self._refresh()
@@ -296,6 +300,7 @@ class MilitaryCog(commands.Cog):
     # ============================================================ BLUEPRINTS
 
     @bp_grp.command(name="list", description="View your blueprints / Twoje projekty")
+    @i18n.localized
     async def bp_list(self, interaction: discord.Interaction):
         lang = _lang(interaction)
         nat  = _nat_owner(str(interaction.user.id))
@@ -305,40 +310,30 @@ class MilitaryCog(commands.Cog):
             c.execute("SELECT * FROM blueprints WHERE nation_id=? ORDER BY type,name", (nat["id"],))
             rows = c.fetchall()
         if not rows:
-            await interaction.response.send_message("No blueprints yet.", ephemeral=True); return
+            await interaction.response.send_message(i18n.text('No blueprints yet.'), ephemeral=True); return
         embed = discord.Embed(
-            title=f"📐 Blueprints — {nat['flag'] or ''} {nat['name']}".strip(),
+            title=i18n.text('📐 Blueprints — {p0} {p1}', p0=nat['flag'] or '', p1=nat['name']).strip(),
             color=discord.Color.dark_blue(),
         )
         for r in rows:
             stats = json.loads(r["stats_json"])
             if r["type"] == "ship":
                 comps     = json.loads(r["components_json"])
-                mods      = ", ".join(MODULES[m]["name"] for m in comps if m in MODULES) or "no modules"
+                mods      = ", ".join(i18n.text(MODULES[m]["name"]) for m in comps if m in MODULES) or i18n.text('no modules')
                 hull      = HULLS.get(r["hull"], {})
                 base_cost = dict(hull.get("cost", {}))
                 for m in comps:
                     for res, amt in MODULES.get(m, {}).get("cost", {}).items():
                         base_cost[res] = base_cost.get(res, 0) + amt
-                cost_str  = ", ".join(f"{v} {k}" for k, v in base_cost.items())
+                cost_str  = ", ".join(f"{v} {i18n.term(k)}" for k, v in base_cost.items())
                 val = (
-                    f"Hull: {hull.get('name', r['hull'])} | "
-                    f"ATK:{stats.get('attack',0)} HP:{stats.get('hp',0)} "
-                    f"SPD:{stats.get('speed',0)} CARGO:{stats.get('cargo',0)}\n"
-                    f"Modules: {mods}\n"
-                    f"Cost per unit: {cost_str}\n"
-                    f"Upkeep: {hull.get('peace_upkeep',5):.0f}g/unit (peace) "
-                    f"/ {hull.get('peace_upkeep',5)*WAR_MULT:.0f}g (war)"
+                    i18n.text('Hull: {p0} | ATK:{p1} HP:{p2} SPD:{p3} CARGO:{p4}\nModules: {p5}\nCost per unit: {p6}\nUpkeep: {p7:.0f}g/unit (peace) / {p8:.0f}g (war)', p0=i18n.text(hull.get('name', r['hull'])), p1=stats.get('attack', 0), p2=stats.get('hp', 0), p3=stats.get('speed', 0), p4=stats.get('cargo', 0), p5=mods, p6=cost_str, p7=hull.get('peace_upkeep', 5), p8=hull.get('peace_upkeep', 5) * WAR_MULT)
                 )
             else:
                 udata    = LAND_UNITS.get(r["hull"], {})
-                cost_str = ", ".join(f"{v} {k}" for k, v in udata.get("cost", {}).items())
+                cost_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in udata.get("cost", {}).items())
                 val = (
-                    f"ATK:{stats.get('attack',0)} DEF:{stats.get('defense',0)} "
-                    f"HP:{stats.get('hp',0)} SPD:{stats.get('speed',0)}\n"
-                    f"Cost per unit: {cost_str}\n"
-                    f"Upkeep: {udata.get('peace_upkeep',2):.0f}g/unit (peace) "
-                    f"/ {udata.get('peace_upkeep',2)*WAR_MULT:.0f}g (war)"
+                    i18n.text('ATK:{p0} DEF:{p1} HP:{p2} SPD:{p3}\nCost per unit: {p4}\nUpkeep: {p5:.0f}g/unit (peace) / {p6:.0f}g (war)', p0=stats.get('attack', 0), p1=stats.get('defense', 0), p2=stats.get('hp', 0), p3=stats.get('speed', 0), p4=cost_str, p5=udata.get('peace_upkeep', 2), p6=udata.get('peace_upkeep', 2) * WAR_MULT)
                 )
             embed.add_field(
                 name=f"[{r['id']}] {'⚓' if r['type']=='ship' else '⚔️'} {r['name']}",
@@ -354,6 +349,7 @@ class MilitaryCog(commands.Cog):
         app_commands.Choice(name="Galleon (6 slots, trade+war, tech 3)",           value="galleon"),
         app_commands.Choice(name="Ship of the Line (8 slots, max power, tech 5)",  value="ship_of_the_line"),
     ])
+    @i18n.localized
     async def design_ship(self, interaction: discord.Interaction,
                           name: str, hull: app_commands.Choice[str]):
         lang = _lang(interaction)
@@ -363,7 +359,7 @@ class MilitaryCog(commands.Cog):
         hull_data = HULLS[hull.value]
         if _tech_naval(nat) < hull_data["requires_tech"]:
             await interaction.response.send_message(
-                f"**{hull_data['name']}** requires Naval tech ≥ {hull_data['requires_tech']:.0f}.",
+                i18n.text('**{p0}** requires Naval tech ≥ {p1:.0f}.', p0=i18n.text(hull_data['name']), p1=hull_data['requires_tech']),
                 ephemeral=True); return
         view = ShipDesignerView(
             nation_id=nat["id"], hull_key=hull.value, blueprint_name=name,
@@ -382,6 +378,7 @@ class MilitaryCog(commands.Cog):
         app_commands.Choice(name="Cuirassiers / Kirasjerzy (tech 4) — ATK:28 DEF:16 | 70g+konie",  value="cuirassiers"),
         app_commands.Choice(name="Siege Artillery / Artyleria (tech 5) — ATK:50 DEF:2 | 100g",     value="siege_artillery"),
     ])
+    @i18n.localized
     async def create_unit(self, interaction: discord.Interaction,
                           name: str, unit_type: app_commands.Choice[str]):
         lang = _lang(interaction)
@@ -392,7 +389,7 @@ class MilitaryCog(commands.Cog):
         udata = LAND_UNITS[ukey]
         if _tech_land(nat) < udata["requires_tech"]:
             await interaction.response.send_message(
-                f"**{udata['name']}** requires Land tech ≥ {udata['requires_tech']:.0f}.",
+                i18n.text('**{p0}** requires Land tech ≥ {p1:.0f}.', p0=i18n.text(udata['name']), p1=udata['requires_tech']),
                 ephemeral=True); return
         stats = _unit_stats(ukey)
         with db.cursor() as c:
@@ -403,39 +400,39 @@ class MilitaryCog(commands.Cog):
             )
             bp_id = c.lastrowid
         _log(nat["id"],"player",
-             f"Created unit blueprint '{name}' (#{bp_id}): {udata['name']} "
-             f"ATK:{stats['attack']} DEF:{stats['defense']} HP:{stats['hp']}.")
-        embed = discord.Embed(title=f"⚔️ Blueprint Created — {name}", color=discord.Color.dark_red())
+             i18n.text("Created unit blueprint '{p0}' (#{p1}): {p2} ATK:{p3} DEF:{p4} HP:{p5}.", p0=name, p1=bp_id, p2=i18n.text(udata['name']), p3=stats['attack'], p4=stats['defense'], p5=stats['hp']))
+        embed = discord.Embed(title=i18n.text('⚔️ Blueprint Created — {p0}', p0=name), color=discord.Color.dark_red())
         pl = hasattr(interaction, 'locale') and interaction.locale and 'pl' in str(interaction.locale)
         embed.add_field(
-            name="Typ" if pl else "Type",
+            name="Typ" if pl else i18n.text('Type'),
             value=i18n.t("pl", f"unit_{ukey}") if pl else udata["name"],
             inline=True)
         embed.add_field(
-            name="ATK/OBR/HP" if pl else "ATK/DEF/HP",
+            name=i18n.text('ATK/DEF/HP'),
             value=f"{stats['attack']}/{stats['defense']}/{stats['hp']}",
             inline=True)
         embed.add_field(
-            name="Utrzymanie (pokój)" if pl else "Peace upkeep",
-            value=f"{udata['peace_upkeep']:.0f}g/jedn." if pl else f"{udata['peace_upkeep']:.0f}g/unit",
+            name="Utrzymanie (pokój)" if pl else i18n.text('Peace upkeep'),
+            value=f"{udata['peace_upkeep']:.0f}g/jedn." if pl else i18n.text('{p0:.0f}g/unit', p0=udata['peace_upkeep']),
             inline=True)
-        cost_str = ", ".join(f"{v} {k}" for k, v in udata["cost"].items())
+        cost_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in udata["cost"].items())
         embed.add_field(
-            name="Koszt" if pl else "Cost",
+            name="Koszt" if pl else i18n.text('Cost'),
             value=cost_str,
             inline=True)
         embed.add_field(
-            name="Utrzymanie (wojna)" if pl else "War upkeep",
-            value=f"{udata['peace_upkeep']*WAR_MULT:.0f}g/jedn." if pl else f"{udata['peace_upkeep']*WAR_MULT:.0f}g/unit",
+            name="Utrzymanie (wojna)" if pl else i18n.text('War upkeep'),
+            value=f"{udata['peace_upkeep']*WAR_MULT:.0f}g/jedn." if pl else i18n.text('{p0:.0f}g/unit', p0=udata['peace_upkeep'] * WAR_MULT),
             inline=True)
         embed.set_footer(
             text=f"ID projektu: {bp_id} — użyj /military build {bp_id} <ilość>" if pl
-            else f"Blueprint ID: {bp_id} — use /military build {bp_id} <qty> to train"
+            else i18n.text('Blueprint ID: {p0} — use /military build {p1} <qty> to train', p0=bp_id, p1=bp_id)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @bp_grp.command(name="delete", description="Delete a blueprint / Usun projekt")
     @app_commands.describe(blueprint_id="Blueprint ID")
+    @i18n.localized
     async def bp_delete(self, interaction: discord.Interaction, blueprint_id: int):
         lang = _lang(interaction)
         nat  = _nat_owner(str(interaction.user.id))
@@ -445,10 +442,10 @@ class MilitaryCog(commands.Cog):
             c.execute("SELECT * FROM blueprints WHERE id=? AND nation_id=?", (blueprint_id,nat["id"]))
             bp = c.fetchone()
         if not bp:
-            await interaction.response.send_message(f"Blueprint #{blueprint_id} not found.", ephemeral=True); return
+            await interaction.response.send_message(i18n.text('Blueprint #{p0} not found.', p0=blueprint_id), ephemeral=True); return
         with db.cursor() as c:
             c.execute("DELETE FROM blueprints WHERE id=?", (blueprint_id,))
-        await interaction.response.send_message(f"🗑️ Blueprint **{bp['name']}** deleted.", ephemeral=True)
+        await interaction.response.send_message(i18n.text('🗑️ Blueprint **{p0}** deleted.', p0=bp['name']), ephemeral=True)
 
     # ============================================================ MILITARY
 
@@ -458,6 +455,7 @@ class MilitaryCog(commands.Cog):
         quantity="How many to build",
         cell_id="Province cell ID to station them (optional — leave 0 for floating)",
     )
+    @i18n.localized
     async def mil_build(self, interaction: discord.Interaction,
                         blueprint_id: int, quantity: int, cell_id: int = 0):
         lang = _lang(interaction)
@@ -468,7 +466,7 @@ class MilitaryCog(commands.Cog):
             c.execute("SELECT * FROM blueprints WHERE id=? AND nation_id=?", (blueprint_id,nat["id"]))
             bp = c.fetchone()
         if not bp:
-            await interaction.response.send_message(f"Blueprint #{blueprint_id} not found.", ephemeral=True); return
+            await interaction.response.send_message(i18n.text('Blueprint #{p0} not found.', p0=blueprint_id), ephemeral=True); return
 
         prov = None
         if cell_id and cell_id != 0:
@@ -476,7 +474,7 @@ class MilitaryCog(commands.Cog):
                 c.execute("SELECT * FROM provinces WHERE azgaar_cell_id=? AND active=1", (cell_id,))
                 prov = c.fetchone()
             if not prov:
-                await interaction.response.send_message(f"Province {cell_id} not found.", ephemeral=True); return
+                await interaction.response.send_message(i18n.text('Province {p0} not found.', p0=cell_id), ephemeral=True); return
 
         quantity = max(1, quantity)
         if bp["type"] == "ship":
@@ -499,14 +497,14 @@ class MilitaryCog(commands.Cog):
 
         if nat["treasury"] < gold_cost:
             await interaction.response.send_message(
-                f"Not enough gold. Need **{gold_cost:,}g**, have **{nat['treasury']:,.0f}g**.",
+                i18n.text('Not enough gold. Need **{p0:,}g**, have **{p1:,.0f}g**.', p0=gold_cost, p1=nat['treasury']),
                 ephemeral=True); return
 
         res = json.loads(nat["resources_json"])
         for r, a in total_cost.items():
             if res.get(r, 0) < a:
                 await interaction.response.send_message(
-                    f"Not enough **{r}**. Need {a}, have {res.get(r,0):.0f}.", ephemeral=True); return
+                    i18n.text('Not enough **{p0}**. Need {p1}, have {p2:.0f}.', p0=r, p1=a, p2=res.get(r, 0)), ephemeral=True); return
         for r, a in total_cost.items():
             res[r] = res.get(r, 0) - a
 
@@ -521,33 +519,33 @@ class MilitaryCog(commands.Cog):
             c.execute("UPDATE nations SET resources_json=?,treasury=? WHERE id=?",
                       (json.dumps(res), nat["treasury"]-gold_cost, nat["id"]))
 
-        loc_str = (prov["name"] or f"Cell #{cell_id}") if prov else "floating (unassigned)"
+        loc_str = (prov["name"] or i18n.text('Cell #{p0}', p0=cell_id)) if prov else i18n.text('floating (unassigned)')
         _log(nat["id"],"system",
-             f"Built {quantity}x {bp['name']} (group #{unit_id}) — {loc_str}. "
-             f"Upkeep: {peace_upkeep*quantity:.0f}g/tick peace / {peace_upkeep*quantity*WAR_MULT:.0f}g war.")
+             i18n.text('Built {p0}x {p1} (group #{p2}) — {p3}. Upkeep: {p4:.0f}g/tick peace / {p5:.0f}g war.', p0=quantity, p1=bp['name'], p2=unit_id, p3=loc_str, p4=peace_upkeep * quantity, p5=peace_upkeep * quantity * WAR_MULT))
 
         cost_str = f"{gold_cost:,}g"
         if total_cost:
-            cost_str += ", " + ", ".join(f"{a} {r}" for r,a in total_cost.items())
+            cost_str += ", " + ", ".join(f"{a} {i18n.term(r)}" for r,a in total_cost.items())
         embed = discord.Embed(
-            title=f"{'⚓' if bp['type']=='ship' else '⚔️'} Units Built",
-            description=f"**{quantity}×** {bp['name']} — stationed: **{loc_str}**",
+            title=i18n.text('{p0} Units Built', p0='⚓' if bp['type'] == 'ship' else '⚔️'),
+            description=i18n.text('**{p0}×** {p1} — stationed: **{p2}**', p0=quantity, p1=bp['name'], p2=loc_str),
             color=discord.Color.dark_green(),
         )
-        embed.add_field(name="Cost",         value=cost_str,                              inline=True)
-        embed.add_field(name="Peace upkeep", value=f"{peace_upkeep*quantity:.0f}g/tick",  inline=True)
-        embed.add_field(name="War upkeep",   value=f"{peace_upkeep*quantity*WAR_MULT:.0f}g/tick", inline=True)
-        embed.set_footer(text=f"Unit group ID: {unit_id} — use /military move {unit_id} <cell> to assign")
+        embed.add_field(name=i18n.text('Cost'),         value=cost_str,                              inline=True)
+        embed.add_field(name=i18n.text('Peace upkeep'), value=i18n.text('{p0:.0f}g/tick', p0=peace_upkeep * quantity),  inline=True)
+        embed.add_field(name=i18n.text('War upkeep'),   value=i18n.text('{p0:.0f}g/tick', p0=peace_upkeep * quantity * WAR_MULT), inline=True)
+        embed.set_footer(text=i18n.text('Unit group ID: {p0} — use /military move {p1} <cell> to assign', p0=unit_id, p1=unit_id))
         await interaction.response.send_message(embed=embed)
 
     @mil_grp.command(name="list", description="View your forces (private) / Twoje wojsko")
     @app_commands.describe(nation="Nation name — GM only")
+    @i18n.localized
     async def mil_list(self, interaction: discord.Interaction, nation: str = ""):
         lang  = _lang(interaction)
         is_gm = _gm(interaction)
         if nation and not is_gm:
             await interaction.response.send_message(
-                "Military is private. You can only view your own.", ephemeral=True); return
+                i18n.text('Military is private. You can only view your own.'), ephemeral=True); return
         nat = _nat_name(nation) if nation else _nat_owner(str(interaction.user.id))
         if not nat:
             await interaction.response.send_message(
@@ -565,13 +563,13 @@ class MilitaryCog(commands.Cog):
             )
             rows = c.fetchall()
         if not rows:
-            await interaction.followup.send(f"**{nat['name']}** has no units.", ephemeral=True); return
+            await interaction.followup.send(i18n.text('**{p0}** has no units.', p0=nat['name']), ephemeral=True); return
         at_war       = _at_war(nat["id"])
         total_upkeep = _upkeep(nat["id"])
         ships = [r for r in rows if r["btype"]=="ship"]
         units = [r for r in rows if r["btype"]!="ship"]
         embed = discord.Embed(
-            title=f"⚔️ Forces — {nat['flag'] or ''} {nat['name']}".strip(),
+            title=i18n.text('⚔️ Forces — {p0} {p1}', p0=nat['flag'] or '', p1=nat['name']).strip(),
             color=discord.Color.dark_red(),
         )
         # Calculate total fleet cargo
@@ -580,18 +578,17 @@ class MilitaryCog(commands.Cog):
             for r in rows if r["btype"] == "ship"
         )
         embed.add_field(
-            name="Status",
+            name=i18n.text('Status'),
             value=(
-                f"{'🔴 At War' if at_war else '🟢 Peace'} | "
-                f"Upkeep: {total_upkeep:.0f}g/tick"
-                + (f" | ⚓ Fleet cargo: {total_cargo:.0f}" if total_cargo > 0 else "")
+                i18n.text('{p0} | Upkeep: {p1:.0f}g/tick', p0=i18n.text('🔴 At War') if at_war else i18n.text('🟢 Peace'), p1=total_upkeep)
+                + (i18n.text(' | ⚓ Fleet cargo: {p0:.0f}', p0=total_cargo) if total_cargo > 0 else "")
             ),
             inline=False,
         )
         def loc(r):
             if r["pname"]:          return r["pname"]
-            if r["azgaar_cell_id"] is not None: return f"Cell #{r['azgaar_cell_id']}"
-            return "🌊 Floating"
+            if r["azgaar_cell_id"] is not None: return i18n.text('Cell #{p0}', p0=r['azgaar_cell_id'])
+            return i18n.text('🌊 Floating')
 
         def upkeep_str(r):
             if r["btype"] == "ship":
@@ -600,14 +597,14 @@ class MilitaryCog(commands.Cog):
                 base = LAND_UNITS.get(r["hull"], {}).get("peace_upkeep", 2.0)
             peace = base * r["quantity"]
             war   = peace * WAR_MULT
-            return f"{peace:.0f}g peace / {war:.0f}g war"
+            return i18n.text('{p0:.0f}g peace / {p1:.0f}g war', p0=peace, p1=war)
 
         # Keep every group visible without exceeding Discord's field/embed limits.
         pages = []
         template = deepcopy(embed)
-        for heading, groups in (("⚓ Navy", ships), ("⚔️ Army", units)):
+        for heading, groups in ((i18n.text('⚓ Navy'), ships), (i18n.text('⚔️ Army'), units)):
             for r in groups:
-                name = r["bname"] or r["unit_type"] or "Unknown blueprint"
+                name = r["bname"] or r["unit_type"] or i18n.text('Unknown blueprint')
                 line = f"`[{r['id']}]` **{r['quantity']}× {name[:200]}** @ {loc(r)[:200]} — {upkeep_str(r)}"
                 if len(embed.fields) >= 20 or len(embed) + len(heading) + len(line) > 5800:
                     pages.append(embed)
@@ -619,6 +616,7 @@ class MilitaryCog(commands.Cog):
 
     @mil_grp.command(name="move", description="Assign/move units to a province / Przemiesz wojsko")
     @app_commands.describe(unit_id="Unit group ID", cell_id="Destination cell ID")
+    @i18n.localized
     async def mil_move(self, interaction: discord.Interaction, unit_id: int, cell_id: int):
         lang = _lang(interaction)
         nat  = _nat_owner(str(interaction.user.id))
@@ -630,23 +628,23 @@ class MilitaryCog(commands.Cog):
                       "WHERE u.id=? AND u.nation_id=?", (unit_id,nat["id"]))
             unit = c.fetchone()
         if not unit:
-            await interaction.response.send_message(f"Unit group #{unit_id} not found.", ephemeral=True); return
+            await interaction.response.send_message(i18n.text('Unit group #{p0} not found.', p0=unit_id), ephemeral=True); return
         with db.cursor() as c:
             c.execute("SELECT * FROM provinces WHERE azgaar_cell_id=? AND active=1", (cell_id,))
             prov = c.fetchone()
         if not prov:
-            await interaction.response.send_message(f"Province {cell_id} not found.", ephemeral=True); return
+            await interaction.response.send_message(i18n.text('Province {p0} not found.', p0=cell_id), ephemeral=True); return
         with db.cursor() as c:
             c.execute("UPDATE military_units SET province_id=? WHERE id=?", (prov["id"],unit_id))
         _log(nat["id"],"player",
-             f"Moved group #{unit_id} ({unit['quantity']}× {unit['bname']}) "
-             f"to {prov['name'] or f'Cell #{cell_id}'}.")
+             i18n.text('Moved group #{p0} ({p1}× {p2}) to {p3}.', p0=unit_id, p1=unit['quantity'], p2=unit['bname'], p3=prov['name'] or i18n.text('Cell #{p0}', p0=cell_id)))
         await interaction.response.send_message(
-            f"✅ **{unit['quantity']}× {unit['bname']}** → **{prov['name'] or f'Cell #{cell_id}'}**.",
+            f"✅ **{unit['quantity']}× {unit['bname']}** → **{prov['name'] or i18n.text('Cell #{p0}', p0=cell_id)}**.",
             ephemeral=True)
 
     @mil_grp.command(name="unassign", description="Return units to floating pool / Cofnij przydzia")
     @app_commands.describe(unit_id="Unit group ID")
+    @i18n.localized
     async def mil_unassign(self, interaction: discord.Interaction, unit_id: int):
         lang = _lang(interaction)
         nat  = _nat_owner(str(interaction.user.id))
@@ -658,15 +656,16 @@ class MilitaryCog(commands.Cog):
                       "WHERE u.id=? AND u.nation_id=?", (unit_id,nat["id"]))
             unit = c.fetchone()
         if not unit:
-            await interaction.response.send_message(f"Unit group #{unit_id} not found.", ephemeral=True); return
+            await interaction.response.send_message(i18n.text('Unit group #{p0} not found.', p0=unit_id), ephemeral=True); return
         with db.cursor() as c:
             c.execute("UPDATE military_units SET province_id=NULL WHERE id=?", (unit_id,))
-        _log(nat["id"],"player",f"Unassigned group #{unit_id} ({unit['bname']}) — now floating.")
+        _log(nat["id"],"player",i18n.text('Unassigned group #{p0} ({p1}) — now floating.', p0=unit_id, p1=unit['bname']))
         await interaction.response.send_message(
-            f"✅ **{unit['quantity']}× {unit['bname']}** returned to floating pool.", ephemeral=True)
+            i18n.text('✅ **{p0}× {p1}** returned to floating pool.', p0=unit['quantity'], p1=unit['bname']), ephemeral=True)
 
     @mil_grp.command(name="disband", description="Disband a unit group / Rozwiaz jednostki")
     @app_commands.describe(unit_id="Unit group ID")
+    @i18n.localized
     async def mil_disband(self, interaction: discord.Interaction, unit_id: int):
         lang = _lang(interaction)
         nat  = _nat_owner(str(interaction.user.id))
@@ -681,7 +680,7 @@ class MilitaryCog(commands.Cog):
             )
             unit = c.fetchone()
         if not unit:
-            await interaction.response.send_message(f"Unit group #{unit_id} not found.", ephemeral=True); return
+            await interaction.response.send_message(i18n.text('Unit group #{p0} not found.', p0=unit_id), ephemeral=True); return
 
         # Block if committed to a pending (unmatched or matched) battle plan
         with db.cursor() as c:
@@ -704,17 +703,16 @@ class MilitaryCog(commands.Cog):
                 committed = c.fetchone()
         if committed:
             await interaction.response.send_message(
-                f"❌ Unit group #{unit_id} is committed to battle plan #{committed['id']} "
-                f"which is still pending resolution. Wait for the battle to resolve first.",
+                i18n.text('❌ Unit group #{p0} is committed to battle plan #{p1} which is still pending resolution. Wait for the battle to resolve first.', p0=unit_id, p1=committed['id']),
                 ephemeral=True)
             return
 
         with db.cursor() as c:
             c.execute("DELETE FROM military_units WHERE id=?", (unit_id,))
         _log(nat["id"],"player",
-             f"Disbanded group #{unit_id}: {unit['quantity']}× {unit['bname'] or 'unknown'}.")
+             i18n.text('Disbanded group #{p0}: {p1}× {p2}.', p0=unit_id, p1=unit['quantity'], p2=unit['bname'] or i18n.term('unknown')))
         await interaction.response.send_message(
-            f"🗑️ Disbanded **{unit['quantity']}× {unit['bname'] or 'unknown'}**.", ephemeral=True)
+            i18n.text('🗑️ Disbanded **{p0}× {p1}**.', p0=unit['quantity'], p1=unit['bname'] or i18n.term('unknown')), ephemeral=True)
 
 
 async def setup(bot):

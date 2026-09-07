@@ -26,12 +26,12 @@
   "help_building_set": "[GM] Edytuj pole definicji budynku na zywo.",
   "help_building_new": "[GM] Dodaj nowy niestandardowy typ budynku.",
 
-  "language_set_confirm": "Jezyk ustawiony na polski.",
-  "language_invalid": "Nieobslugiwany jezyk. Wybierz jeden z: {languages}",
+  "language_set_confirm": "Język ustawiony na polski.",
+  "language_invalid": "Nieobsługiwany język. Wybierz jeden z: {languages}",
 
   "gm_only": "Ta komenda wymaga roli Game Master.",
-  "generic_error": "Cos poszlo nie tak. Sprobuj ponownie lub popros Game Mastera o pomoc.",
-  "no_nation": "Nie masz jeszcze narodu. Uzyj /nation found aby go stworzyc.",
+  "generic_error": "Coś poszło nie tak. Spróbuj ponownie lub poproś Game Mastera o pomoc.",
+  "no_nation": "Nie masz jeszcze narodu. Użyj /nation found, aby go stworzyć.",
 
   "nation_already_exists": "Masz juz narod: **{nation}**. Kazdy gracz moze zalozyc tylko jeden.",
   "nation_name_taken": "Nazwa **{name}** jest juz zajeta. Wybierz inna.",
