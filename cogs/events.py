@@ -3,7 +3,8 @@ Event commands:
   /event generate <nation>        - GM: generate an AI event based on nation history+stats
   /event edit <id> <text>         - GM: edit the draft text before posting
   /event effects <id> <json>      - GM: set stat effects for the event
-  /event post <id>                - GM: post the event publicly and apply effects
+  /event post <id>                - GM: open a three-decision interactive event
+  /event play <id>                - owner/GM: resume or inspect the saved event
   /event list [nation]            - GM sees all drafts; players see only posted events
 """
 import json
@@ -18,6 +19,8 @@ import config
 import db
 import i18n
 from utils import short_date
+import event_adventure as adventure
+from event_ui import EventView, render_event
 
 
 def _event_language(nat):
@@ -58,7 +61,7 @@ def _build_nation_context(nat) -> str:
     """Build a rich context string for Gemini from a nation's stats and history."""
     tech      = json.loads(nat["tech_json"])
     resources = json.loads(nat["resources_json"])
-    tech_str  = ", ".join(f"{k.capitalize()} {v:.1f}" for k, v in tech.items())
+    tech_str  = ", ".join(f"{i18n.term(k)} {v:.1f}" for k, v in tech.items())
     res_str   = ", ".join(f"{k}: {v:.0f}" for k, v in resources.items() if v > 0)[:400]
 
     # Recent history (last 15 entries, public and gm sources only)
@@ -95,7 +98,7 @@ def _build_nation_context(nat) -> str:
     try:
         mname = MONTH_NAMES[int(month) - 1]
     except (ValueError, IndexError):
-        mname = f"Month {month}"
+        mname = i18n.text('Month {p0}', p0=month)
 
     return f"""Nation: {nat['name']}
 Government: {nat['government_type']}
@@ -259,6 +262,7 @@ class EventsCog(commands.Cog):
     @event_grp.command(name="generate",
                        description="[GM] Generate an AI event for a nation / [GM] Generuj event AI")
     @app_commands.describe(nation="Nation name / Nazwa narodu")
+    @i18n.localized
     async def event_generate(self, interaction: discord.Interaction, nation: str):
         if not _gm(interaction):
             await interaction.response.send_message(
@@ -301,16 +305,13 @@ class EventsCog(commands.Cog):
                 eff_lines.append(("Skarbiec: " if lang == "pl" else "Treasury: ")
                                  + f"{'+' if effects['treasury']>0 else ''}{effects['treasury']}g")
             for res, amt in effects.get("resources", {}).items():
-                eff_lines.append(f"{res.capitalize()}: {'+' if amt>0 else ''}{amt}")
+                eff_lines.append(f"{i18n.term(res, lang)}: {'+' if amt>0 else ''}{amt}")
             if effects.get("special_note"):
                 eff_lines.append(("Uwaga: " if lang == "pl" else "Note: ") + effects['special_note'])
             if eff_lines:
                 embed.add_field(name="Proponowane efekty" if lang == "pl" else "Suggested Effects", value="\n".join(eff_lines), inline=False)
         embed.set_footer(
-            text=f"Event ID: {event_id} | "
-                 f"Edit: /event edit {event_id} <text> | "
-                 f"Set effects: /event effects {event_id} <json> | "
-                 f"Post: /event post {event_id}"
+            text=i18n.text('Event ID: {p0} | Edit: /event edit {p1} <text> | Set effects: /event effects {p2} <json> | Post: /event post {p3}', p0=event_id, p1=event_id, p2=event_id, p3=event_id)
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -321,6 +322,7 @@ class EventsCog(commands.Cog):
         event_id="Event ID / ID eventu",
         text="New event text / Nowy tekst eventu",
     )
+    @i18n.localized
     async def event_edit(self, interaction: discord.Interaction, event_id: int, text: str):
         if not _gm(interaction):
             await interaction.response.send_message(
@@ -331,12 +333,12 @@ class EventsCog(commands.Cog):
             ev = c.fetchone()
         if not ev or ev["status"] != "draft":
             await interaction.response.send_message(
-                f"Event #{event_id} not found or already posted.", ephemeral=True)
+                i18n.text('Event #{p0} not found or already posted.', p0=event_id), ephemeral=True)
             return
         with db.cursor() as c:
             c.execute("UPDATE events SET gm_final_text=? WHERE id=?", (text, event_id))
         await interaction.response.send_message(
-            f"✅ Event #{event_id} text updated.", ephemeral=True)
+            i18n.text('✅ Event #{p0} text updated.', p0=event_id), ephemeral=True)
 
     # -------------------------------------------------- /event effects
     @event_grp.command(name="effects",
@@ -345,6 +347,7 @@ class EventsCog(commands.Cog):
         event_id="Event ID / ID eventu",
         effects_json='Effects JSON e.g. {"stability":-5,"treasury":100,"resources":{"food":50}}',
     )
+    @i18n.localized
     async def event_effects(self, interaction: discord.Interaction,
                             event_id: int, effects_json: str):
         if not _gm(interaction):
@@ -352,113 +355,88 @@ class EventsCog(commands.Cog):
                 i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
         try:
-            parsed = json.loads(effects_json)
-        except json.JSONDecodeError as e:
-            await interaction.response.send_message(f"❌ Invalid JSON: {e}", ephemeral=True)
+            parsed = adventure.validate_effects(effects_json)
+        except ValueError as e:
+            await interaction.response.send_message(i18n.text('❌ Invalid JSON: {p0}', p0=e), ephemeral=True)
             return
         with db.cursor() as c:
             c.execute("SELECT * FROM events WHERE id=?", (event_id,))
             ev = c.fetchone()
         if not ev or ev["status"] != "draft":
             await interaction.response.send_message(
-                f"Event #{event_id} not found or already posted.", ephemeral=True)
+                i18n.text('Event #{p0} not found or already posted.', p0=event_id), ephemeral=True)
             return
         with db.cursor() as c:
             c.execute("UPDATE events SET effects_json=? WHERE id=?",
                       (json.dumps(parsed), event_id))
-        eff_str = ", ".join(f"{k}: {v}" for k, v in parsed.items() if k != "resources")
+        eff_str = ", ".join(f"{i18n.term(k)}: {v}" for k, v in parsed.items() if k != "resources")
         await interaction.response.send_message(
-            f"✅ Event #{event_id} effects updated: {eff_str or 'none'}.", ephemeral=True)
+            i18n.text('✅ Event #{p0} effects updated: {p1}.', p0=event_id, p1=eff_str or 'none'), ephemeral=True)
 
     # -------------------------------------------------- /event post
     @event_grp.command(name="post",
                        description="[GM] Post an event publicly / [GM] Opublikuj event")
     @app_commands.describe(event_id="Event ID / ID eventu")
+    @i18n.localized
     async def event_post(self, interaction: discord.Interaction, event_id: int):
         if not _gm(interaction):
-            await interaction.response.send_message(
-                i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
+            await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
+        await interaction.response.defer(ephemeral=True)
         with db.cursor() as c:
             c.execute("SELECT * FROM events WHERE id=?", (event_id,))
             ev = c.fetchone()
         if not ev or ev["status"] != "draft":
-            await interaction.response.send_message(
-                f"Event #{event_id} not found or already posted.", ephemeral=True)
+            await interaction.followup.send(i18n.text('Event not found or already published. / Event nie istnieje lub jest już opublikowany.'), ephemeral=True)
             return
-
-        nat = None
         with db.cursor() as c:
             c.execute("SELECT * FROM nations WHERE id=?", (ev["nation_id"],))
             nat = c.fetchone()
         if not nat:
-            await interaction.response.send_message("Nation not found.", ephemeral=True)
+            await interaction.followup.send(i18n.text('Nation not found.'), ephemeral=True)
             return
-
-        # Apply effects
-        lang = _event_language(nat)
-        applied = _apply_event_effects(ev["nation_id"], ev["effects_json"], lang)
-
-        # Log to nation history
-        log_text = f"Event: {ev['gm_final_text'][:200]}"
-        if applied:
-            log_text += f" Effects: {', '.join(applied)}."
-        _log(ev["nation_id"], "ai", log_text)
-
-        # Mark posted
-        with db.cursor() as c:
-            c.execute(
-                "UPDATE events SET status='posted',posted_at=CURRENT_TIMESTAMP WHERE id=?",
-                (event_id,)
-            )
-
-        # Build public embed
-        embed = discord.Embed(
-            title=("📜 Wydarzenie" if lang == "pl" else "📜 Event") + f" — {nat['flag'] or ''} {nat['name']}",
-            description=ev["gm_final_text"],
-            color=discord.Color.purple(),
-        )
-        if applied:
-            embed.add_field(
-                name="Efekty" if lang == "pl" else "Effects",
-                value="\n".join(applied),
-                inline=False,
-            )
-        month = _cfg("current_month", "?")
-        year  = _cfg("current_year",  "?")
-        embed.set_footer(text=f"Miesiąc {month}, rok {year}" if lang == "pl" else f"Month {month}, Year {year}")
-
-        # Post to announce channel if set
+        try:
+            state = adventure.start_run(await adventure.prepare_run(ev, nat))
+        except ValueError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+        # Publishing opens the first decision. No nation balances change here.
+        embed = render_event(state)
+        failures = []
         ch_id = _cfg("announce_channel_id")
-        ch    = self.bot.get_channel(int(ch_id)) if ch_id else None
+        ch = self.bot.get_channel(int(ch_id)) if ch_id else None
         if ch:
             try:
-                await ch.send(embed=embed)
-            except discord.Forbidden:
-                pass
+                await ch.send(embed=embed, view=EventView(state), allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException:
+                failures.append("channel")
+        try:
+            owner = interaction.guild.get_member(int(nat["owner_id"])) if interaction.guild else None
+            if owner is None:
+                owner = await self.bot.fetch_user(int(nat["owner_id"]))
+            await owner.send(embed=embed, view=EventView(state), allowed_mentions=discord.AllowedMentions.none())
+        except (discord.HTTPException, ValueError):
+            failures.append("DM")
+        notice = adventure.tr(state["lang"],
+            f"✅ Event #{event_id} rozpoczęty. Gracz wybiera przez /event play {event_id}. Efekty dopiero po trzeciej decyzji.",
+            f"✅ Event #{event_id} started. The player can use /event play {event_id}. Effects apply after decision three.")
+        if failures:
+            notice += "\n" + adventure.tr(state["lang"], "Nie udało się wysłać: ", "Delivery failed: ") + ", ".join(failures)
+        await interaction.followup.send(notice, embed=embed, view=EventView(state), ephemeral=True)
 
-        # Notify nation owner via DM
-        if interaction.guild:
-            owner = interaction.guild.get_member(int(nat["owner_id"]))
-            if owner:
-                try:
-                    notif = discord.Embed(
-                        title=("📜 Nowe wydarzenie" if lang == "pl" else "📜 New Event") + f" — {nat['flag'] or ''} {nat['name']}",
-                        description=ev["gm_final_text"],
-                        color=discord.Color.purple(),
-                    )
-                    if applied:
-                        notif.add_field(name="Efekty" if lang == "pl" else "Effects", value="\n".join(applied), inline=False)
-                    await owner.send(embed=notif)
-                except discord.Forbidden:
-                    pass
-
-        # Also respond to GM
-        await interaction.response.send_message(
-            f"✅ Event #{event_id} posted for **{nat['name']}**."
-            + (f"\nEffects applied: {', '.join(applied)}" if applied else ""),
-            ephemeral=True,
-        )
+    @event_grp.command(name="play", description="Continue your event / Kontynuuj wydarzenie")
+    @i18n.localized
+    async def event_play(self, interaction: discord.Interaction, event_id: int):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            state = adventure.load_run(event_id)
+            if str(interaction.user.id) != state["owner_id"] and not _gm(interaction):
+                raise ValueError(i18n.text('Only the nation owner and GM can view this event. / Dostęp tylko dla właściciela i GM.'))
+        except ValueError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+        await interaction.followup.send(embed=render_event(state), view=EventView(state),
+                                        ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
     # -------------------------------------------------- /event list
     @event_grp.command(name="list",
@@ -466,6 +444,7 @@ class EventsCog(commands.Cog):
     @app_commands.describe(
         nation="Nation name (blank = all) / Nazwa narodu (puste = wszystkie)",
     )
+    @i18n.localized
     async def event_list(self, interaction: discord.Interaction, nation: str = ""):
         lang  = _lang(interaction)
         is_gm = _gm(interaction)
@@ -489,7 +468,7 @@ class EventsCog(commands.Cog):
                     c.execute(
                         "SELECT e.*,n.name as nname,n.flag as nflag"
                         " FROM events e JOIN nations n ON e.nation_id=n.id"
-                        " WHERE e.nation_id=? AND e.status='posted'"
+                        " WHERE e.nation_id=? AND e.status IN ('posted','active','resolved')"
                         " ORDER BY e.id DESC LIMIT 10",
                         (target["id"],)
                     )
@@ -504,7 +483,7 @@ class EventsCog(commands.Cog):
                     c.execute(
                         "SELECT e.*,n.name as nname,n.flag as nflag"
                         " FROM events e JOIN nations n ON e.nation_id=n.id"
-                        " WHERE e.nation_id=? AND e.status='posted'"
+                        " WHERE e.nation_id=? AND e.status IN ('posted','active','resolved')"
                         " ORDER BY e.id DESC LIMIT 10",
                         (nat["id"],)
                     )
@@ -518,7 +497,7 @@ class EventsCog(commands.Cog):
             await interaction.response.send_message("Nie znaleziono wydarzeń." if lang == "pl" else "No events found.", ephemeral=True)
             return
 
-        STATUS_EMOJI = {"draft": "📝", "posted": "📜"}
+        STATUS_EMOJI = {"draft": "📝", "posted": "📜", "active": "🎲", "resolved": "✅"}
         embed = discord.Embed(
             title=("📜 Wydarzenia" if lang == "pl" else "📜 Events")
                   + ((" — Widok GM" if lang == "pl" else " — GM View") if is_gm else ""),
@@ -533,6 +512,7 @@ class EventsCog(commands.Cog):
                 value=text[:200] + ("..." if len(text) > 200 else ""),
                 inline=False,
             )
+        embed.set_footer(text="/event play <id> — " + adventure.tr(lang, "kontynuuj lub zobacz finał", "continue or view the outcome"))
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 

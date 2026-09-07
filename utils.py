@@ -16,7 +16,7 @@ def short_date(value):
     return str(value)[:10] if value is not None else "—"
 
 
-class EmbedPager(discord.ui.View):
+class EmbedPager(i18n.LocalizedView):
     """Private, owner-bound navigation for already size-limited embeds."""
     def __init__(self, pages, owner_id):
         super().__init__(timeout=180)
@@ -29,19 +29,22 @@ class EmbedPager(discord.ui.View):
         self.previous.disabled = self.index == 0
         self.next_page.disabled = self.index == len(self.pages) - 1
 
+    @i18n.localized
     async def interaction_check(self, interaction):
         if interaction.user.id == self.owner_id:
             return True
-        await interaction.response.send_message("This is not your menu.", ephemeral=True)
+        await interaction.response.send_message(i18n.text('This is not your menu.'), ephemeral=True)
         return False
 
     @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
+    @i18n.localized
     async def previous(self, interaction, button):
         self.index = max(0, self.index - 1)
         self._refresh()
         await interaction.response.edit_message(embed=self.pages[self.index], view=self)
 
     @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
+    @i18n.localized
     async def next_page(self, interaction, button):
         self.index = min(len(self.pages) - 1, self.index + 1)
         self._refresh()

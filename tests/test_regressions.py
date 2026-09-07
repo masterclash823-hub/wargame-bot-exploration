@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("DISCORD_TOKEN", "test-not-a-token")
 os.environ.setdefault("GEMINI_API_KEY", "test-not-a-key")
+os.environ.setdefault("DEFAULT_LANGUAGE", "en")  # Legacy English assertions; Polish has its own coverage.
 
 import config
 import db

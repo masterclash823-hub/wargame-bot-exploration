@@ -39,5 +39,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 DB_PATH = os.getenv("DB_PATH", "/tmp/wargame.db")
 
 # --- Localization ---
-DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "en")
+DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "pl").strip().lower()
 SUPPORTED_LANGUAGES = ("en", "pl")
+if DEFAULT_LANGUAGE not in SUPPORTED_LANGUAGES:
+    DEFAULT_LANGUAGE = "pl"

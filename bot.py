@@ -13,6 +13,7 @@ print("[BOOT] discord.py imported", flush=True)
 import config, db, i18n
 from utils import gm_only
 from keep_alive import keep_alive
+from command_locale import PolishTranslator
 print("[BOOT] local modules imported", flush=True)
 
 COGS = [
@@ -31,8 +32,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 print("[BOOT] bot object created", flush=True)
 
+@i18n.localized
 async def global_guild_check(interaction: discord.Interaction) -> bool:
-    if interaction.command and interaction.command.name in ("help", "language", "activate"):
+    if interaction.command and interaction.command.name in ("help", "language", "translate", "activate"):
         return True
     if not interaction.guild:
         return False
@@ -44,7 +46,7 @@ async def global_guild_check(interaction: discord.Interaction) -> bool:
         row = cur.fetchone()
     if not row or row["value"] != "1":
         await interaction.response.send_message(
-            "⛔ Bot not activated on this server. The GM must run `/activate <auth_key>` first.",
+            i18n.text('⛔ Bot not activated on this server. The GM must run `/activate <auth_key>` first.'),
             ephemeral=True)
         return False
     return True
@@ -52,9 +54,10 @@ async def global_guild_check(interaction: discord.Interaction) -> bool:
 tree.interaction_check = global_guild_check
 
 def _guild_active():
+    @i18n.localized
     async def predicate(interaction: discord.Interaction) -> bool:
         # Always allow help and activate
-        if interaction.command and interaction.command.name in ("help", "language", "activate"):
+        if interaction.command and interaction.command.name in ("help", "language", "translate", "activate"):
             return True
         if not interaction.guild:
             return False
@@ -66,8 +69,7 @@ def _guild_active():
             row = cur.fetchone()
         if not row or row["value"] != "1":
             await interaction.response.send_message(
-                "⛔ This bot has not been activated on this server.\n"
-                "The Game Master must run `/activate <auth_key>` first.",
+                i18n.text('⛔ This bot has not been activated on this server.\nThe Game Master must run `/activate <auth_key>` first.'),
                 ephemeral=True)
             return False
         return True
@@ -82,24 +84,26 @@ async def on_ready():
 
         for cog in COGS:
             try:
-                await bot.load_extension(cog)
+                if cog not in bot.extensions:
+                    await bot.load_extension(cog)
                 print(f"[COG] Loaded: {cog}", flush=True)
             except Exception:
                 print(f"[COG] FAILED to load {cog}:", flush=True)
                 traceback.print_exc()
 
+        await tree.set_translator(PolishTranslator())
         for guild in bot.guilds:
             try:
                 tree.copy_global_to(guild=guild)
                 guild_synced = await tree.sync(guild=guild)
                 print(f"[SYNC] Guild '{guild.name}': {len(guild_synced)} command(s): {[c.name for c in guild_synced]}", flush=True)
-                # Clear global after guild sync to avoid duplicates
-                tree.clear_commands(guild=None)
-                await tree.sync()
-                print("[SYNC] Global commands cleared to prevent duplicates.", flush=True)
             except Exception as e:
                 print(f"[SYNC] Guild sync failed for {guild.name}: {e}", flush=True)
 
+        # Delete remote global duplicates without removing the local source of
+        # commands needed by later guilds and reconnects.
+        if bot.guilds:
+            await bot.http.bulk_upsert_global_commands(bot.application_id, payload=[])
         print(f"[READY] Done. Connected to {len(bot.guilds)} guild(s).", flush=True)
 
     except Exception:
@@ -108,6 +112,7 @@ async def on_ready():
 
 
 @tree.error
+@i18n.localized
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     print(f"[CMD ERROR] {interaction.command.name if interaction.command else '?'}: {type(error).__name__}: {error}", flush=True)
     traceback.print_exc()
@@ -121,16 +126,17 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 @tree.command(name="activate",
               description="Activate the bot on this server (GM only)")
 @app_commands.describe(auth_key="Secret key from the bot owner")
+@i18n.localized
 async def activate_cmd(interaction: discord.Interaction, auth_key: str):
     import os
     expected = os.getenv("AUTH_KEY", "")
     if not expected:
         await interaction.response.send_message(
-            "AUTH_KEY not set in server environment.", ephemeral=True)
+            i18n.text('AUTH_KEY not set in server environment.'), ephemeral=True)
         return
     if auth_key != expected:
         await interaction.response.send_message(
-            "❌ Incorrect key.", ephemeral=True)
+            i18n.text('❌ Incorrect key.'), ephemeral=True)
         return
     with db.cursor() as cur:
         cur.execute(
@@ -139,7 +145,7 @@ async def activate_cmd(interaction: discord.Interaction, auth_key: str):
             (f"guild_active_{interaction.guild_id}", "1")
         )
     await interaction.response.send_message(
-        "✅ Bot activated on this server! All commands are now available.",
+        i18n.text('✅ Bot activated on this server! All commands are now available.'),
         ephemeral=True)
 
 
@@ -149,7 +155,9 @@ async def activate_cmd(interaction: discord.Interaction, auth_key: str):
     app_commands.Choice(name="English", value="en"),
     app_commands.Choice(name="Polski",  value="pl"),
 ])
-async def language_cmd(interaction: discord.Interaction, lang: app_commands.Choice[str]):
+@i18n.localized
+async def language_cmd(interaction: discord.Interaction, lang: app_commands.Choice[str] = None):
+    lang = lang or app_commands.Choice(name="Polski", value="pl")
     if lang.value not in config.SUPPORTED_LANGUAGES:
         current = i18n.get_user_language(interaction.user.id)
         await interaction.response.send_message(
@@ -163,27 +171,39 @@ async def language_cmd(interaction: discord.Interaction, lang: app_commands.Choi
     )
 
 
+# Compatibility alias: one callback, parameter definition and set of choices.
+translate_cmd = app_commands.Command(
+    name="translate",
+    description=language_cmd.description,
+    callback=language_cmd.callback,
+)
+tree.add_command(translate_cmd)
+
+
 @tree.command(name="help", description="Show available commands / Pokaz dostepne komendy")
+@i18n.localized
 async def help_cmd(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
     try:
         from cogs.economy import HelpView
         is_gm = gm_only(interaction)
         lang  = i18n.get_user_language(interaction.user.id)
         view  = HelpView(is_gm=is_gm, current="general", lang=lang)
         embed = view._embed()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
     except Exception as e:
         print(f"[HELP ERROR] {e}", flush=True)
         embed = discord.Embed(
-            title="Commands",
-            description="Economy cog failed to load — check Render logs.\n\nWorking: `/language`, `/nation`, `/province`",
+            title=i18n.text('Commands'),
+            description=i18n.text('Economy cog failed to load — check Render logs.\n\nWorking: `/language`, `/nation`, `/province`'),
             color=discord.Color.red(),
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 @tree.command(name="tutorial", description="Quick start guide / Krótki przewodnik dla nowych graczy")
+@i18n.localized
 async def tutorial_cmd(interaction: discord.Interaction):
-    class TutorialView(discord.ui.View):
+    class TutorialView(i18n.LocalizedView):
         def __init__(self, author_id: int):
             super().__init__(timeout=180)
             self.author_id = author_id
@@ -191,11 +211,12 @@ async def tutorial_cmd(interaction: discord.Interaction):
             self.message: discord.InteractionMessage | None = None
             self._refresh()
 
+        @i18n.localized
         async def interaction_check(self, inter: discord.Interaction) -> bool:
             if inter.user.id != self.author_id:
                 # Fetch language dynamically for the user trying to click
                 clicker_lang = i18n.get_user_language(inter.user.id) if hasattr(i18n, "get_user_language") else "en"
-                msg = "To nie jest Twój przewodnik." if clicker_lang == "pl" else "This is not your tutorial."
+                msg = "To nie jest Twój przewodnik." if clicker_lang == "pl" else i18n.text('This is not your tutorial.')
                 await inter.response.send_message(msg, ephemeral=True)
                 return False
             return True
@@ -222,7 +243,7 @@ async def tutorial_cmd(interaction: discord.Interaction):
             # DYNAMICALLY fetch the language for the target user every time the embed is generated
             lang = i18n.get_user_language(user_id) if hasattr(i18n, "get_user_language") else "en"
 
-            footer_text = "Użyj przycisków poniżej, aby zmienić sekcję" if lang == "pl" else "Use the buttons below to switch sections"
+            footer_text = "Użyj przycisków poniżej, aby zmienić sekcję" if lang == "pl" else i18n.text('Use the buttons below to switch sections')
 
             if self.section == "buildings":
                 if lang == "pl":
@@ -298,6 +319,7 @@ async def tutorial_cmd(interaction: discord.Interaction):
             style=discord.ButtonStyle.primary,
             custom_id="buildings"
         )
+        @i18n.localized
         async def btn_buildings(self, inter: discord.Interaction, btn: discord.ui.Button):
             self.section = "buildings"
             self._refresh()
@@ -308,6 +330,7 @@ async def tutorial_cmd(interaction: discord.Interaction):
             style=discord.ButtonStyle.secondary,
             custom_id="food"
         )
+        @i18n.localized
         async def btn_food(self, inter: discord.Interaction, btn: discord.ui.Button):
             self.section = "food"
             self._refresh()
@@ -318,6 +341,7 @@ async def tutorial_cmd(interaction: discord.Interaction):
             style=discord.ButtonStyle.secondary,
             custom_id="mega"
         )
+        @i18n.localized
         async def btn_mega(self, inter: discord.Interaction, btn: discord.ui.Button):
             self.section = "mega"
             self._refresh()

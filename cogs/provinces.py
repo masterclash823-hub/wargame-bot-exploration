@@ -115,7 +115,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
     pack = data.get("pack", data)
     cells_raw = pack.get("cells")
     if not cells_raw:
-        return [], "Could not find 'cells' in the export. Make sure you exported Full Data (not SVG only)."
+        return [], i18n.text("Could not find 'cells' in the export. Make sure you exported Full Data (not SVG only).")
 
     if isinstance(data, dict):
         pack = data.get("pack", data)
@@ -173,7 +173,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
     elif isinstance(cells_raw, dict):
         cell_ids  = cells_raw.get("i", [])
         if not cell_ids:
-            return [], "Cell ID array 'i' is empty or missing."
+            return [], i18n.text("Cell ID array 'i' is empty or missing.")
             
         pops      = cells_raw.get("pop",   [0] * len(cell_ids))
         biome_idx = cells_raw.get("biome", [0] * len(cell_ids))
@@ -201,10 +201,10 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
                 "terrain": terrain, "resources": resources, "pop": pop,
             })
     else:
-        return [], f"Unexpected 'cells' type: {type(cells_raw).__name__}. Please share a snippet of your JSON so the parser can be adjusted."
+        return [], i18n.text("Unexpected 'cells' type: {p0}. Please share a snippet of your JSON so the parser can be adjusted.", p0=type(cells_raw).__name__)
 
     if not provinces:
-        return [], "No provinces found after parsing. The file may be empty or in an unsupported format."
+        return [], i18n.text('No provinces found after parsing. The file may be empty or in an unsupported format.')
 
     return provinces, None
 
@@ -267,6 +267,7 @@ class ProvincesCog(commands.Cog):
         file="Attach the .json file (max ~8 MB) / Dolacz plik .json",
         url="Or paste a direct URL to the JSON file / Lub wklej URL do pliku JSON",
     )
+    @i18n.localized
     async def map_import(self, interaction: discord.Interaction,
                          file: discord.Attachment | None = None,
                          url: str | None = None):
@@ -275,7 +276,7 @@ class ProvincesCog(commands.Cog):
             return
         if not file and not url:
             await interaction.response.send_message(
-                "Provide either a file attachment or a URL.", ephemeral=True)
+                i18n.text('Provide either a file attachment or a URL.'), ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         try:
@@ -286,13 +287,11 @@ class ProvincesCog(commands.Cog):
                 return
             stats = _upsert_provinces(provinces, resync=False)
             await interaction.followup.send(
-                f"✅ **Import complete.**\n"
-                f"• Inserted: {stats['inserted']} provinces\n"
-                f"• Updated:  {stats['updated']} provinces",
+                i18n.text('✅ **Import complete.**\n• Inserted: {p0} provinces\n• Updated:  {p1} provinces', p0=stats['inserted'], p1=stats['updated']),
                 ephemeral=True,
             )
         except Exception as e:
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            await interaction.followup.send(i18n.text('❌ Error: {p0}', p0=e), ephemeral=True)
             raise
 
     # -------------------------------------------------- /admin map_resync
@@ -302,6 +301,7 @@ class ProvincesCog(commands.Cog):
         file="Attach updated .json / Dolacz zaktualizowany .json",
         url="Or paste a direct URL / Lub wklej URL",
     )
+    @i18n.localized
     async def map_resync(self, interaction: discord.Interaction,
                          file: discord.Attachment | None = None,
                          url: str | None = None):
@@ -310,7 +310,7 @@ class ProvincesCog(commands.Cog):
             return
         if not file and not url:
             await interaction.response.send_message(
-                "Provide either a file attachment or a URL.", ephemeral=True)
+                i18n.text('Provide either a file attachment or a URL.'), ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         try:
@@ -321,14 +321,11 @@ class ProvincesCog(commands.Cog):
                 return
             stats = _upsert_provinces(provinces, resync=True)
             await interaction.followup.send(
-                f"✅ **Resync complete.**\n"
-                f"• Inserted: {stats['inserted']} new provinces\n"
-                f"• Updated:  {stats['updated']} existing provinces\n"
-                f"• Deactivated: {stats['deactivated']} removed provinces",
+                i18n.text('✅ **Resync complete.**\n• Inserted: {p0} new provinces\n• Updated:  {p1} existing provinces\n• Deactivated: {p2} removed provinces', p0=stats['inserted'], p1=stats['updated'], p2=stats['deactivated']),
                 ephemeral=True,
             )
         except Exception as e:
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            await interaction.followup.send(i18n.text('❌ Error: {p0}', p0=e), ephemeral=True)
             raise
 
     # -------------------------------------------------- /admin map_export_markers
@@ -354,6 +351,7 @@ class ProvincesCog(commands.Cog):
         name="map_export_markers",
         description="[GM] Generate JS to place resource markers in Azgaar / [GM] Generuj JS z markerami zasobow",
     )
+    @i18n.localized
     async def map_export_markers(self, interaction: discord.Interaction):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
@@ -370,7 +368,7 @@ class ProvincesCog(commands.Cog):
 
         if not rows:
             await interaction.followup.send(
-                "No provinces in the database yet. Run `/admin map_import` first.",
+                i18n.text('No provinces in the database yet. Run `/admin map_import` first.'),
                 ephemeral=True,
             )
             return
@@ -397,7 +395,7 @@ class ProvincesCog(commands.Cog):
 
         if not marker_entries:
             await interaction.followup.send(
-                "No non-food resources found in the database.", ephemeral=True
+                i18n.text('No non-food resources found in the database.'), ephemeral=True
             )
             return
 
@@ -443,13 +441,7 @@ class ProvincesCog(commands.Cog):
         )
 
         await interaction.followup.send(
-            f"✅ Generated markers for **{marker_id - 1}** resources across **{len(rows)}** provinces.\n\n"
-            "**How to use:**\n"
-            "1. Open your map in Azgaar\n"
-            "2. Press **F12** → **Console** tab\n"
-            "3. Paste the contents of the attached `.js` file and press **Enter**\n"
-            "4. Toggle the **Markers** layer off and on to see the icons\n\n"
-            "Re-run this command after any `/admin map_resync` to keep markers in sync.",
+            i18n.text('✅ Generated markers for **{p0}** resources across **{p1}** provinces.\n\n**How to use:**\n1. Open your map in Azgaar\n2. Press **F12** → **Console** tab\n3. Paste the contents of the attached `.js` file and press **Enter**\n4. Toggle the **Markers** layer off and on to see the icons\n\nRe-run this command after any `/admin map_resync` to keep markers in sync.', p0=marker_id - 1, p1=len(rows)),
             file=file,
             ephemeral=True,
         )
@@ -461,6 +453,7 @@ class ProvincesCog(commands.Cog):
         nation="Nation name / Nazwa narodu",
         ids="Cell IDs, e.g. 1,2,5-10 / ID komorek np. 1,2,5-10",
     )
+    @i18n.localized
     async def claim(self, interaction: discord.Interaction, nation: str, ids: str):
         lang = _lang(interaction)
         if not _gm(interaction):
@@ -489,7 +482,7 @@ class ProvincesCog(commands.Cog):
                     not_found += 1
             cur.execute(
                 "INSERT INTO nation_history (nation_id,source,entry_text) VALUES (?,?,?)",
-                (nation_row["id"], "system", f"Claimed {claimed} province(s) (cells: {ids})."),
+                (nation_row["id"], "system", i18n.text('Claimed {p0} province(s) (cells: {p1}).', p0=claimed, p1=ids)),
             )
 
         await interaction.response.send_message(
@@ -502,6 +495,7 @@ class ProvincesCog(commands.Cog):
     @province_grp.command(name="unclaim",
                           description="[GM] Remove province ownership / [GM] Odbierz prowincje")
     @app_commands.describe(ids="Cell IDs to unclaim / ID komorek")
+    @i18n.localized
     async def unclaim(self, interaction: discord.Interaction, ids: str):
         lang = _lang(interaction)
         if not _gm(interaction):
@@ -528,12 +522,13 @@ class ProvincesCog(commands.Cog):
     @province_grp.command(name="yield",
                           description="Total resource yield of your provinces / Laczna produkcja")
     @app_commands.describe(nation="Nation name (blank = your own, GM only for others)")
+    @i18n.localized
     async def province_yield(self, interaction: discord.Interaction, nation: str = ""):
         lang  = _lang(interaction)
         is_gm = _gm(interaction)
         if nation and not is_gm:
             await interaction.response.send_message(
-                "Province yields are private. You can only view your own.", ephemeral=True)
+                i18n.text('Province yields are private. You can only view your own.'), ephemeral=True)
             return
         if nation:
             nat = _get_nation(nation)
@@ -548,7 +543,7 @@ class ProvincesCog(commands.Cog):
             c.execute("SELECT * FROM provinces WHERE owner_nation_id=? AND active=1", (nat["id"],))
             provs = c.fetchall()
         if not provs:
-            await interaction.response.send_message(f"**{nat['name']}** owns no provinces.", ephemeral=True)
+            await interaction.response.send_message(i18n.text('**{p0}** owns no provinces.', p0=nat['name']), ephemeral=True)
             return
 
         total: dict[str, float] = {}
@@ -571,21 +566,20 @@ class ProvincesCog(commands.Cog):
         stab_mod = 0.75 + (nat["stability"] / 100.0) * 0.25
         lines = []
         if gold_per_tick > 0:
-            lines.append(f"**Gold**: {gold_per_tick:.0f}/tick (×{stab_mod:.2f} = {gold_per_tick*stab_mod:.0f} effective)")
+            lines.append(i18n.text('**Gold**: {p0:.0f}/tick (×{p1:.2f} = {p2:.0f} effective)', p0=gold_per_tick, p1=stab_mod, p2=gold_per_tick * stab_mod))
         for k, v in sorted(total.items()):
             if v > 0:
                 lines.append(
-                    f"**{k.replace('_',' ').capitalize()}**: {v:.1f}/tick "
-                    f"(×{stab_mod:.2f} = {v*stab_mod:.1f} effective)"
+                    i18n.text('**{p0}**: {p1:.1f}/tick (×{p2:.2f} = {p3:.1f} effective)', p0=k.replace('_', ' ').capitalize(), p1=v, p2=stab_mod, p3=v * stab_mod)
                 )
 
         embed = discord.Embed(
-            title=f"📊 Province Yield — {nat['flag'] or ''} {nat['name']}",
-            description="\n".join(lines) or "*No production yet.*",
+            title=i18n.text('📊 Province Yield — {p0} {p1}', p0=nat['flag'] or '', p1=nat['name']),
+            description="\n".join(lines) or i18n.text('*No production yet.*'),
             color=discord.Color.green(),
         )
         embed.set_footer(
-            text=f"{len(provs)} province(s) | Stability {nat['stability']:.0f}/100 → ×{stab_mod:.2f} modifier"
+            text=i18n.text('{p0} province(s) | Stability {p1:.0f}/100 → ×{p2:.2f} modifier', p0=len(provs), p1=nat['stability'], p2=stab_mod)
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -593,6 +587,7 @@ class ProvincesCog(commands.Cog):
     @province_grp.command(name="info",
                           description="View province details / Szczegoly prowincji")
     @app_commands.describe(cell_id="Azgaar cell ID / ID komorki")
+    @i18n.localized
     async def info(self, interaction: discord.Interaction, cell_id: int):
         lang = _lang(interaction)
         with db.cursor() as cur:
@@ -612,21 +607,21 @@ class ProvincesCog(commands.Cog):
         resources = json.loads(row["base_resources_json"])
         owner_str = (
             f"{row['nation_flag'] or ''} {row['nation_name']}".strip()
-            if row["nation_name"] else "*Unclaimed*"
+            if row["nation_name"] else i18n.text('*Unclaimed*')
         )
-        display  = row["name"] or f"Cell #{cell_id}"
-        res_str  = ", ".join(f"{k}: {v}" for k, v in resources.items()) or "—"
+        display  = row["name"] or i18n.text('Cell #{p0}', p0=cell_id)
+        res_str  = ", ".join(f"{i18n.term(k)}: {v}" for k, v in resources.items()) or "—"
         embed = discord.Embed(
-            title=f"Province — {display}",
+            title=i18n.text('Province — {p0}', p0=display),
             color=discord.Color.green() if row["nation_name"] else discord.Color.greyple(),
         )
-        embed.add_field(name="Cell ID",        value=str(cell_id),              inline=True)
-        embed.add_field(name="Owner",          value=owner_str,                 inline=True)
-        embed.add_field(name="Terrain",        value=row["terrain"],            inline=True)
-        embed.add_field(name="Biome",          value=row["biome"],              inline=True)
-        embed.add_field(name="Population",     value=f"{row['population']:,}",  inline=True)
-        embed.add_field(name="Fortification",  value=str(row["fortification_level"]), inline=True)
-        embed.add_field(name="Base Resources", value=res_str,                   inline=False)
+        embed.add_field(name=i18n.text('Cell ID'),        value=str(cell_id),              inline=True)
+        embed.add_field(name=i18n.text('Owner'),          value=owner_str,                 inline=True)
+        embed.add_field(name=i18n.text('Terrain'),        value=i18n.term(row["terrain"]), inline=True)
+        embed.add_field(name=i18n.text('Biome'),          value=i18n.term(row["biome"]), inline=True)
+        embed.add_field(name=i18n.text('Population'),     value=f"{row['population']:,}",  inline=True)
+        embed.add_field(name=i18n.text('Fortification'),  value=str(row["fortification_level"]), inline=True)
+        embed.add_field(name=i18n.text('Base Resources'), value=res_str,                   inline=False)
         await interaction.response.send_message(embed=embed)
 
     # -------------------------------------------------- /province list
@@ -636,6 +631,7 @@ class ProvincesCog(commands.Cog):
         nation="Nation name / Nazwa narodu",
         page="Page / Strona",
     )
+    @i18n.localized
     async def province_list(self, interaction: discord.Interaction,
                             nation: str, page: int = 1):
         lang = _lang(interaction)
@@ -667,15 +663,15 @@ class ProvincesCog(commands.Cog):
         lines = []
         for r in rows:
             cid  = r["azgaar_cell_id"]
-            name = r["name"] or f"Cell #{cid}"
-            lines.append(f"`{cid:>6}` **{name}** — {r['terrain']} | pop: {r['population']:,}")
+            name = r["name"] or i18n.text('Cell #{p0}', p0=cid)
+            lines.append(i18n.text('`{p0:>6}` **{p1}** — {p2} | pop: {p3:,}', p0=cid, p1=name, p2=i18n.term(r['terrain']), p3=r['population']))
         flag = nation_row["flag"] or ""
         embed = discord.Embed(
-            title=f"{flag} {nation_row['name']} — Provinces".strip(),
+            title=i18n.text('{p0} {p1} — Provinces', p0=flag, p1=nation_row['name']).strip(),
             description="\n".join(lines),
             color=discord.Color.blue(),
         )
-        embed.set_footer(text=f"Page {page}/{total_pages} · {total} province(s) total")
+        embed.set_footer(text=i18n.text('Page {p0}/{p1} · {p2} province(s) total', p0=page, p1=total_pages, p2=total))
         await interaction.response.send_message(embed=embed)
 
 

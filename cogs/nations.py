@@ -61,20 +61,21 @@ class NationCog(commands.Cog):
         flag="Flag emoji or URL / Emoji flagi lub URL",
         government="Government type / Typ rzadu",
     )
+    @i18n.localized
     async def found(
         self,
         interaction: discord.Interaction,
         name: str,
         history: str,
         flag: str = "",
-        government: str = "Monarchy",
+        government: str = "",
     ):
         lang = _lang(interaction)
-
+        government = government or i18n.text("Monarchy")
         clean_history = history.strip()
         if not clean_history:
             await interaction.response.send_message(
-                "You must provide a brief history/lore to found a nation.",
+                i18n.text('You must provide a brief history/lore to found a nation.'),
                 ephemeral=True,
             )
             return
@@ -121,13 +122,14 @@ class NationCog(commands.Cog):
             description=i18n.t(lang, "nation_founded_desc", name=name, flag=flag, government=government),
             color=discord.Color.green(),
         )
-        embed.add_field(name="History / Lore", value=clean_history, inline=False)
+        embed.add_field(name=i18n.text('History / Lore'), value=clean_history, inline=False)
 
         await interaction.response.send_message(embed=embed)
 
     # ------------------------------------------------------------------ /nation stats
     @nation_group.command(name="stats", description="View nation stats / Statystyki narodu")
     @app_commands.describe(name="Nation name, blank = your own / Nazwa, puste = twoj narod")
+    @i18n.localized
     async def stats(self, interaction: discord.Interaction, name: str = ""):
         lang = _lang(interaction)
         nation = _get_by_name(name) if name else _get_by_owner(str(interaction.user.id))
@@ -160,28 +162,28 @@ class NationCog(commands.Cog):
             embed.set_thumbnail(url=flag)
 
         stab = nation["stability"]
-        if stab >= 80:   stab_str = f"✅ {stab:.0f}/100 (Stable)"
-        elif stab >= 60: stab_str = f"🟡 {stab:.0f}/100 (Tense)"
-        elif stab >= 40: stab_str = f"🟠 {stab:.0f}/100 (Unstable)"
-        else:            stab_str = f"🔴 {stab:.0f}/100 (Crisis)"
+        if stab >= 80:   stab_str = i18n.text('✅ {p0:.0f}/100 (Stable)', p0=stab)
+        elif stab >= 60: stab_str = i18n.text('🟡 {p0:.0f}/100 (Tense)', p0=stab)
+        elif stab >= 40: stab_str = i18n.text('🟠 {p0:.0f}/100 (Unstable)', p0=stab)
+        else:            stab_str = i18n.text('🔴 {p0:.0f}/100 (Crisis)', p0=stab)
 
-        embed.add_field(name="Government",  value=nation["government_type"],         inline=True)
-        embed.add_field(name="Treasury",    value=f"{nation['treasury']:.0f} gold",  inline=True)
-        embed.add_field(name="Stability",   value=stab_str,                          inline=True)
-        embed.add_field(name="Population",  value=f"{total_population:,}",           inline=True)
+        embed.add_field(name=i18n.text('Government'),  value=nation["government_type"],         inline=True)
+        embed.add_field(name=i18n.text('Treasury'),    value=i18n.text('{p0:.0f} gold', p0=nation['treasury']),  inline=True)
+        embed.add_field(name=i18n.text('Stability'),   value=stab_str,                          inline=True)
+        embed.add_field(name=i18n.text('Population'),  value=f"{total_population:,}",           inline=True)
         
         stab_mod = 0.75 + (stab / 100.0) * 0.25
-        embed.add_field(name="Production",  value=f"×{stab_mod:.2f} (stability)",   inline=True)
+        embed.add_field(name=i18n.text('Production'),  value=i18n.text('×{p0:.2f} (stability)', p0=stab_mod),   inline=True)
         
         embed.add_field(
-            name="Tech Levels",
-            value="\n".join(f"{k.capitalize()}: {v:.1f}" for k, v in tech.items()),
+            name=i18n.text('Tech Levels'),
+            value="\n".join(f"{i18n.term(k)}: {v:.1f}" for k, v in tech.items()),
             inline=True,
         )
         if resources:
             embed.add_field(
-                name="Resources",
-                value="\n".join(f"{k.capitalize()}: {v}" for k, v in resources.items()),
+                name=i18n.text('Resources'),
+                value="\n".join(f"{i18n.term(k)}: {v}" for k, v in resources.items()),
                 inline=True,
             )
         created_at = nation["created_at"]
@@ -190,7 +192,7 @@ class NationCog(commands.Cog):
         else:
             created_str = str(created_at)[:10]
         
-        embed.set_footer(text=f"Founded: {created_str}")
+        embed.set_footer(text=i18n.text('Founded: {p0}', p0=created_str))
         await interaction.response.send_message(embed=embed)
 
     # ------------------------------------------------------------------ /nation history
@@ -199,6 +201,7 @@ class NationCog(commands.Cog):
         name="Nation name / Nazwa narodu",
         page="Page number / Numer strony",
     )
+    @i18n.localized
     async def history(self, interaction: discord.Interaction, name: str, page: int = 1):
         lang   = _lang(interaction)
         nation = _get_by_name(name)
@@ -252,11 +255,12 @@ class NationCog(commands.Cog):
             description="\n\n".join(lines),
             color=discord.Color.gold(),
         )
-        embed.set_footer(text=f"Page {page}/{total_pages}")
+        embed.set_footer(text=i18n.text('Page {p0}/{p1}', p0=page, p1=total_pages))
         await interaction.response.send_message(embed=embed)
 
     # ------------------------------------------------------------------ /nation list
     @nation_group.command(name="list", description="List all nations / Lista wszystkich narodow")
+    @i18n.localized
     async def nation_list(self, interaction: discord.Interaction):
         lang = _lang(interaction)
         with db.cursor() as cur:
@@ -287,6 +291,7 @@ class NationCog(commands.Cog):
         name="Nation name / Nazwa narodu",
         text="Entry text / Tresc wpisu",
     )
+    @i18n.localized
     async def history_add(self, interaction: discord.Interaction, name: str, text: str):
         lang = _lang(interaction)
         if not _gm(interaction):
@@ -305,6 +310,7 @@ class NationCog(commands.Cog):
     # ------------------------------------------------------------------ /nation delete
     @nation_group.command(name="delete", description="[GM] Delete a nation / [GM] Usun narod")
     @app_commands.describe(name="Nation name to delete / Nazwa narodu do usuniecia")
+    @i18n.localized
     async def delete(self, interaction: discord.Interaction, name: str):
         lang = _lang(interaction)
         if not _gm(interaction):
@@ -315,7 +321,7 @@ class NationCog(commands.Cog):
             await interaction.response.send_message(i18n.t(lang, "nation_not_found"), ephemeral=True)
             return
 
-        class ConfirmDelete(discord.ui.View):
+        class ConfirmDelete(i18n.LocalizedView):
             def __init__(self):
                 super().__init__(timeout=30)
 
@@ -327,20 +333,18 @@ class NationCog(commands.Cog):
                     cur.execute("DELETE FROM nations WHERE id=?", (nation["id"],))
                 self.stop()
                 await btn.response.edit_message(
-                    content=f"🗑️ Nation **{nation['name']}** deleted. Provinces unclaimed.",
+                    content=i18n.text('🗑️ Nation **{p0}** deleted. Provinces unclaimed.', p0=nation['name']),
                     embed=None, view=None)
 
             @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
             async def cancel(self, btn: discord.Interaction, button: discord.ui.Button):
                 self.stop()
-                await btn.response.edit_message(content="Cancelled.", embed=None, view=None)
+                await btn.response.edit_message(content=i18n.text('Cancelled.'), embed=None, view=None)
 
         embed = discord.Embed(
-            title="⚠️ Confirm Nation Deletion",
+            title=i18n.text('⚠️ Confirm Nation Deletion'),
             description=(
-                f"This will permanently delete **{nation['name']}** and release all their provinces.\n"
-                "Military units, blueprints, history, and megaprojects will also be deleted.\n\n"
-                "**This cannot be undone.**"
+                i18n.text('This will permanently delete **{p0}** and release all their provinces.\nMilitary units, blueprints, history, and megaprojects will also be deleted.\n\n**This cannot be undone.**', p0=nation['name'])
             ),
             color=discord.Color.red(),
         )
