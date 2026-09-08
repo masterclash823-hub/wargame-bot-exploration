@@ -205,6 +205,12 @@ CREATE TABLE IF NOT EXISTS events (
     posted_at     TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS event_publications (
+    event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+    visibility TEXT NOT NULL DEFAULT 'private',
+    channel_id TEXT
+);
+
 CREATE TABLE IF NOT EXISTS event_runs (
     event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
     version INTEGER NOT NULL DEFAULT 0,

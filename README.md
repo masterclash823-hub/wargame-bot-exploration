@@ -1,5 +1,24 @@
 # Wargame Bot
 
+## Publikowanie eventów
+
+GM ustawia kanał przez `/event channel channel:#wydarzenia`. Przy publikacji
+`/event post event_id:12 visibility:public` pokazuje wszystkim narrację i ilustrację
+wyszukaną w Wikimedia Commons. Opcjonalne `channel` zmienia kanał dla jednego
+eventu, a `image_query` pozwala podać hasła wyszukiwania ilustracji.
+Bot wybiera obrazy domeny publicznej/CC0 i odrzuca oznaczone jako wygenerowane AI.
+Jeżeli nie znajdzie ilustracji, zachowuje szkic i umożliwia ponowienie publikacji.
+
+`visibility:private` (domyślnie) udostępnia event tylko właścicielowi wybranego
+państwa oraz GM. Państwo wskazuje się wcześniej przy `/event generate`.
+Decyzje w obu trybach trafiają do gracza przez DM; przy zamkniętych DM można
+użyć `/event play`. Publiczna wiadomość nie zawiera opcji ani efektów liczbowych.
+Prywatne eventy i ich historia nie są widoczne dla innych graczy.
+
+Plan bitwy bez przypisanych jednostek nadal można zapisać, ale autor oraz GM
+przeglądający `/battle plans_pending` otrzymają ostrzeżenie. Wpisanie jednostek
+wyłącznie w opisie planu nie przypisuje ich do bitwy.
+
 ## Panel gracza
 
 Po wdrożeniu GM uruchamia raz `/panel_publish` na wybranym kanale. Bot publikuje
