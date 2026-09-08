@@ -10,6 +10,7 @@ Event commands:
 from flags import flag_text, flagged_embed
 import json
 import asyncio
+from typing import Literal
 from datetime import datetime, timezone
 
 import discord
@@ -21,7 +22,8 @@ import db
 import i18n
 from utils import short_date
 import event_adventure as adventure
-from event_ui import EventView, render_event
+from event_ui import EventView, render_event, render_public_event
+from event_images import find_event_image
 
 
 def _event_language(nat):
@@ -377,9 +379,13 @@ class EventsCog(commands.Cog):
     # -------------------------------------------------- /event post
     @event_grp.command(name="post",
                        description="[GM] Post an event publicly / [GM] Opublikuj event")
-    @app_commands.describe(event_id="Event ID / ID eventu")
+    @app_commands.describe(event_id="Event ID / ID eventu", channel="Public event channel / Kanał publicznego eventu",
+                           visibility="public = everyone, private = nation owner / Widoczność",
+                           image_query="Optional image search keywords / Opcjonalne hasła wyszukiwania obrazka")
     @i18n.localized
-    async def event_post(self, interaction: discord.Interaction, event_id: int):
+    async def event_post(self, interaction: discord.Interaction, event_id: int,
+                         visibility: Literal['public', 'private'] = 'private',
+                         channel: discord.TextChannel = None, image_query: str = ''):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
@@ -396,19 +402,44 @@ class EventsCog(commands.Cog):
         if not nat:
             await interaction.followup.send(i18n.text('Nation not found.'), ephemeral=True)
             return
+        lang = _event_language(nat)
+        ch = None
+        image = None
+        if visibility == 'public':
+            channel_id = _cfg(f'event_channel_{interaction.guild.id}', _cfg('announce_channel_id'))
+            ch = channel or (self.bot.get_channel(int(channel_id)) if channel_id else None)
+            if not ch:
+                await interaction.followup.send(adventure.tr(lang,
+                    'Wskaż kanał publicznego eventu albo ustaw go przez /event channel.',
+                    'Choose a public channel or configure /event channel.'), ephemeral=True)
+                return
+            permissions = ch.permissions_for(interaction.guild.me)
+            if (ch.guild.id != interaction.guild.id or not permissions.view_channel
+                    or not permissions.send_messages or not permissions.embed_links
+                    or not ch.permissions_for(interaction.guild.default_role).view_channel):
+                await interaction.followup.send(adventure.tr(lang,
+                    'Kanał musi być widoczny dla @everyone, a bot musi móc go czytać i wysyłać osadzone wiadomości.',
+                    'The channel must be visible to @everyone and the bot must be able to view it and send embeds.'), ephemeral=True)
+                return
+            image = await find_event_image(ev['gm_final_text'], image_query)
+            if not image:
+                await interaction.followup.send(adventure.tr(lang,
+                    'Nie znaleziono odpowiedniej ilustracji. Event pozostaje szkicem; ponów /event post z innym image_query.',
+                    'No suitable illustration found. The event remains a draft; retry /event post with different image_query keywords.'), ephemeral=True)
+                return
         try:
-            state = adventure.start_run(await adventure.prepare_run(ev, nat))
+            prepared = await adventure.prepare_run(ev, nat)
+            prepared.update(visibility=visibility, channel_id=str(ch.id) if ch else None, public_image=image)
+            state = adventure.start_run(prepared)
         except ValueError as exc:
             await interaction.followup.send(str(exc), ephemeral=True)
             return
         # Publishing opens the first decision. No nation balances change here.
         embed = render_event(state)
         failures = []
-        ch_id = _cfg("announce_channel_id")
-        ch = self.bot.get_channel(int(ch_id)) if ch_id else None
         if ch:
             try:
-                await ch.send(embed=embed, view=EventView(state), allowed_mentions=discord.AllowedMentions.none())
+                await ch.send(embed=render_public_event(state), allowed_mentions=discord.AllowedMentions.none())
             except discord.HTTPException:
                 failures.append("channel")
         try:
@@ -424,6 +455,20 @@ class EventsCog(commands.Cog):
         if failures:
             notice += "\n" + adventure.tr(state["lang"], "Nie udało się wysłać: ", "Delivery failed: ") + ", ".join(failures)
         await interaction.followup.send(notice, embed=embed, view=EventView(state), ephemeral=True)
+
+    @event_grp.command(name='channel', description='[GM] Default public event channel / Kanał eventów')
+    @i18n.localized
+    async def event_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        if not _gm(interaction):
+            await interaction.response.send_message(i18n.t(_lang(interaction), 'gm_only'), ephemeral=True)
+            return
+        if channel.guild.id != interaction.guild.id:
+            return
+        with db.cursor() as c:
+            c.execute('INSERT INTO game_config(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+                      (f'event_channel_{interaction.guild.id}', str(channel.id)))
+        await interaction.response.send_message(adventure.tr(_lang(interaction),
+            f'Kanał publicznych eventów: {channel.mention}', f'Public event channel: {channel.mention}'), ephemeral=True)
 
     @event_grp.command(name="play", description="Continue your event / Kontynuuj wydarzenie")
     @i18n.localized
@@ -493,6 +538,12 @@ class EventsCog(commands.Cog):
                         i18n.t(lang, "no_nation"), ephemeral=True)
                     return
             rows = c.fetchall()
+
+        if not is_gm:
+            with db.cursor() as c:
+                c.execute("SELECT event_id FROM event_publications WHERE visibility='private'")
+                private_ids = {r['event_id'] for r in c.fetchall()}
+            rows = [r for r in rows if r['id'] not in private_ids or (nat and r['nation_id'] == nat['id'])]
 
         if not rows:
             await interaction.response.send_message("Nie znaleziono wydarzeń." if lang == "pl" else "No events found.", ephemeral=True)

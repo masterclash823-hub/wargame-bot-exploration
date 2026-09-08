@@ -7,6 +7,18 @@ import event_adventure as adventure
 from flags import flagged_embed
 
 
+def render_public_event(state):
+    """Only the approved opening and sourced illustration are public."""
+    image = state.get('public_image')
+    embed = discord.Embed(title=f"{state['nation'][:150]} — #{state['event_id']}",
+                          description=state['opening'][:4096], color=discord.Color.purple())
+    if image:
+        embed.set_image(url=image['url'])
+        embed.url = image['source']
+        embed.set_footer(text=f"{image['credit']} · {image['license']} · Wikimedia Commons")
+    return embed
+
+
 def render_event(state):
     lang = state["lang"]
     title = adventure.tr(lang, "Wydarzenie", "Event")

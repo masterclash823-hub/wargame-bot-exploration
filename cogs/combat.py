@@ -337,6 +337,8 @@ class CombatCog(commands.Cog):
                             value=", ".join(i18n.text('Group #{p0}', p0=f['unit_id']) for f in forces),
                             inline=False)
         embed.set_footer(text=i18n.text('Only you and the GM can see this plan.'))
+        if not forces:
+            embed.add_field(name='⚠️', value=i18n.text('No units assigned. This plan has no registered forces; a text note does not assign units.'), inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # -------------------------------------------------- /battle plans_pending
@@ -369,6 +371,8 @@ class CombatCog(commands.Cog):
             orders_full = r["orders_text"]
             orders_disp = orders_full.split(" | Location:")[0][:200]
             name = f"Plan #{r['id']} — {short_date(r['submitted_at'])}"
+            if not forces:
+                name = '⚠️ ' + name
             value = (
                     i18n.text('**Nation:** {p0} {p1}\n**Location:** {p2}\n**Orders:** {p3}\n**Units:** {p4} group(s) committed', p0=(flag_text(r['nflag']))[:80], p1=r['nname'][:200], p2=loc_str, p3=orders_disp, p4=len(forces))
                 )
@@ -376,6 +380,8 @@ class CombatCog(commands.Cog):
                 pages.append(embed)
                 embed = discord.Embed(title=i18n.text('⚔️ Pending Battle Plans'), color=discord.Color.red())
             page_nation = r['nname']
+            if not forces:
+                value += '\n⚠️ ' + i18n.text('No units assigned. This plan has no registered forces; a text note does not assign units.')
             flagged_embed(embed, (r['nflag'], r['nname']))
             embed.add_field(name=name, value=value, inline=False)
         pages.append(embed)

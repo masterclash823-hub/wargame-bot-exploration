@@ -199,6 +199,8 @@ def start_run(state):
             raise ValueError(i18n.text('Draft changed. Run /event post again. / Szkic zmieniony. Powtórz /event post.'))
         c.execute("INSERT INTO event_runs(event_id,version,state_json) VALUES(?,?,?)",
                   (state["event_id"], 0, json.dumps(state, ensure_ascii=False)))
+        c.execute('INSERT INTO event_publications(event_id,visibility,channel_id) VALUES(?,?,?)',
+                  (state['event_id'], state.get('visibility', 'public'), state.get('channel_id')))
         c.execute("UPDATE events SET status='active',posted_at=CURRENT_TIMESTAMP WHERE id=?", (state["event_id"],))
     return state
 
@@ -281,7 +283,7 @@ async def decide(event_id, version, owner_id, choice=None, answer=None):
             entry += '\n' + tr(state['lang'], 'Zastosowane efekty: ', 'Applied effects: ')
             entry += effects_text(actual, state['lang'])
             c.execute("INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,?,?)",
-                      (nat["id"], "ai", entry))
+                      (nat["id"], "event_private" if state.get("visibility") == "private" else "ai", entry))
         c.execute("UPDATE event_runs SET version=?,state_json=? WHERE event_id=?",
                   (state["version"], json.dumps(state, ensure_ascii=False), event_id))
     return state

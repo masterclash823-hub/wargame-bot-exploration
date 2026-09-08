@@ -166,7 +166,7 @@
   "{p0} Battle #{p1}": "{p0} Bitwa #{p1}",
   "Attacker's Plan": "Plan atakującego",
   "Defender's Plan": "Plan obrońcy",
-  "⏳ Consulting AI for combat modifier...": "⏳ AI ocenia modyfikatory bojowe…",
+  "⏳ Consulting AI for combat modifier...": "⏳ Analizuję teren, jednostki i plany...",
   "⚔️ Battle Report — Battle #{p0}": "⚔️ Raport z bitwy #{p0}",
   "Combatants": "Walczące strony",
   "**{p0} {p1}** (Attacker)\nvs\n**{p2} {p3}** (Defender)": "**{p0} {p1}** (atakujący)\nprzeciw\n**{p2} {p3}** (obrońca)",
@@ -735,7 +735,6 @@
   "Unspecified": "Nieokreślona",
   "neither side": "żadna ze stron",
   "the battlefield": "polu bitwy",
-  "⏳ Consulting AI for combat modifier...": "⏳ Analizuję teren, jednostki i plany...",
   "📝 Writing the detailed battle report...": "📝 Tworzę szczegółowy raport z przebiegu bitwy...",
   "📍 Final battlefield": "📍 Ostateczne pole bitwy",
   "**{p0}** · terrain: {p1} · biome: {p2} · fortification: {p3}": "**{p0}** · teren: {p1} · biom: {p2} · fortyfikacje: {p3}",
@@ -748,5 +747,12 @@
   "Forces — {p0}": "Siły — {p0}",
   "At {p0}, {p1} followed '{p2}', while {p3} answered with '{p4}'. The fight developed across {p5} terrain.": "Pod {p0} siły {p1} realizowały plan „{p2}”, a siły {p3} odpowiedziały działaniem „{p4}”. Walka rozwinęła się na terenie typu {p5}.",
   "The committed units met directly; effective attack reached {p0}, against {p1} defense. {p2}": "Zaangażowane jednostki starły się bezpośrednio; skuteczna siła ataku wyniosła {p0}, wobec {p1} obrony. {p2}",
-  "{p0} held the advantage. Attacker casualties were about {p1}%, and defender casualties about {p2}% of committed forces.": "Przewagę uzyskała strona: {p0}. Straty atakującego wyniosły około {p1}%, a obrońcy około {p2}% zaangażowanych sił."
+  "{p0} held the advantage. Attacker casualties were about {p1}%, and defender casualties about {p2}% of committed forces.": "Przewagę uzyskała strona: {p0}. Straty atakującego wyniosły około {p1}%, a obrońcy około {p2}% zaangażowanych sił.",
+  "No units assigned. This plan has no registered forces; a text note does not assign units.": "Brak przypisanych jednostek. Plan nie ma zarejestrowanych sił; opis tekstowy nie przypisuje jednostek.",
+  "public": "publiczny",
+  "private": "prywatny",
+  "Public event channel / Kanał publicznego eventu": "Kanał publicznego eventu",
+  "public = everyone, private = nation owner / Widoczność": "Publiczny = wszyscy; prywatny = właściciel państwa",
+  "Optional image search keywords / Opcjonalne hasła wyszukiwania obrazka": "Opcjonalne hasła wyszukiwania ilustracji (najlepiej po angielsku)",
+  "[GM] Default public event channel / Kanał eventów": "[GM] Domyślny kanał publicznych wydarzeń"
 }

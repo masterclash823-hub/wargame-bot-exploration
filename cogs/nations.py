@@ -209,12 +209,12 @@ class NationCog(commands.Cog):
 
         is_owner = nation["owner_id"] == str(interaction.user.id)
         is_gm = _gm(interaction)
-        # trade_private entries visible only to nation owner and GM
+        # Private trade and event entries are visible only to nation owner and GM.
         if is_owner or is_gm:
             source_filter = ""
             filter_params: tuple = (nation["id"],)
         else:
-            source_filter = "AND source != 'trade_private'"
+            source_filter = "AND source NOT IN ('trade_private','event_private')"
             filter_params = (nation["id"],)
 
         page     = max(1, page)
@@ -254,7 +254,7 @@ class NationCog(commands.Cog):
             color=discord.Color.gold(),
         )
         embed.set_footer(text=i18n.text('Page {p0}/{p1}', p0=page, p1=total_pages))
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=is_owner or is_gm)
 
     # ------------------------------------------------------------------ /nation list
     @nation_group.command(name="list", description="List all nations / Lista wszystkich narodow")

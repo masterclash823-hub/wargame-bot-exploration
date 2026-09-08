@@ -118,12 +118,13 @@ class BattleEventTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIn("Szkic wydarzenia #1", gm.followup.send.call_args.kwargs["embed"].title)
         with patch.object(event_adventure, "scene", AsyncMock(return_value=("Polskie wydarzenie.", ["A", "B", "C"]))):
             await cog.event_post.callback(cog, gm, 1)
-        embed = channel.send.call_args.kwargs["embed"]
+        channel.send.assert_not_awaited()
+        embed = owner.send.call_args.kwargs["embed"]
         self.assertIn("Wydarzenie", embed.title)
         self.assertIn("stabilności", embed.fields[0].value)
         self.assertIn("Wydarzenie", owner.send.call_args.kwargs["embed"].title)
         self.assertEqual(self.nation()["stability"], 50)
-        self.assertEqual(len(channel.send.call_args.kwargs["view"].children), 4)
+        self.assertEqual(len(owner.send.call_args.kwargs["view"].children), 4)
         original = db._UnifiedCursor.fetchall
         def pg_dates(cursor):
             rows = original(cursor)
