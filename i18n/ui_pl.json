@@ -758,5 +758,6 @@
   "Public event channel / Kanał publicznego eventu": "Kanał publicznego eventu",
   "public = everyone, private = nation owner / Widoczność": "Publiczny = wszyscy; prywatny = właściciel państwa",
   "Optional image search keywords / Opcjonalne hasła wyszukiwania obrazka": "Opcjonalne hasła wyszukiwania ilustracji (najlepiej po angielsku)",
+  "Search for an illustration (optional) / Szukaj ilustracji (opcjonalne)": "Szukaj ilustracji; wyłącz, aby opublikować bez obrazka",
   "[GM] Default public event channel / Kanał eventów": "[GM] Domyślny kanał publicznych wydarzeń"
 }

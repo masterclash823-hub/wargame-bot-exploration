@@ -3,7 +3,7 @@ from discord import Locale, app_commands
 import i18n
 
 PARAMETERS = {
-    'visibility':'widoczność', 'image_query':'wyszukiwanie_obrazka',
+    'visibility':'widoczność', 'image_query':'wyszukiwanie_obrazka', 'include_image':'dołącz_obrazek',
     'amount':'ilość','apply_casualties':'zastosuj_straty','atk_modifier_override':'mnożnik_ataku',
     'attacker_plan_id':'plan_atakującego','auth_key':'klucz','battle_id':'id_bitwy',
     'blueprint_id':'id_projektu','building':'budynek','category':'kategoria','cell_id':'id_komórki',
