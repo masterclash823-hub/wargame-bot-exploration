@@ -1,5 +1,17 @@
 # Wargame Bot
 
+## Długie plany bitew
+
+`/battle plan` przyjmuje do 6000 znaków w `orders` lub pełny plik UTF-8 `.txt`
+w `orders_file`. Łączny limit rozkazów wynosi 100 000 znaków. Jeżeli podano oba,
+tekst z pola zostaje umieszczony przed treścią pliku. Zbyt długi plan jest odrzucany
+z komunikatem, bez przycinania i bez zapisania niepełnej treści.
+
+Panel przyjmuje 4000 znaków (limit pojedynczego pola formularza Discorda).
+Pełny zapis planu otrzymujesz w prywatnym załączniku przy zgłoszeniu; później
+możesz pobrać go przez `/battle plan_show plan_id`. Właściciel widzi własne plany,
+a GM dowolny plan. Listy pokazują tylko skrót; AI otrzymuje pełną zapisaną treść.
+
 ## Publikowanie eventów
 
 GM ustawia kanał przez `/event channel channel:#wydarzenia`. Przy publikacji
