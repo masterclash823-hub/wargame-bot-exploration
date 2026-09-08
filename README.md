@@ -1,5 +1,19 @@
 # Wargame Bot
 
+## Podział strat w bitwie
+
+AI ocenia narażenie każdego oddziału na podstawie obu planów, terenu i jednostek
+(waga 0,25–4; wraz z uzasadnieniem). Wynik bitwy ustala łączną pulę strat strony.
+Bot rozdziela ją według liczebności i narażenia, nie przekraczając liczby wysłanych
+jednostek. Zaokrągla pulę w górę raz dla całej strony, a następnie rozdziela resztę
+według największych części ułamkowych. Mały oddział nie traci już automatycznie
+jednej jednostki tylko przez osobne zaokrąglenie.
+
+Narracja AI otrzymuje ostateczny podział strat i jego uzasadnienia; raport pokazuje
+również dokładne straty każdego oddziału. Niedostępne AI lub niepoprawna ocena
+oznaczają neutralną wagę 1 dla danego oddziału. W trybie bez odejmowania strat
+podział pozostaje symulacją. Zmiana dotyczy nowych rozstrzygnięć.
+
 ## Publikowanie eventów
 
 GM ustawia kanał przez `/event channel channel:#wydarzenia`. Przy publikacji
@@ -7,7 +21,10 @@ GM ustawia kanał przez `/event channel channel:#wydarzenia`. Przy publikacji
 wyszukaną w Wikimedia Commons. Opcjonalne `channel` zmienia kanał dla jednego
 eventu, a `image_query` pozwala podać hasła wyszukiwania ilustracji.
 Bot wybiera obrazy domeny publicznej/CC0 i odrzuca oznaczone jako wygenerowane AI.
-Jeżeli nie znajdzie ilustracji, zachowuje szkic i umożliwia ponowienie publikacji.
+Jeżeli nie znajdzie ilustracji lub wyszukiwarka jest niedostępna, rozpoczyna event
+bez obrazka. `include_image:False` wyłącza wyszukiwanie, również gdy podano
+`image_query`. Puste `image_query` przy włączonym obrazku oznacza automatyczny
+dobór tematu, a nie wyłączenie ilustracji.
 
 `visibility:private` (domyślnie) udostępnia event tylko właścicielowi wybranego
 państwa oraz GM. Państwo wskazuje się wcześniej przy `/event generate`.

@@ -1,4 +1,8 @@
 {
+  "Effective attack reached {p0}, against {p1} defense. Losses are listed separately for each unit group. {p2}": "Efektywny atak wyniósł {p0} wobec obrony {p1}. Straty podano osobno dla każdego oddziału. {p2}",
+  "Attacker losses": "Straty atakującego",
+  "Defender losses": "Straty obrońcy",
+  "simulation": "symulacja",
   "Activate the bot on this server (GM only)": "Aktywuj bota na tym serwerze (tylko GM)",
   "Secret key from the bot owner": "Tajny klucz od właściciela bota",
   "Set your preferred language / Ustaw jezyk": "Wybierz język odpowiedzi bota",
@@ -754,5 +758,6 @@
   "Public event channel / Kanał publicznego eventu": "Kanał publicznego eventu",
   "public = everyone, private = nation owner / Widoczność": "Publiczny = wszyscy; prywatny = właściciel państwa",
   "Optional image search keywords / Opcjonalne hasła wyszukiwania obrazka": "Opcjonalne hasła wyszukiwania ilustracji (najlepiej po angielsku)",
+  "Search for an illustration (optional) / Szukaj ilustracji (opcjonalne)": "Szukaj ilustracji; wyłącz, aby opublikować bez obrazka",
   "[GM] Default public event channel / Kanał eventów": "[GM] Domyślny kanał publicznych wydarzeń"
 }
