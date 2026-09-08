@@ -381,11 +381,12 @@ class EventsCog(commands.Cog):
                        description="[GM] Post an event publicly / [GM] Opublikuj event")
     @app_commands.describe(event_id="Event ID / ID eventu", channel="Public event channel / Kanał publicznego eventu",
                            visibility="public = everyone, private = nation owner / Widoczność",
-                           image_query="Optional image search keywords / Opcjonalne hasła wyszukiwania obrazka")
+                           image_query="Optional image search keywords / Opcjonalne hasła wyszukiwania obrazka",
+                           include_image="Search for an illustration (optional) / Szukaj ilustracji (opcjonalne)")
     @i18n.localized
     async def event_post(self, interaction: discord.Interaction, event_id: int,
                          visibility: Literal['public', 'private'] = 'private',
-                         channel: discord.TextChannel = None, image_query: str = ''):
+                         channel: discord.TextChannel = None, image_query: str = '', include_image: bool = True):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
@@ -421,12 +422,8 @@ class EventsCog(commands.Cog):
                     'Kanał musi być widoczny dla @everyone, a bot musi móc go czytać i wysyłać osadzone wiadomości.',
                     'The channel must be visible to @everyone and the bot must be able to view it and send embeds.'), ephemeral=True)
                 return
-            image = await find_event_image(ev['gm_final_text'], image_query)
-            if not image:
-                await interaction.followup.send(adventure.tr(lang,
-                    'Nie znaleziono odpowiedniej ilustracji. Event pozostaje szkicem; ponów /event post z innym image_query.',
-                    'No suitable illustration found. The event remains a draft; retry /event post with different image_query keywords.'), ephemeral=True)
-                return
+            if include_image:
+                image = await find_event_image(ev['gm_final_text'], image_query)
         try:
             prepared = await adventure.prepare_run(ev, nat)
             prepared.update(visibility=visibility, channel_id=str(ch.id) if ch else None, public_image=image)
@@ -454,6 +451,10 @@ class EventsCog(commands.Cog):
             f"✅ Event #{event_id} started. The player can use /event play {event_id}. Effects apply after decision three.")
         if failures:
             notice += "\n" + adventure.tr(state["lang"], "Nie udało się wysłać: ", "Delivery failed: ") + ", ".join(failures)
+        if visibility == 'public' and include_image and not image:
+            notice += "\n" + adventure.tr(_lang(interaction),
+                'Ilustracja jest niedostępna — event rozpoczęto bez obrazka.',
+                'An illustration is unavailable — the event started without an image.')
         await interaction.followup.send(notice, embed=embed, view=EventView(state), ephemeral=True)
 
     @event_grp.command(name='channel', description='[GM] Default public event channel / Kanał eventów')

@@ -7,7 +7,10 @@ GM ustawia kanał przez `/event channel channel:#wydarzenia`. Przy publikacji
 wyszukaną w Wikimedia Commons. Opcjonalne `channel` zmienia kanał dla jednego
 eventu, a `image_query` pozwala podać hasła wyszukiwania ilustracji.
 Bot wybiera obrazy domeny publicznej/CC0 i odrzuca oznaczone jako wygenerowane AI.
-Jeżeli nie znajdzie ilustracji, zachowuje szkic i umożliwia ponowienie publikacji.
+Jeżeli nie znajdzie ilustracji lub wyszukiwarka jest niedostępna, rozpoczyna event
+bez obrazka. `include_image:False` wyłącza wyszukiwanie, również gdy podano
+`image_query`. Puste `image_query` przy włączonym obrazku oznacza automatyczny
+dobór tematu, a nie wyłączenie ilustracji.
 
 `visibility:private` (domyślnie) udostępnia event tylko właścicielowi wybranego
 państwa oraz GM. Państwo wskazuje się wcześniej przy `/event generate`.
