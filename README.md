@@ -1,5 +1,19 @@
 # Wargame Bot
 
+## Podział strat w bitwie
+
+AI ocenia narażenie każdego oddziału na podstawie obu planów, terenu i jednostek
+(waga 0,25–4; wraz z uzasadnieniem). Wynik bitwy ustala łączną pulę strat strony.
+Bot rozdziela ją według liczebności i narażenia, nie przekraczając liczby wysłanych
+jednostek. Zaokrągla pulę w górę raz dla całej strony, a następnie rozdziela resztę
+według największych części ułamkowych. Mały oddział nie traci już automatycznie
+jednej jednostki tylko przez osobne zaokrąglenie.
+
+Narracja AI otrzymuje ostateczny podział strat i jego uzasadnienia; raport pokazuje
+również dokładne straty każdego oddziału. Niedostępne AI lub niepoprawna ocena
+oznaczają neutralną wagę 1 dla danego oddziału. W trybie bez odejmowania strat
+podział pozostaje symulacją. Zmiana dotyczy nowych rozstrzygnięć.
+
 ## Publikowanie eventów
 
 GM ustawia kanał przez `/event channel channel:#wydarzenia`. Przy publikacji
