@@ -1,5 +1,6 @@
 """Button-first player panel for the everyday game loop."""
 from __future__ import annotations
+from flags import flag_text, flagged_embed
 
 import json
 from collections.abc import Awaitable, Callable
@@ -26,7 +27,8 @@ PL = {
     "move": "Przemieść jednostkę", "new_blueprint": "Nowy projekt", "research": "Badania",
     "tech": "Poziomy technologii", "provinces": "Lista prowincji", "province": "Szczegóły prowincji",
     "colonies": "Kolonie", "colony_view": "Szczegóły kolonii", "colony_found": "Załóż kolonię",
-    "colony_develop": "Rozwiń kolonię", "routes": "Szlaki handlowe", "relations": "Relacje",
+    "colony_develop": "Rozwiń kolonię", "colony_expand": "Rozszerz kolonię",
+    "routes": "Szlaki handlowe", "relations": "Relacje",
     "war": "Wypowiedz wojnę", "peace": "Zawrzyj pokój", "alliance": "Zawrzyj sojusz",
     "battle_plan": "Wyślij plan bitwy", "battles": "Raporty bitew", "event_list": "Lista wydarzeń",
     "event_play": "Rozegraj wydarzenie", "help": "Pomoc", "tutorial": "Poradnik",
@@ -50,7 +52,8 @@ def tr(lang: str, key: str) -> str:
         "recruit":"Build units","move":"Move unit","new_blueprint":"New blueprint","research":"Research",
         "tech":"Technology levels","provinces":"Province list","province":"Province details",
         "colonies":"Colonies","colony_view":"Colony details","colony_found":"Found colony",
-        "colony_develop":"Develop colony","routes":"Trade routes","relations":"Relations",
+        "colony_develop":"Develop colony","colony_expand":"Expand colony",
+        "routes":"Trade routes","relations":"Relations",
         "war":"Declare war","peace":"Make peace","alliance":"Form alliance",
         "battle_plan":"Submit battle plan","battles":"Battle reports","event_list":"Event list",
         "event_play":"Play event","help":"Help","tutorial":"Tutorial",
@@ -211,7 +214,7 @@ ACTIONS = {
     "military": [("forces","🛡️"),("blueprints","📐"),("recruit","➕"),("move","➡️"),
                  ("new_blueprint","🧰"),("tech","🔬"),("research","🧪")],
     "territory": [("provinces","🗺️"),("province","🔎"),("colonies","🏝️"),("colony_view","🔎"),
-                  ("colony_found","🚩"),("colony_develop","📈"),("routes","🚢")],
+                  ("colony_found","🚩"),("colony_develop","📈"),("colony_expand","🧭"),("routes","🚢")],
     "diplomacy": [("relations","📜"),("war","⚔️"),("peace","🕊️"),("alliance","🤝"),
                   ("battle_plan","🗒️"),("battles","📖")],
     "events": [("event_list","📋"),("event_play","🎭")],
@@ -264,7 +267,8 @@ class PlayerPanel(OwnedView):
             trades = cur.fetchone()["n"]
             cur.execute("SELECT COUNT(*) AS n FROM events WHERE nation_id=? AND status IN ('posted','active')", (nation["id"],))
             events = cur.fetchone()["n"]
-        embed.description = f"{nation['flag'] or '🏳️'} **{nation['name']}**\n{tr(self.lang, 'private')}"
+        embed.description = f"{flag_text(nation['flag'])} **{nation['name']}**\n{tr(self.lang, 'private')}"
+        flagged_embed(embed, (nation['flag'], nation['name']))
         embed.add_field(name="💰 " + ("Skarbiec" if self.lang == "pl" else "Treasury"), value=f"{nation['treasury']:,.0f}")
         embed.add_field(name="⚖️ " + ("Stabilność" if self.lang == "pl" else "Stability"), value=f"{nation['stability']:.0f}/100")
         embed.add_field(name="🗺️/⚔️/🔁/🎭", value=f"{provinces} / {forces} / {trades} / {events}")
@@ -320,6 +324,7 @@ class PlayerPanel(OwnedView):
             "recruit":self.choose_blueprint, "move":self.choose_unit, "new_blueprint":self.choose_blueprint_type,
             "research":self.choose_research, "colony_view":self.choose_colony_view,
             "colony_found":self.choose_empty_province, "colony_develop":self.choose_colony_develop,
+            "colony_expand":self.choose_colony_expand,
             "war":lambda i:self.choose_nation(i,"declare_war"), "peace":lambda i:self.choose_nation(i,"make_peace"),
             "alliance":lambda i:self.choose_nation(i,"alliance"), "battle_plan":self.choose_battle_units,
             "battles":self.choose_battle, "event_play":self.choose_event,
@@ -358,7 +363,7 @@ class PlayerPanel(OwnedView):
                 {"label":"Chcesz zasoby / Receive resources","default":"{}"},{"label":"Chcesz złoto / Receive gold","default":"0"},
                 {"label":"Publiczna notatka / Public note","required":False,"max_length":300}],submit))
         await self.rows(i,"SELECT name,flag FROM nations WHERE id<>? ORDER BY name",(n['id'],),
-            lambda r:discord.SelectOption(label=f"{r['flag'] or '🏳️'} {r['name']}"[:100],value=r['name']),target)
+            lambda r:discord.SelectOption(label=f"{flag_text(r['flag'])} {r['name']}"[:100],value=r['name']),target)
 
     async def choose_trade(self,i):
         n=get_nation_by_owner(str(self.owner_id))
@@ -427,15 +432,38 @@ class PlayerPanel(OwnedView):
         await self.colonies(i,colony)
 
     async def choose_empty_province(self,i):
-        async def province(i2,cell):
-            async def submit(i3,name): await invoke(self.cog("ColonialismCog"),"colony_found",i3,int(cell),name)
-            await i2.response.send_modal(FieldsModal(tr(self.lang,"colony_found"),[{"label":"Nazwa kolonii / Colony name"}],submit))
-        await self.rows(i,"SELECT azgaar_cell_id,name,terrain FROM provinces WHERE owner_nation_id IS NULL AND active=1 ORDER BY azgaar_cell_id",(),lambda r:discord.SelectOption(label=(r['name'] or f"Cell {r['azgaar_cell_id']}")[:100],value=str(r['azgaar_cell_id']),description=i18n.term(r['terrain'],self.lang)),province)
+        async def submit(i2,cell,name):
+            await invoke(self.cog("ColonialismCog"),"colony_found",i2,int(cell),name)
+        hint=("Jeśli nie znasz ID, poproś administratora" if self.lang == "pl"
+              else "Ask an administrator if you do not know the ID")
+        await i.response.send_modal(FieldsModal(tr(self.lang,"colony_found"),[
+            {"label":"ID prowincji / Province ID","placeholder":hint},
+            {"label":"Nazwa kolonii / Colony name"},
+        ],submit))
+
+    async def choose_colony_expand(self,i):
+        async def source(i2,source_cell):
+            async def submit(i3,target_cell,name):
+                await invoke(self.cog("ColonialismCog"),"colony_expand",i3,int(source_cell),int(target_cell),name)
+            hint=("Wpisz ID sąsiedniego pola; w razie potrzeby zapytaj administratora" if self.lang == "pl"
+                  else "Enter an adjacent cell ID; ask an administrator if needed")
+            await i2.response.send_modal(FieldsModal(tr(self.lang,"colony_expand"),[
+                {"label":"ID sąsiedniej prowincji / Target ID","placeholder":hint},
+                {"label":"Nazwa nowej placówki / Outpost name"},
+            ],submit))
+        n=get_nation_by_owner(str(self.owner_id))
+        await self.rows(i,
+            "SELECT c.name,c.status,p.azgaar_cell_id FROM colonies c JOIN provinces p ON p.id=c.province_id "
+            "WHERE c.nation_id=? AND c.status IN ('settlement','colony','province') ORDER BY c.name",
+            (n['id'],),
+            lambda r:discord.SelectOption(label=r['name'][:100],value=str(r['azgaar_cell_id']),description=f"ID {r['azgaar_cell_id']} · {i18n.term(r['status'],self.lang)}"[:100]),
+            source,
+        )
 
     async def choose_nation(self,i,command):
         n=get_nation_by_owner(str(self.owner_id))
         async def done(i2,name): await invoke(self.cog("CombatCog"),command,i2,name)
-        await self.rows(i,"SELECT name,flag FROM nations WHERE id<>? ORDER BY name",(n['id'],),lambda r:discord.SelectOption(label=f"{r['flag'] or '🏳️'} {r['name']}"[:100],value=r['name']),done)
+        await self.rows(i,"SELECT name,flag FROM nations WHERE id<>? ORDER BY name",(n['id'],),lambda r:discord.SelectOption(label=f"{flag_text(r['flag'])} {r['name']}"[:100],value=r['name']),done)
 
     async def choose_battle_units(self,i):
         n=get_nation_by_owner(str(self.owner_id))

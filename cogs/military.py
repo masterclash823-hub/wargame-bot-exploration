@@ -14,6 +14,7 @@ Default blueprints are seeded into each new nation automatically.
 Units are floating by default - province assignment is optional.
 Upkeep: peace rate per unit, 3x in wartime.
 """
+from flags import flag_text, flagged_embed
 import json
 from copy import deepcopy
 import discord
@@ -311,10 +312,10 @@ class MilitaryCog(commands.Cog):
             rows = c.fetchall()
         if not rows:
             await interaction.response.send_message(i18n.text('No blueprints yet.'), ephemeral=True); return
-        embed = discord.Embed(
-            title=i18n.text('📐 Blueprints — {p0} {p1}', p0=nat['flag'] or '', p1=nat['name']).strip(),
+        embed = flagged_embed(discord.Embed(
+            title=i18n.text('📐 Blueprints — {p0} {p1}', p0=flag_text(nat['flag']), p1=nat['name']).strip(),
             color=discord.Color.dark_blue(),
-        )
+        ), (nat['flag'], nat['name']))
         for r in rows:
             stats = json.loads(r["stats_json"])
             if r["type"] == "ship":
@@ -568,10 +569,10 @@ class MilitaryCog(commands.Cog):
         total_upkeep = _upkeep(nat["id"])
         ships = [r for r in rows if r["btype"]=="ship"]
         units = [r for r in rows if r["btype"]!="ship"]
-        embed = discord.Embed(
-            title=i18n.text('⚔️ Forces — {p0} {p1}', p0=nat['flag'] or '', p1=nat['name']).strip(),
+        embed = flagged_embed(discord.Embed(
+            title=i18n.text('⚔️ Forces — {p0} {p1}', p0=flag_text(nat['flag']), p1=nat['name']).strip(),
             color=discord.Color.dark_red(),
-        )
+        ), (nat['flag'], nat['name']))
         # Calculate total fleet cargo
         total_cargo = sum(
             json.loads(r["stats_json"] or "{}").get("cargo", 0) * r["quantity"]

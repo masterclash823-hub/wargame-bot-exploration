@@ -7,6 +7,7 @@ Event commands:
   /event play <id>                - owner/GM: resume or inspect the saved event
   /event list [nation]            - GM sees all drafts; players see only posted events
 """
+from flags import flag_text, flagged_embed
 import json
 import asyncio
 from datetime import datetime, timezone
@@ -290,12 +291,12 @@ class EventsCog(commands.Cog):
         except Exception:
             pass
 
-        embed = discord.Embed(
+        embed = flagged_embed(discord.Embed(
             title=("📜 Szkic wydarzenia" if lang == "pl" else "📜 Event Draft")
-                  + f" #{event_id} — {nat['flag'] or ''} {nat['name']}",
+                  + f" #{event_id} — {flag_text(nat['flag'])} {nat['name']}",
             description=event_text,
             color=discord.Color.purple(),
-        )
+        ), (nat['flag'], nat['name']))
         if effects:
             eff_lines = []
             if effects.get("stability"):
@@ -498,22 +499,29 @@ class EventsCog(commands.Cog):
             return
 
         STATUS_EMOJI = {"draft": "📝", "posted": "📜", "active": "🎲", "resolved": "✅"}
+        from utils import EmbedPager
+        pages = []
         embed = discord.Embed(
             title=("📜 Wydarzenia" if lang == "pl" else "📜 Events")
                   + ((" — Widok GM" if lang == "pl" else " — GM View") if is_gm else ""),
             color=discord.Color.purple(),
         )
         for r in rows:
+            if embed.fields:
+                pages.append(embed)
+                embed = discord.Embed(title=embed.title, color=discord.Color.purple())
+            flagged_embed(embed, (r['nflag'], r['nname']))
             text   = r["gm_final_text"] if is_gm else r["gm_final_text"]
             status = STATUS_EMOJI.get(r["status"], "❓")
             date   = short_date(r["posted_at"] or r["created_at"])
             embed.add_field(
-                name=f"{status} #{r['id']} — {r['nflag'] or ''} {r['nname']} ({date})",
+                name=f"{status} #{r['id']} — {flag_text(r['nflag'])} {r['nname']} ({date})",
                 value=text[:200] + ("..." if len(text) > 200 else ""),
                 inline=False,
             )
         embed.set_footer(text="/event play <id> — " + adventure.tr(lang, "kontynuuj lub zobacz finał", "continue or view the outcome"))
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        pages.append(embed)
+        await interaction.response.send_message(embed=pages[0], view=EmbedPager(pages, interaction.user.id), ephemeral=True)
 
 
 async def setup(bot):

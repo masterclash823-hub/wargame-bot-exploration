@@ -8,6 +8,7 @@ Province commands:
   /province info            - anyone: view a single province by cell ID
   /province list            - anyone: list all provinces owned by a nation
 """
+from flags import flag_text, flagged_embed
 import json
 import aiohttp
 import discord
@@ -104,6 +105,12 @@ async def _fetch_json(source: str, attachment: discord.Attachment | None) -> dic
             raw = await resp.read()
             return _parse_bytes(raw)
 
+def _neighbor_ids(value) -> list[int]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [int(item) for item in value if str(item).lstrip("-").isdigit()]
+
+
 def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
     """
     Parse Azgaar JSON into a list of province dicts.
@@ -167,6 +174,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
             provinces.append({
                 "cell_id": cid, "name": name, "biome": bname,
                 "terrain": terrain, "resources": resources, "pop": pop,
+                "neighbors": _neighbor_ids(cell.get("c")),
             })
 
     # --- Format B: cells is a DICT of parallel arrays ---
@@ -180,6 +188,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
         heights   = cells_raw.get("h",     [0] * len(cell_ids))
         rivers    = cells_raw.get("r",     [0] * len(cell_ids))
         havens    = cells_raw.get("haven", [0] * len(cell_ids))
+        neighbors = cells_raw.get("c",     [[] for _ in cell_ids])
 
         for idx, cid in enumerate(cell_ids):
             cid       = int(cid)
@@ -199,6 +208,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
             provinces.append({
                 "cell_id": cid, "name": name, "biome": bname,
                 "terrain": terrain, "resources": resources, "pop": pop,
+                "neighbors": _neighbor_ids(neighbors[idx] if idx < len(neighbors) else None),
             })
     else:
         return [], i18n.text("Unexpected 'cells' type: {p0}. Please share a snippet of your JSON so the parser can be adjusted.", p0=type(cells_raw).__name__)
@@ -245,7 +255,28 @@ def _upsert_provinces(province_list: list[dict], resync: bool) -> dict:
                 )
                 inserted += 1
 
-    return {"inserted": inserted, "updated": updated, "deactivated": deactivated}
+        # Azgaar exports adjacency as ``c``. Rebuild it with every import so
+        # expansion can only target a real, currently active neighbouring cell.
+        edges: set[tuple[int, int]] = set()
+        for p in province_list:
+            cell_id = p["cell_id"]
+            for neighbor_id in p.get("neighbors", []):
+                if neighbor_id in incoming and neighbor_id != cell_id:
+                    edges.add((cell_id, neighbor_id))
+                    edges.add((neighbor_id, cell_id))
+        cur.execute("DELETE FROM province_neighbors")
+        for cell_id, neighbor_id in sorted(edges):
+            cur.execute(
+                "INSERT INTO province_neighbors(cell_id,neighbor_cell_id) VALUES(?,?)",
+                (cell_id, neighbor_id),
+            )
+
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "deactivated": deactivated,
+        "neighbor_links": len(edges),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -287,7 +318,7 @@ class ProvincesCog(commands.Cog):
                 return
             stats = _upsert_provinces(provinces, resync=False)
             await interaction.followup.send(
-                i18n.text('✅ **Import complete.**\n• Inserted: {p0} provinces\n• Updated:  {p1} provinces', p0=stats['inserted'], p1=stats['updated']),
+                i18n.text('✅ **Import complete.**\n• Inserted: {p0} provinces\n• Updated:  {p1} provinces\n• Adjacency links: {p2}', p0=stats['inserted'], p1=stats['updated'], p2=stats['neighbor_links']),
                 ephemeral=True,
             )
         except Exception as e:
@@ -321,7 +352,7 @@ class ProvincesCog(commands.Cog):
                 return
             stats = _upsert_provinces(provinces, resync=True)
             await interaction.followup.send(
-                i18n.text('✅ **Resync complete.**\n• Inserted: {p0} new provinces\n• Updated:  {p1} existing provinces\n• Deactivated: {p2} removed provinces', p0=stats['inserted'], p1=stats['updated'], p2=stats['deactivated']),
+                i18n.text('✅ **Resync complete.**\n• Inserted: {p0} new provinces\n• Updated:  {p1} existing provinces\n• Deactivated: {p2} removed provinces\n• Adjacency links: {p3}', p0=stats['inserted'], p1=stats['updated'], p2=stats['deactivated'], p3=stats['neighbor_links']),
                 ephemeral=True,
             )
         except Exception as e:
@@ -549,9 +580,14 @@ class ProvincesCog(commands.Cog):
         total: dict[str, float] = {}
         gold_per_tick = 0.0
         for prov in provs:
+            try:
+                from cogs.colonialism import get_colony_yield_modifier
+                col_mod = get_colony_yield_modifier(prov["id"])
+            except Exception:
+                col_mod = 1.0
             base = json.loads(prov["base_resources_json"])
             for k, v in base.items():
-                total[k] = total.get(k, 0) + v
+                total[k] = total.get(k, 0) + v * col_mod
             for bkey in json.loads(prov["buildings_json"]):
                 with db.cursor() as c:
                     c.execute("SELECT effect_json FROM building_defs WHERE key=?", (bkey,))
@@ -559,9 +595,9 @@ class ProvincesCog(commands.Cog):
                 if bd:
                     for k, v in json.loads(bd["effect_json"]).items():
                         if k == "gold":
-                            gold_per_tick += v
+                            gold_per_tick += v * col_mod
                         else:
-                            total[k] = total.get(k, 0) + v
+                            total[k] = total.get(k, 0) + v * col_mod
 
         stab_mod = 0.75 + (nat["stability"] / 100.0) * 0.25
         lines = []
@@ -573,11 +609,11 @@ class ProvincesCog(commands.Cog):
                     i18n.text('**{p0}**: {p1:.1f}/tick (×{p2:.2f} = {p3:.1f} effective)', p0=k.replace('_', ' ').capitalize(), p1=v, p2=stab_mod, p3=v * stab_mod)
                 )
 
-        embed = discord.Embed(
-            title=i18n.text('📊 Province Yield — {p0} {p1}', p0=nat['flag'] or '', p1=nat['name']),
+        embed = flagged_embed(discord.Embed(
+            title=i18n.text('📊 Province Yield — {p0} {p1}', p0=flag_text(nat['flag']), p1=nat['name']),
             description="\n".join(lines) or i18n.text('*No production yet.*'),
             color=discord.Color.green(),
-        )
+        ), (nat['flag'], nat['name']))
         embed.set_footer(
             text=i18n.text('{p0} province(s) | Stability {p1:.0f}/100 → ×{p2:.2f} modifier', p0=len(provs), p1=nat['stability'], p2=stab_mod)
         )
@@ -606,7 +642,7 @@ class ProvincesCog(commands.Cog):
             return
         resources = json.loads(row["base_resources_json"])
         owner_str = (
-            f"{row['nation_flag'] or ''} {row['nation_name']}".strip()
+            f"{flag_text(row['nation_flag'])} {row['nation_name']}".strip()
             if row["nation_name"] else i18n.text('*Unclaimed*')
         )
         display  = row["name"] or i18n.text('Cell #{p0}', p0=cell_id)
@@ -622,6 +658,7 @@ class ProvincesCog(commands.Cog):
         embed.add_field(name=i18n.text('Population'),     value=f"{row['population']:,}",  inline=True)
         embed.add_field(name=i18n.text('Fortification'),  value=str(row["fortification_level"]), inline=True)
         embed.add_field(name=i18n.text('Base Resources'), value=res_str,                   inline=False)
+        flagged_embed(embed, (row['nation_flag'], row['nation_name']))
         await interaction.response.send_message(embed=embed)
 
     # -------------------------------------------------- /province list
@@ -665,13 +702,14 @@ class ProvincesCog(commands.Cog):
             cid  = r["azgaar_cell_id"]
             name = r["name"] or i18n.text('Cell #{p0}', p0=cid)
             lines.append(i18n.text('`{p0:>6}` **{p1}** — {p2} | pop: {p3:,}', p0=cid, p1=name, p2=i18n.term(r['terrain']), p3=r['population']))
-        flag = nation_row["flag"] or ""
+        flag = flag_text(nation_row["flag"])
         embed = discord.Embed(
             title=i18n.text('{p0} {p1} — Provinces', p0=flag, p1=nation_row['name']).strip(),
             description="\n".join(lines),
             color=discord.Color.blue(),
         )
         embed.set_footer(text=i18n.text('Page {p0}/{p1} · {p2} province(s) total', p0=page, p1=total_pages, p2=total))
+        flagged_embed(embed, (nation_row['flag'], nation_row['name']))
         await interaction.response.send_message(embed=embed)
 
 

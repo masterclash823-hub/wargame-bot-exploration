@@ -17,6 +17,12 @@ class InteractiveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         self.scene_patch = patch.object(flow, "scene", AsyncMock(return_value=("Situation", ["A", "B", "C"])))
         self.scene_patch.start()
         self.addCleanup(self.scene_patch.stop)
+        self.real_assess_consequence = flow.assess_consequence
+        async def baseline(state, action, choice):
+            return flow.fallback_consequence(state, choice), "Baseline", False
+        self.consequence_patch = patch.object(flow, "assess_consequence", side_effect=baseline)
+        self.consequence_patch.start()
+        self.addCleanup(self.consequence_patch.stop)
 
     async def start(self, effects=None):
         if effects is None:
@@ -165,6 +171,26 @@ class InteractiveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
                         {"treasury":True}, {"stability":21}, {"treasury":1e12}):
             with self.assertRaises(ValueError):
                 flow.validate_effects(effects)
+
+    async def test_decisions_can_reverse_signs_per_effect(self):
+        state = await self.start({"treasury": -90, "stability": 6, "resources": {"iron": -30}})
+        decisions = [{"choice": 1, "impact": {
+            "treasury": 1.0, "stability": -0.5, "resources": {"iron": 1.5}
+        }}] * 3
+        effects = flow.prospective_effects(state, decisions)
+        self.assertEqual(effects["treasury"], 90)
+        self.assertEqual(effects["stability"], -3)
+        self.assertEqual(effects["resources"]["iron"], 45)
+
+    async def test_ai_consequence_is_bounded_to_approved_axes(self):
+        state = await self.start({"treasury": 30, "resources": {"iron": -15}})
+        answer = {"stability": 0, "treasury": -1.5, "resources": {"iron": 1}, "reason": "Ryzykowny sukces"}
+        with patch.object(flow, "_ai_json", AsyncMock(return_value=answer)):
+            impact, reason, fallback = await self.real_assess_consequence(state, "Plan", 2)
+        self.assertEqual(impact["treasury"], -1.5)
+        self.assertEqual(impact["resources"]["iron"], 1)
+        self.assertEqual(reason, "Ryzykowny sukces")
+        self.assertFalse(fallback)
 
     async def test_actual_scene_fallback_has_three_options(self):
         self.scene_patch.stop()

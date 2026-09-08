@@ -20,6 +20,7 @@ PARAMETERS = {
     'receive_resources':'otrzymywane_zasoby','requires_terrain':'wymagany_teren','resource':'zasób',
     'route_id':'id_szlaku','route_name':'nazwa_szlaku','ship_id':'id_okrętu',
     'start_month':'miesiąc_początkowy','start_year':'rok_początkowy','steps':'kroki',
+    'source_cell_id':'id_komórki_źródłowej','target_cell_id':'id_komórki_docelowej',
     'text':'tekst','tier':'poziom','to_cell':'komórka_docelowa','to_nation':'naród_docelowy',
     'trade_id':'id_wymiany','unit_id':'id_jednostki','unit_ids':'id_jednostek',
     'unit_type':'typ_jednostki','url':'adres','value':'wartość',

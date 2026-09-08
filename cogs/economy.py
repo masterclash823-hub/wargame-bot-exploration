@@ -2,6 +2,7 @@
 Economy cog: resources, buildings, calendar, megaprojects, trades, admineco.
 All slash commands use @app_commands.command or group subcommands — no hybrid.
 """
+from flags import flag_text, flagged_embed
 import psycopg2
 import psycopg2.extras
 
@@ -320,9 +321,9 @@ def _run_tick(months=1):
                     continue
                 for k, v in json.loads(bd["effect_json"]).items():
                     if k == "gold":
-                        treasury += v * months * stab_mod
+                        treasury += v * months * stab_mod * col_mod
                     else:
-                        res[k] = res.get(k, 0) + v * months * stab_mod
+                        res[k] = res.get(k, 0) + v * months * stab_mod * col_mod
                 upkeep += json.loads(bd["upkeep_json"]).get("gold", 0) * months
 
         # ---- MEGAPROJECTS (Yields processed BEFORE food consumption) ----
@@ -407,13 +408,17 @@ def _run_tick(months=1):
         except Exception:
             pass
 
-        # Trade route income + colony month ticks
+        # Colony progress must not be blocked by a failure in trade-route income.
         try:
-            from cogs.colonialism import compute_trade_route_income, tick_colonies
-            treasury += compute_trade_route_income(nid) * months
+            from cogs.colonialism import tick_colonies
             tick_colonies(nid, months)
         except Exception as e:
-            print(f"[TICK] Trade/colony error for nation {nid}: {e}", flush=True)
+            print(f"[TICK] Colony error for nation {nid}: {e}", flush=True)
+        try:
+            from cogs.colonialism import compute_trade_route_income
+            treasury += compute_trade_route_income(nid) * months
+        except Exception as e:
+            print(f"[TICK] Trade-route error for nation {nid}: {e}", flush=True)
 
         # ---- FOOD: feeds population + military ----
         food_needed = 0.0
@@ -618,7 +623,8 @@ HELP_SECTIONS = {
         "color": discord.Color.dark_green(),
         "fields": [
             ("/colony found <cell_id> <name>", "Found a colony on an unclaimed province (costs gold + fleet cargo)."),
-            ("/colony develop <cell_id> <gold>", "Invest gold to advance a colony toward next stage."),
+            ("/colony develop <cell_id> <gold>", "Invest gold; the colony advances automatically when cost, time and technology are met."),
+            ("/colony expand <source> <target> <name>", "Create an outpost on an unclaimed cell adjacent to a Settlement or larger (500g)."),
             ("/colony list [nation]", "List all colonies of a nation."),
             ("/colony view <cell_id>", "View detailed colony status and progress bars."),
             ("/traderoute add <from> <to> <name>", "Establish a trade route. Income = ship cargo × 2g/tick (or 20g flat)."),
@@ -680,7 +686,7 @@ GM_HELP_FIELDS = [
     ("/admineco tick [months]", "Manually trigger a resource tick."),
     ("/admineco starter_pack [nation|all]", "Give starting resources to one nation or all nations."),
     ("/admineco grant", "Give resources or gold to a nation (logged)."),
-    ("/colonymgr advance <cell_id>", "Approve colony advancement to next stage."),
+    ("/colonymgr advance <cell_id>", "Manually retry a colony advancement (normal advancement is automatic)."),
     ("/colonymgr setback <cell_id>", "Set a colony back a stage."),
     ("/event generate <nation>", "Generate an AI event based on nation history and stats."),
     ("/event edit <id> <text>", "Edit an event draft before posting."),
@@ -799,7 +805,8 @@ HELP_SECTIONS_PL = {
         "color": discord.Color.dark_green(),
         "fields": [
             ("/colony found <id> <nazwa>", "Załóż kolonię na niezajętej prowincji (koszt: złoto + ładowność floty)."),
-            ("/colony develop <id> <złoto>", "Zainwestuj złoto aby awansować kolonię."),
+            ("/colony develop <id> <złoto>", "Zainwestuj złoto; kolonia awansuje automatycznie po spełnieniu kosztu, czasu i technologii."),
+            ("/colony expand <źródło> <cel> <nazwa>", "Utwórz placówkę na niezajętym polu sąsiadującym z osadą lub większą kolonią (500 złota)."),
             ("/colony list [naród]", "Lista wszystkich kolonii narodu."),
             ("/colony view <id>", "Szczegóły kolonii z paskami postępu."),
             ("/traderoute add <od> <do> <nazwa>", "Ustanów szlak handlowy. Dochód = ładowność statków ×2g/tick."),
@@ -826,7 +833,7 @@ GM_HELP_FIELDS_PL = [
     ("/admineco building_set", "Edytuj definicję budynku na żywo."),
     ("/admineco building_new", "Dodaj nowy typ budynku."),
     ("/admineco relation_set", "Ustaw relację dyplomatyczną między narodami bezpośrednio."),
-    ("/colonymgr advance <id>", "Zatwierdź awans kolonii do następnego etapu."),
+    ("/colonymgr advance <id>", "Ręcznie ponów awans kolonii (standardowo awans jest automatyczny)."),
     ("/colonymgr setback <id>", "Cofnij kolonię o etap."),
     ("/event generate <naród>", "Generuj event AI na podstawie historii i statystyk narodu."),
     ("/event edit <id> <tekst>", "Edytuj szkic eventu przed publikacją."),
@@ -1051,18 +1058,23 @@ class EconomyCog(commands.Cog):
         food_prod = 0.0
         with db.cursor() as c:
             c.execute(
-                "SELECT buildings_json, base_resources_json FROM provinces "
+                "SELECT id, buildings_json, base_resources_json FROM provinces "
                 "WHERE owner_nation_id=? AND active=1",
                 (n["id"],)
             )
             prod_provs = c.fetchall()
         for pp in prod_provs:
+            try:
+                from cogs.colonialism import get_colony_yield_modifier
+                col_mod = get_colony_yield_modifier(pp["id"])
+            except Exception:
+                col_mod = 1.0
             base = json.loads(pp["base_resources_json"])
-            food_prod += base.get("food", 0)
+            food_prod += base.get("food", 0) * col_mod
             for bkey in json.loads(pp["buildings_json"]):
                 bd = _bdef(bkey)
                 if bd:
-                    food_prod += json.loads(bd["effect_json"]).get("food", 0)
+                    food_prod += json.loads(bd["effect_json"]).get("food", 0) * col_mod
 
        # Ensure all variables used in formatting are populated
         food_have = res.get("food", 0)
@@ -1100,11 +1112,11 @@ class EconomyCog(commands.Cog):
         desc = "\n".join(f"**{i18n.term(k)}**: {v:,.1f}"
                          for k, v in other_res.items()) or i18n.text('*No resources yet.*')
 
-        embed = discord.Embed(
-            title=i18n.text('{p0} {p1} — Resources', p0=n['flag'] or '', p1=n['name']).strip(),
+        embed = flagged_embed(discord.Embed(
+            title=i18n.text('{p0} {p1} — Resources', p0=flag_text(n['flag']), p1=n['name']).strip(),
             description=desc,
             color=discord.Color.green(),
-        )
+        ), (n['flag'], n['name']))
         embed.add_field(name=i18n.text('🌾 Food'), value=food_status, inline=False)
         embed.add_field(name=i18n.text('💰 Treasury'), value=i18n.text('{p0:,.0f} gold', p0=n['treasury']), inline=True)
         if luxury_income > 0:
@@ -1658,11 +1670,11 @@ class EconomyCog(commands.Cog):
             return
         is_party = n and (t["from_nation_id"] == n["id"] or t["to_nation_id"] == n["id"])
         STATUS   = {"pending":"🟡","accepted":"✅","cancelled":"❌"}
-        embed = discord.Embed(
+        embed = flagged_embed(discord.Embed(
             title=i18n.text('{p0} Trade #{p1}', p0=STATUS.get(t['status'], '❓'), p1=trade_id),
-            description=f"**{t['fflag'] or ''} {t['fname']}** ↔ **{t['tflag'] or ''} {t['tname']}**",
+            description=f"**{flag_text(t['fflag'])} {t['fname']}** ↔ **{flag_text(t['tflag'])} {t['tname']}**",
             color=discord.Color.orange(),
-        )
+        ), (t['fflag'], t['fname']), (t['tflag'], t['tname']))
         embed.add_field(name=i18n.text('Status'), value=i18n.term(t["status"]), inline=True)
         embed.add_field(name=i18n.text('Date'),   value=short_date(t["created_at"]), inline=True)
         give_res  = json.loads(t["offer_resources_json"])

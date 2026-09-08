@@ -44,6 +44,20 @@ class PlayerPanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(view.timeout)
         self.assertEqual(view.children[0].custom_id, "wargame:player-panel:open")
 
+    async def test_found_colony_asks_for_manual_province_id(self):
+        captured = {}
+
+        class Response:
+            async def send_modal(self, modal):
+                captured["modal"] = modal
+
+        view = PlayerPanel(self.bot, 123, "pl")
+        await view.choose_empty_province(SimpleNamespace(response=Response()))
+        modal = captured["modal"]
+        self.assertEqual(len(modal.children), 2)
+        self.assertIn("ID prowincji", modal.children[0].label)
+        self.assertIn("administratora", modal.children[0].placeholder)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,7 @@ Combat formula:
   naval uses ship ATK/HP instead of unit ATK/DEF
   winner: higher effective value. Casualties proportional to ratio.
 """
+from flags import flag_text, flagged_embed
 import json
 import asyncio
 
@@ -360,6 +361,7 @@ class CombatCog(commands.Cog):
             return
         embed = discord.Embed(title=i18n.text('⚔️ Pending Battle Plans'), color=discord.Color.red())
         pages = []
+        page_nation = None
         for r in rows:
             forces   = json.loads(r["forces_json"])
             loc      = json.loads(r["provinces_json"])
@@ -368,11 +370,13 @@ class CombatCog(commands.Cog):
             orders_disp = orders_full.split(" | Location:")[0][:200]
             name = f"Plan #{r['id']} — {short_date(r['submitted_at'])}"
             value = (
-                    i18n.text('**Nation:** {p0} {p1}\n**Location:** {p2}\n**Orders:** {p3}\n**Units:** {p4} group(s) committed', p0=(r['nflag'] or '')[:80], p1=r['nname'][:200], p2=loc_str, p3=orders_disp, p4=len(forces))
+                    i18n.text('**Nation:** {p0} {p1}\n**Location:** {p2}\n**Orders:** {p3}\n**Units:** {p4} group(s) committed', p0=(flag_text(r['nflag']))[:80], p1=r['nname'][:200], p2=loc_str, p3=orders_disp, p4=len(forces))
                 )
-            if len(embed.fields) >= 20 or len(embed) + len(name) + len(value) > 5800:
+            if embed.fields and (page_nation != r['nname'] or len(embed.fields) >= 20 or len(embed) + len(name) + len(value) > 5800):
                 pages.append(embed)
                 embed = discord.Embed(title=i18n.text('⚔️ Pending Battle Plans'), color=discord.Color.red())
+            page_nation = r['nname']
+            flagged_embed(embed, (r['nflag'], r['nname']))
             embed.add_field(name=name, value=value, inline=False)
         pages.append(embed)
         await interaction.followup.send(embed=pages[0],
@@ -429,8 +433,9 @@ class CombatCog(commands.Cog):
             title=i18n.text('⚔️ Battle #{p0} Created', p0=battle_id),
             color=discord.Color.red(),
         )
-        embed.add_field(name=i18n.text('⚔️ Attacker'), value=f"{nat_a['flag'] or ''} {nat_a['name']} (Plan #{attacker_plan_id})", inline=True)
-        embed.add_field(name=i18n.text('🛡️ Defender'), value=f"{nat_b['flag'] or ''} {nat_b['name']} (Plan #{defender_plan_id})", inline=True)
+        embed.add_field(name=i18n.text('⚔️ Attacker'), value=f"{flag_text(nat_a['flag'])} {nat_a['name']} (Plan #{attacker_plan_id})", inline=True)
+        embed.add_field(name=i18n.text('🛡️ Defender'), value=f"{flag_text(nat_b['flag'])} {nat_b['name']} (Plan #{defender_plan_id})", inline=True)
+        flagged_embed(embed, (nat_a['flag'], nat_a['name']), (nat_b['flag'], nat_b['name']))
         if gm_note:
             embed.add_field(name=i18n.text('GM Context'), value=gm_note, inline=False)
         embed.set_footer(text=i18n.text('Run /battle resolve {p0} to get AI modifier and resolve.', p0=battle_id))
@@ -465,14 +470,14 @@ class CombatCog(commands.Cog):
         is_party = nat and (nat["id"] in [plan_a["nation_id"], plan_b["nation_id"]])
 
         STATUS_EMOJI = {"pending":"🟡","resolved":"✅","cancelled":"❌"}
-        embed = discord.Embed(
+        embed = flagged_embed(discord.Embed(
             title=i18n.text('{p0} Battle #{p1}', p0=STATUS_EMOJI.get(battle['status'], '❓'), p1=battle_id),
             description=(
-                f"**{nat_a['flag'] or ''} {nat_a['name']}** ⚔️ "
-                f"**{nat_b['flag'] or ''} {nat_b['name']}**"
+                f"**{flag_text(nat_a['flag'])} {nat_a['name']}** ⚔️ "
+                f"**{flag_text(nat_b['flag'])} {nat_b['name']}**"
             ),
             color=discord.Color.red(),
-        )
+        ), (nat_a['flag'], nat_a['name']), (nat_b['flag'], nat_b['name']))
         embed.add_field(name=i18n.text('Status'), value=i18n.term(battle["status"]), inline=True)
         if battle["gm_note"]:
             embed.add_field(name=i18n.text('GM Context'), value=battle["gm_note"], inline=False)
@@ -505,7 +510,7 @@ class CombatCog(commands.Cog):
                 embed.add_field(
                     name=f"🔒 {label}",
                     value=(
-                        i18n.text('**{p0} {p1}**\n**Location:** {p2}\n**Orders:** {p3}', p0=nat_p['flag'] or '', p1=nat_p['name'], p2=loc_str, p3=orders_disp)
+                        i18n.text('**{p0} {p1}**\n**Location:** {p2}\n**Orders:** {p3}', p0=flag_text(nat_p['flag']), p1=nat_p['name'], p2=loc_str, p3=orders_disp)
                     ),
                     inline=False,
                 )
@@ -637,10 +642,11 @@ class CombatCog(commands.Cog):
             title=i18n.text('⚔️ Battle Report — Battle #{p0}', p0=battle_id),
             color=WINNER_COLOR.get(result["winner"], discord.Color.greyple()),
         )
+        flagged_embed(report_embed, (nat_a['flag'], nat_a['name']), (nat_b['flag'], nat_b['name']))
         report_embed.add_field(
             name=i18n.text('Combatants'),
             value=(
-                i18n.text('**{p0} {p1}** (Attacker)\nvs\n**{p2} {p3}** (Defender)', p0=nat_a['flag'] or '', p1=nat_a['name'], p2=nat_b['flag'] or '', p3=nat_b['name'])
+                i18n.text('**{p0} {p1}** (Attacker)\nvs\n**{p2} {p3}** (Defender)', p0=flag_text(nat_a['flag']), p1=nat_a['name'], p2=flag_text(nat_b['flag']), p3=nat_b['name'])
             ),
             inline=False,
         )
@@ -743,13 +749,13 @@ class CombatCog(commands.Cog):
         ch_id = _cfg("announce_channel_id")
         ch    = self.bot.get_channel(int(ch_id)) if ch_id else None
         if ch:
-            embed = discord.Embed(
+            embed = flagged_embed(discord.Embed(
                 title=i18n.text('⚔️ War Declared!'),
                 description=(
-                    i18n.text('**{p0} {p1}** has declared war on **{p2} {p3}**!', p0=nat['flag'] or '', p1=nat['name'], p2=target['flag'] or '', p3=target['name'])
+                    i18n.text('**{p0} {p1}** has declared war on **{p2} {p3}**!', p0=flag_text(nat['flag']), p1=nat['name'], p2=flag_text(target['flag']), p3=target['name'])
                 ),
                 color=discord.Color.red(),
-            )
+            ), (nat['flag'], nat['name']), (target['flag'], target['name']))
             try:
                 await ch.send(embed=embed)
             except discord.Forbidden:
@@ -786,13 +792,13 @@ class CombatCog(commands.Cog):
         ch_id = _cfg("announce_channel_id")
         ch    = self.bot.get_channel(int(ch_id)) if ch_id else None
         if ch:
-            embed = discord.Embed(
+            embed = flagged_embed(discord.Embed(
                 title=i18n.text('🕊️ Peace Declared'),
                 description=(
-                    i18n.text('**{p0} {p1}** and **{p2} {p3}** have made peace.', p0=nat['flag'] or '', p1=nat['name'], p2=target['flag'] or '', p3=target['name'])
+                    i18n.text('**{p0} {p1}** and **{p2} {p3}** have made peace.', p0=flag_text(nat['flag']), p1=nat['name'], p2=flag_text(target['flag']), p3=target['name'])
                 ),
                 color=discord.Color.green(),
-            )
+            ), (nat['flag'], nat['name']), (target['flag'], target['name']))
             try:
                 await ch.send(embed=embed)
             except discord.Forbidden:
@@ -848,18 +854,17 @@ class CombatCog(commands.Cog):
                 ephemeral=True)
             return
         STATUS_EMOJI = {"war":"⚔️","peace":"🕊️","alliance":"🤝","truce":"🏳️"}
-        lines = []
+        pages = []
         for r in rows:
             other_name = r["nb_name"] if r["nation_a_id"]==nat["id"] else r["na_name"]
             other_flag = r["nb_flag"] if r["nation_a_id"]==nat["id"] else r["na_flag"]
             emoji      = STATUS_EMOJI.get(r["status"],"❓")
-            lines.append(f"{emoji} {other_flag or ''} **{other_name}** — {i18n.term(r['status'])}")
-        embed = discord.Embed(
-            title=i18n.text('🌍 Diplomatic Relations — {p0} {p1}', p0=nat['flag'] or '', p1=nat['name']),
-            description="\n".join(lines),
-            color=discord.Color.blue(),
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+            pages.append(flagged_embed(discord.Embed(
+                title=i18n.text('🌍 Diplomatic Relations — {p0} {p1}', p0=flag_text(nat['flag']), p1=nat['name']),
+                description=f"{emoji} {flag_text(other_flag)} **{other_name}** — {i18n.term(r['status'])}",
+                color=discord.Color.blue(),
+            ), (nat['flag'], nat['name']), (other_flag, other_name)))
+        await interaction.response.send_message(embed=pages[0], view=EmbedPager(pages, interaction.user.id), ephemeral=True)
 
 
 async def setup(bot):
