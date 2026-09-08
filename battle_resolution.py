@@ -20,12 +20,32 @@ def modifier(value, *, override=False):
     return max(low, min(high, value))
 
 
+def normalize_exposure(raw):
+    """AI may prioritize losses, never select foreign units or arbitrary quantities."""
+    clean = {}
+    if not isinstance(raw, dict):
+        return clean
+    for key, value in raw.items():
+        try:
+            unit_id = int(key)
+            weight = float(value['weight'])
+            reason = value['reason']
+            if unit_id <= 0 or not math.isfinite(weight) or not isinstance(reason, str) or not reason.strip():
+                continue
+            clean[str(unit_id)] = {'weight': max(0.25, min(4.0, weight)), 'reason': reason.strip()[:300]}
+        except (TypeError, ValueError, KeyError, OverflowError):
+            continue
+    return clean
+
+
 def normalize_ai(raw):
     raw = raw if isinstance(raw, dict) else {}
     return {
         "attacker_modifier": modifier(raw.get("attacker_modifier", 1.0)),
         "defender_modifier": modifier(raw.get("defender_modifier", 1.0)),
         "reasoning": str(raw.get("reasoning", i18n.text('No reasoning provided.')))[:900],
+        "attacker_exposure": normalize_exposure(raw.get("attacker_exposure")),
+        "defender_exposure": normalize_exposure(raw.get("defender_exposure")),
     }
 
 
@@ -92,7 +112,10 @@ def _entries(raw):
             continue
         if unit_id > 0 and qty > 0:
             clean.append((unit_id, qty))
-    return clean
+    merged = {}
+    for unit_id, qty in clean:
+        merged[unit_id] = merged.get(unit_id, 0) + qty
+    return list(merged.items())
 
 
 def force_snapshot(plan, nation):
@@ -174,16 +197,49 @@ def _combat(atk, defense, atk_mod, def_mod, fort):
             "def_casualties_pct": def_loss, "roll": round(roll, 3)}
 
 
-def _casualties(c, units, percent):
+def allocate_losses(units, percent, exposure=None):
+    """Distribute one side's loss budget with capped weighted largest remainders."""
+    exposure = normalize_exposure(exposure)
+    quantities = [qty for _, qty, _ in units]
+    budget = min(sum(quantities), max(0, math.ceil(sum(quantities) * percent / 100)))
+    weights = [qty * exposure.get(str(uid), {}).get('weight', 1.0) for uid, qty, _ in units]
+    shares = [0.0] * len(units)
+    active = {i for i, qty in enumerate(quantities) if qty > 0}
+    remaining = budget
+    while active and remaining:
+        total = sum(weights[i] for i in active)
+        capped = {i for i in active if remaining * weights[i] / total >= quantities[i]}
+        if not capped:
+            for i in active:
+                shares[i] = remaining * weights[i] / total
+            break
+        for i in capped:
+            shares[i] = quantities[i]
+            remaining -= quantities[i]
+        active -= capped
+    losses = [min(qty, int(share)) for qty, share in zip(quantities, shares)]
+    order = sorted(range(len(units)), key=lambda i: (-(shares[i] - losses[i]), -weights[i], units[i][0]))
+    for i in order:
+        if sum(losses) >= budget:
+            break
+        if losses[i] < quantities[i]:
+            losses[i] += 1
+    return [dict(unit_id=uid, committed=qty, lost=lost,
+                 exposure=exposure.get(str(uid), {}).get('weight', 1.0),
+                 reason=exposure.get(str(uid), {}).get('reason', ''))
+            for (uid, qty, _), lost in zip(units, losses)]
+
+
+def _casualties(c, units, percent, exposure=None, apply=True):
     applied = []
-    for unit_id, committed, owned in units:
-        lost = min(committed, math.ceil(committed * percent / 100)) if percent else 0
+    for (unit_id, committed, owned), loss in zip(units, allocate_losses(units, percent, exposure)):
+        lost = loss['lost']
         remaining = owned - lost
-        if remaining <= 0:
+        if apply and remaining <= 0:
             c.execute("DELETE FROM military_units WHERE id=?", (unit_id,))
-        elif lost:
+        elif apply and lost:
             c.execute("UPDATE military_units SET quantity=? WHERE id=?", (remaining, unit_id))
-        applied.append({"unit_id": unit_id, "committed": committed, "lost": lost})
+        applied.append(loss)
     return applied
 
 
@@ -221,9 +277,10 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
         result = _combat(atk_power, def_power, atk_mod, def_mod, fort)
         result["battlefield"] = battlefield
         result["casualties_applied"] = bool(apply_casualties)
-        if apply_casualties:
-            result["attacker_losses"] = _casualties(c, atk_units, result["atk_casualties_pct"])
-            result["defender_losses"] = _casualties(c, def_units, result["def_casualties_pct"])
+        result["attacker_losses"] = _casualties(c, atk_units, result["atk_casualties_pct"],
+                                                ai['attacker_exposure'], apply_casualties)
+        result["defender_losses"] = _casualties(c, def_units, result["def_casualties_pct"],
+                                                ai['defender_exposure'], apply_casualties)
         final = {"attacker_modifier": atk_mod, "defender_modifier": def_mod,
                  "overridden": bool(atk_override or def_override)}
         c.execute("UPDATE battles SET status='resolved',ai_modifier_json=?,gm_final_modifier_json=?,"
