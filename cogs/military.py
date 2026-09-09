@@ -53,7 +53,7 @@ LAND_UNITS = {
     "siege_artillery":{"name":"Siege Artillery","attack":50,"defense":2, "hp":50,"speed":1,"cost":{"gold":100,"iron":25,"gunpowder":12},"requires_tech":5.0,"peace_upkeep":8.0,"desc":"Fortress breaker."},
 }
 
-WAR_MULT = 3.0
+WAR_MULT = 1.5  # Expedition posture; war alone no longer changes every unit's upkeep.
 
 # Default blueprints copied to every new nation (tech <= 2 land, basic sloop)
 DEFAULT_BLUEPRINTS = [
@@ -108,21 +108,9 @@ def _unit_stats(ukey):
     return {"attack":u["attack"],"defense":u["defense"],"hp":u["hp"],"speed":u["speed"]}
 
 def _upkeep(nid):
-    mult = WAR_MULT if _at_war(nid) else 1.0
+    from economy_engine import military_cost
     with db.cursor() as c:
-        c.execute(
-            "SELECT u.*,b.type as btype,b.hull FROM military_units u "
-            "LEFT JOIN blueprints b ON u.blueprint_id=b.id WHERE u.nation_id=?", (nid,)
-        )
-        units = c.fetchall()
-    total = 0.0
-    for u in units:
-        if u["btype"] == "ship":
-            base = HULLS.get(u["hull"],{}).get("peace_upkeep", 5.0)
-        else:
-            base = LAND_UNITS.get(u["hull"],{}).get("peace_upkeep", 2.0)
-        total += base * u["quantity"] * mult
-    return total
+        return military_cost(c, nid)[0]
 
 def seed_nation_blueprints(nation_id: int):
     """Copy default blueprints into a newly founded nation."""
@@ -249,8 +237,8 @@ class ShipDesignerView(i18n.LocalizedView):
         embed.add_field(name=i18n.text('HP'),            value=str(stats["hp"]),      inline=True)
         embed.add_field(name=i18n.text('Speed'),         value=str(stats["speed"]),   inline=True)
         embed.add_field(name=i18n.text('Cargo'),         value=str(stats["cargo"]),   inline=True)
-        embed.add_field(name=i18n.text('Peace upkeep'),  value=i18n.text('{p0:.0f}g/unit', p0=hull['peace_upkeep']), inline=True)
-        embed.add_field(name=i18n.text('War upkeep'),    value=i18n.text('{p0:.0f}g/unit', p0=hull['peace_upkeep'] * WAR_MULT), inline=True)
+        embed.add_field(name=i18n.text('Active upkeep'),  value=i18n.text('{p0:.0f}g/unit', p0=hull['peace_upkeep']), inline=True)
+        embed.add_field(name=i18n.text('Expedition upkeep'),    value=i18n.text('{p0:.0f}g/unit', p0=hull['peace_upkeep'] * WAR_MULT), inline=True)
         embed.set_footer(text=i18n.text('Click modules to add them. Each click uses one slot.'))
         return embed
 
@@ -328,13 +316,13 @@ class MilitaryCog(commands.Cog):
                         base_cost[res] = base_cost.get(res, 0) + amt
                 cost_str  = ", ".join(f"{v} {i18n.term(k)}" for k, v in base_cost.items())
                 val = (
-                    i18n.text('Hull: {p0} | ATK:{p1} HP:{p2} SPD:{p3} CARGO:{p4}\nModules: {p5}\nCost per unit: {p6}\nUpkeep: {p7:.0f}g/unit (peace) / {p8:.0f}g (war)', p0=i18n.text(hull.get('name', r['hull'])), p1=stats.get('attack', 0), p2=stats.get('hp', 0), p3=stats.get('speed', 0), p4=stats.get('cargo', 0), p5=mods, p6=cost_str, p7=hull.get('peace_upkeep', 5), p8=hull.get('peace_upkeep', 5) * WAR_MULT)
+                    i18n.text('Hull: {p0} | ATK:{p1} HP:{p2} SPD:{p3} CARGO:{p4}\nModules: {p5}\nCost per unit: {p6}\nUpkeep: {p7:.0f}g/unit (active) / {p8:.0f}g (expedition)', p0=i18n.text(hull.get('name', r['hull'])), p1=stats.get('attack', 0), p2=stats.get('hp', 0), p3=stats.get('speed', 0), p4=stats.get('cargo', 0), p5=mods, p6=cost_str, p7=hull.get('peace_upkeep', 5), p8=hull.get('peace_upkeep', 5) * WAR_MULT)
                 )
             else:
                 udata    = LAND_UNITS.get(r["hull"], {})
                 cost_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in udata.get("cost", {}).items())
                 val = (
-                    i18n.text('ATK:{p0} DEF:{p1} HP:{p2} SPD:{p3}\nCost per unit: {p4}\nUpkeep: {p5:.0f}g/unit (peace) / {p6:.0f}g (war)', p0=stats.get('attack', 0), p1=stats.get('defense', 0), p2=stats.get('hp', 0), p3=stats.get('speed', 0), p4=cost_str, p5=udata.get('peace_upkeep', 2), p6=udata.get('peace_upkeep', 2) * WAR_MULT)
+                    i18n.text('ATK:{p0} DEF:{p1} HP:{p2} SPD:{p3}\nCost per unit: {p4}\nUpkeep: {p5:.0f}g/unit (active) / {p6:.0f}g (expedition)', p0=stats.get('attack', 0), p1=stats.get('defense', 0), p2=stats.get('hp', 0), p3=stats.get('speed', 0), p4=cost_str, p5=udata.get('peace_upkeep', 2), p6=udata.get('peace_upkeep', 2) * WAR_MULT)
                 )
             embed.add_field(
                 name=f"[{r['id']}] {'⚓' if r['type']=='ship' else '⚔️'} {r['name']}",
@@ -413,7 +401,7 @@ class MilitaryCog(commands.Cog):
             value=f"{stats['attack']}/{stats['defense']}/{stats['hp']}",
             inline=True)
         embed.add_field(
-            name="Utrzymanie (pokój)" if pl else i18n.text('Peace upkeep'),
+            name="Utrzymanie (aktywne)" if pl else i18n.text('Active upkeep'),
             value=f"{udata['peace_upkeep']:.0f}g/jedn." if pl else i18n.text('{p0:.0f}g/unit', p0=udata['peace_upkeep']),
             inline=True)
         cost_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in udata["cost"].items())
@@ -422,7 +410,7 @@ class MilitaryCog(commands.Cog):
             value=cost_str,
             inline=True)
         embed.add_field(
-            name="Utrzymanie (wojna)" if pl else i18n.text('War upkeep'),
+            name="Utrzymanie (wyprawa)" if pl else i18n.text('Expedition upkeep'),
             value=f"{udata['peace_upkeep']*WAR_MULT:.0f}g/jedn." if pl else i18n.text('{p0:.0f}g/unit', p0=udata['peace_upkeep'] * WAR_MULT),
             inline=True)
         embed.set_footer(
@@ -510,19 +498,21 @@ class MilitaryCog(commands.Cog):
             res[r] = res.get(r, 0) - a
 
         prov_id = prov["id"] if prov else None
-        with db.cursor() as c:
-            c.execute(
-                "INSERT INTO military_units(nation_id,blueprint_id,unit_type,quantity,province_id)"
-                " VALUES(?,?,?,?,?)",
-                (nat["id"], blueprint_id, bp["hull"], quantity, prov_id)
-            )
-            unit_id = c.lastrowid
-            c.execute("UPDATE nations SET resources_json=?,treasury=? WHERE id=?",
-                      (json.dumps(res), nat["treasury"]-gold_cost, nat["id"]))
+        from economy_engine import lock_nation
+        from economy_services import spend
+        try:
+            with db.atomic() as c:
+                current=lock_nation(c,nat['id'])
+                spend(c,current,dict(total_cost,gold=gold_cost))
+                unit_id=db.insert_returning_id(
+                    "INSERT INTO military_units(nation_id,blueprint_id,unit_type,quantity,province_id) VALUES(?,?,?,?,?)",
+                    (nat['id'],blueprint_id,bp['hull'],quantity,prov_id))
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
 
         loc_str = (prov["name"] or i18n.text('Cell #{p0}', p0=cell_id)) if prov else i18n.text('floating (unassigned)')
         _log(nat["id"],"system",
-             i18n.text('Built {p0}x {p1} (group #{p2}) — {p3}. Upkeep: {p4:.0f}g/tick peace / {p5:.0f}g war.', p0=quantity, p1=bp['name'], p2=unit_id, p3=loc_str, p4=peace_upkeep * quantity, p5=peace_upkeep * quantity * WAR_MULT))
+             i18n.text('Built {p0}x {p1} (group #{p2}) — {p3}. Upkeep: {p4:.0f}g/tick active / {p5:.0f}g expedition.', p0=quantity, p1=bp['name'], p2=unit_id, p3=loc_str, p4=peace_upkeep * quantity, p5=peace_upkeep * quantity * WAR_MULT))
 
         cost_str = f"{gold_cost:,}g"
         if total_cost:
@@ -533,8 +523,8 @@ class MilitaryCog(commands.Cog):
             color=discord.Color.dark_green(),
         )
         embed.add_field(name=i18n.text('Cost'),         value=cost_str,                              inline=True)
-        embed.add_field(name=i18n.text('Peace upkeep'), value=i18n.text('{p0:.0f}g/tick', p0=peace_upkeep * quantity),  inline=True)
-        embed.add_field(name=i18n.text('War upkeep'),   value=i18n.text('{p0:.0f}g/tick', p0=peace_upkeep * quantity * WAR_MULT), inline=True)
+        embed.add_field(name=i18n.text('Active upkeep'), value=i18n.text('{p0:.0f}g/tick', p0=peace_upkeep * quantity),  inline=True)
+        embed.add_field(name=i18n.text('Expedition upkeep'),   value=i18n.text('{p0:.0f}g/tick', p0=peace_upkeep * quantity * WAR_MULT), inline=True)
         embed.set_footer(text=i18n.text('Unit group ID: {p0} — use /military move {p1} <cell> to assign', p0=unit_id, p1=unit_id))
         await interaction.response.send_message(embed=embed)
 
@@ -555,10 +545,11 @@ class MilitaryCog(commands.Cog):
         with db.cursor() as c:
             c.execute(
                 "SELECT u.*,b.name as bname,b.type as btype,b.hull,b.stats_json,"
-                "p.name as pname,p.azgaar_cell_id"
+                "p.name as pname,p.azgaar_cell_id,m.mode"
                 " FROM military_units u"
                 " LEFT JOIN blueprints b ON u.blueprint_id=b.id"
                 " LEFT JOIN provinces p ON u.province_id=p.id"
+                " LEFT JOIN military_posture m ON m.unit_id=u.id"
                 " WHERE u.nation_id=? ORDER BY b.type,u.id",
                 (nat["id"],)
             )
@@ -596,9 +587,9 @@ class MilitaryCog(commands.Cog):
                 base = HULLS.get(r["hull"], {}).get("peace_upkeep", 5.0)
             else:
                 base = LAND_UNITS.get(r["hull"], {}).get("peace_upkeep", 2.0)
-            peace = base * r["quantity"]
-            war   = peace * WAR_MULT
-            return i18n.text('{p0:.0f}g peace / {p1:.0f}g war', p0=peace, p1=war)
+            mode=r['mode'] or 'active'
+            cost=base*r['quantity']*{'reserve':.35,'deployed':1.5}.get(mode,1)
+            return f"{cost:.1f}g/"+('mies.' if lang=='pl' else 'month')+' · '+i18n.term(mode)
 
         # Keep every group visible without exceeding Discord's field/embed limits.
         pages = []

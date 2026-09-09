@@ -34,5 +34,7 @@
   "name":"Nazwa", "description":"Opis", "tier":"Poziom", "cost_json":"Koszt JSON",
   "effect_json":"Efekty JSON", "upkeep_json":"Utrzymanie JSON", "requires_terrain":"Wymagany teren",
   "requires_tech":"Wymagana technologia", "gold_per_tick":"Złoto co miesiąc",
+  "granary":"Spichlerz", "reserve":"Rezerwa", "active":"Aktywne", "deployed":"Wyprawa",
+  "mobilizing":"Mobilizacja", "waiting":"Oczekuje na zasoby", "complete":"Ukończony",
   "free":"Bezpłatnie", "unknown":"Nieznany", "trade_private":"Handel prywatny", "ai":"AI"
 }

@@ -46,6 +46,8 @@ class LocalizationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
     async def test_all_command_payloads_have_polish_metadata(self):
         import bot
         roots = list(bot.tree.get_commands())
+        from economy_ui import EconomyControlCog
+        roots.extend(EconomyControlCog.__cog_app_commands__)
         for module_name in bot.COGS:
             module = importlib.import_module(module_name)
             for value in vars(module).values():
@@ -100,7 +102,7 @@ class LocalizationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
             c.execute('INSERT INTO provinces(azgaar_cell_id,name,owner_nation_id,terrain) VALUES(?,?,?,?)',(10,'Wood Nation',1,'plains'))
         inter = interaction(1)
         await EconomyCog.build.callback(None, inter, 10, 'farma')
-        embed = inter.response.send_message.call_args.kwargs['embed']
+        embed = inter.followup.send.call_args.kwargs['embed']
         self.assertIn('Farma', embed.description)
         self.assertIn('Wood Nation', embed.description)
         with db.cursor() as c:

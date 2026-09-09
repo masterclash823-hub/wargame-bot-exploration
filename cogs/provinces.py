@@ -165,7 +165,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
             has_river = bool(cell.get("r", 0))
             coastal   = bool(cell.get("haven", 0))
             
-            # Multiply population by 10,000
+            # Preserve relative map population before normalization below.
             pop       = int(cell.get("pop", 0)) * 100
             
             terrain = _terrain_label(height, bname)
@@ -199,7 +199,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
             coastal   = bool(havens[idx])  if idx < len(havens)  else False
             
             
-            # Multiply population by 10,000
+            # Preserve relative map population before normalization below.
             pop       = (int(pops[idx]) if idx < len(pops) else 0) * 100
             
             terrain   = _terrain_label(height, bname)
@@ -216,6 +216,12 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
     if not provinces:
         return [], i18n.text('No provinces found after parsing. The file may be empty or in an unsupported format.')
 
+    # Game-scale population: preserve relative settlement density, average 2000 on land.
+    land = [p for p in provinces if p['terrain'] not in ('water','ocean','sea')]
+    if land:
+        weights = [max(.25,min(3,p['pop']/2000)) if p['pop'] else 1 for p in land]
+        scale = 2000*len(land)/sum(weights)
+        for p,w in zip(land,weights):p['pop']=round(w*scale)
     return provinces, None
 
 def _upsert_provinces(province_list: list[dict], resync: bool) -> dict:
@@ -240,9 +246,9 @@ def _upsert_provinces(province_list: list[dict], resync: bool) -> dict:
             if cur.fetchone():
                 cur.execute(
                     """UPDATE provinces SET biome=?,terrain=?,base_resources_json=?,
-                       population=?,name=?,active=1 WHERE azgaar_cell_id=?""",
+                       name=?,active=1 WHERE azgaar_cell_id=?""",
                     (p["biome"], p["terrain"], json.dumps(p["resources"]),
-                     p["pop"], p["name"], p["cell_id"]),
+                     p["name"], p["cell_id"]),
                 )
                 updated += 1
             else:
@@ -577,47 +583,20 @@ class ProvincesCog(commands.Cog):
             await interaction.response.send_message(i18n.text('**{p0}** owns no provinces.', p0=nat['name']), ephemeral=True)
             return
 
-        total: dict[str, float] = {}
-        gold_per_tick = 0.0
-        for prov in provs:
-            try:
-                from cogs.colonialism import get_colony_yield_modifier
-                col_mod = get_colony_yield_modifier(prov["id"])
-            except Exception:
-                col_mod = 1.0
-            base = json.loads(prov["base_resources_json"])
-            for k, v in base.items():
-                total[k] = total.get(k, 0) + v * col_mod
-            for bkey in json.loads(prov["buildings_json"]):
-                with db.cursor() as c:
-                    c.execute("SELECT effect_json FROM building_defs WHERE key=?", (bkey,))
-                    bd = c.fetchone()
-                if bd:
-                    for k, v in json.loads(bd["effect_json"]).items():
-                        if k == "gold":
-                            gold_per_tick += v * col_mod
-                        else:
-                            total[k] = total.get(k, 0) + v * col_mod
-
-        stab_mod = 0.75 + (nat["stability"] / 100.0) * 0.25
-        lines = []
-        if gold_per_tick > 0:
-            lines.append(i18n.text('**Gold**: {p0:.0f}/tick (×{p1:.2f} = {p2:.0f} effective)', p0=gold_per_tick, p1=stab_mod, p2=gold_per_tick * stab_mod))
-        for k, v in sorted(total.items()):
-            if v > 0:
-                lines.append(
-                    i18n.text('**{p0}**: {p1:.1f}/tick (×{p2:.2f} = {p3:.1f} effective)', p0=k.replace('_', ' ').capitalize(), p1=v, p2=stab_mod, p3=v * stab_mod)
-                )
+        import asyncio
+        from economy_engine import forecast
+        await interaction.response.defer(ephemeral=True)
+        result=await asyncio.to_thread(forecast,nat['id'])
+        lines=[f"**{i18n.term(k)}**: {v:+.1f}" for k,v in sorted(result['production'].items()) if v]
 
         embed = flagged_embed(discord.Embed(
             title=i18n.text('📊 Province Yield — {p0} {p1}', p0=flag_text(nat['flag']), p1=nat['name']),
             description="\n".join(lines) or i18n.text('*No production yet.*'),
             color=discord.Color.green(),
         ), (nat['flag'], nat['name']))
-        embed.set_footer(
-            text=i18n.text('{p0} province(s) | Stability {p1:.0f}/100 → ×{p2:.2f} modifier', p0=len(provs), p1=nat['stability'], p2=stab_mod)
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        embed.set_footer(text=('Produkcja po zużyciu surowców przez zakłady, przed konsumpcją ludności.' if lang=='pl' else
+                               'Production after industrial inputs, before population consumption.'))
+        await interaction.followup.send(embed=embed,ephemeral=True)
 
     # -------------------------------------------------- /province info
     @province_grp.command(name="info",

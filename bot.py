@@ -251,19 +251,19 @@ async def tutorial_cmd(interaction: discord.Interaction):
                     title = "🏗️ Przewodnik: Budynki"
                     desc = (
                         "**Rozbudowa Twojego Narodu:**\n"
-                        "• Użyj komendy `/build`, aby wznosić nowe budynki.\n"
-                        "• Każdy budynek generuje zasoby (złoto, żywność, produkcję) podczas każdego miesiąca kalendarzowego.\n"
-                        "• Wznoszenie budynków wymaga wolnych pól oraz odpowiednich zasobów początkowych.\n"
-                        "• Pamiętaj, aby dbać o balans między budynkami gospodarczymi a wojskowymi!"
+                        "• Otwórz Panel → Gospodarka → Buduj; wybierz prowincję i budynek.\n"
+                        "• W prowincji mieści się po jednym budynku każdego typu, z ulepszeniami do poziomu 3.\n"
+                        "• Bot automatycznie przydziela pracowników; żywność ma pierwszeństwo.\n"
+                        "• Zasoby w panelu pokazują prognozę bilansu i podpowiadają, co poprawić."
                     )
                 else:
                     title = "🏗️ Guide: Buildings"
                     desc = (
                         "**Developing Your Nation:**\n"
-                        "• Use `/build` to construct new facilities.\n"
-                        "• Buildings produce resources (gold, food, production) every calendar month.\n"
-                        "• Construction requires free land plots and initial resource investment.\n"
-                        "• Keep a healthy balance between economy and military infrastructure!"
+                        "• Open Panel → Economy → Build; choose a province and building.\n"
+                        "• Each province supports one of each building type, upgraded to level 3.\n"
+                        "• Workers are assigned automatically, with food first.\n"
+                        "• Resources in the panel shows the projected balance and practical tips."
                     )
                 color = discord.Color.green()
 
@@ -273,7 +273,7 @@ async def tutorial_cmd(interaction: discord.Interaction):
                     desc = (
                         "**Zarządzanie Żywnością:**\n"
                         "• Żywność jest pobierana co miesiąc, aby utrzymać populację oraz wojsko.\n"
-                        "• Niedobór żywności wywołuje głód, obniżając poparcie i osłabiając jednostki.\n"
+                        "• Pierwszy miesiąc niedoboru ostrzega; od drugiego spada stabilność, a długi ciężki głód zmniejsza populację.\n"
                         "• Buduj farmy i nadzoruj biomy rolnicze, by utrzymać nadwyżkę produkcyjną.\n"
                         "• Nadwyżki żywności możesz handlować lub gromadzić w magazynach."
                     )
@@ -282,7 +282,7 @@ async def tutorial_cmd(interaction: discord.Interaction):
                     desc = (
                         "**Managing Food Supplies:**\n"
                         "• Food is consumed automatically each month by population and military units.\n"
-                        "• Deficits lead to starvation, reducing approval ratings and weakening units.\n"
+                        "• The first shortage warns you; the second reduces stability. Prolonged severe hunger reduces population.\n"
                         "• Expand farms and utilize fertile biomes to maintain a surplus.\n"
                         "• Excess food can be stored in stockpiles or traded to other nations."
                     )

@@ -303,6 +303,13 @@ class CombatCog(commands.Cog):
                     await interaction.response.send_message(
                         i18n.text('Unit group #{p0} not found or not yours.', p0=uid), ephemeral=True)
                     return
+                from economy_services import assert_ready
+                try:
+                    with db.cursor() as c:
+                        assert_ready(c,nat['id'],uid)
+                except ValueError as exc:
+                    await interaction.response.send_message(str(exc),ephemeral=True)
+                    return
                 forces.append({"unit_id": uid, "qty": u["quantity"]})
 
         # Check no unit is already committed to another pending plan
@@ -334,21 +341,12 @@ class CombatCog(commands.Cog):
                     ephemeral=True)
                 return
 
-        plan_data = {
-            "location_text": location,
-            "orders_text":   orders,
-            "forces_note":   forces_note,
-        }
-
-        with db.cursor() as c:
-            c.execute(
-                "INSERT INTO battle_plans(nation_id,forces_json,provinces_json,orders_text,status)"
-                " VALUES(?,?,?,?,?)",
-                (nat["id"], json.dumps(forces), json.dumps([location]),
-                 f"{orders} | Location: {location} | Forces: {forces_note or 'see unit_ids'}",
-                 "unmatched")
-            )
-            plan_id = c.lastrowid
+        from economy_services import submit_plan
+        try:
+            plan_id,forces=submit_plan(nat['id'],forces,location,orders,forces_note)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True)
+            return
 
         _log(nat["id"], "player",
              i18n.text('Submitted battle plan #{p0}. Location: {p1}.', p0=plan_id, p1=location))
@@ -801,7 +799,7 @@ class CombatCog(commands.Cog):
                 pass
 
         await interaction.response.send_message(
-            i18n.text('⚔️ War declared on **{p0}**. Your upkeep is now at war rate (×3). Submit battle plans with `/battle plan`.', p0=target['name']),
+            i18n.text('⚔️ War declared on **{p0}**. Units committed to battle plans use expedition upkeep (150%).', p0=target['name']),
         )
 
     @diplomacy_grp.command(name="peace",
@@ -844,7 +842,7 @@ class CombatCog(commands.Cog):
                 pass
 
         await interaction.response.send_message(
-            i18n.text('🕊️ Peace agreed with **{p0}**. Upkeep returns to peace rate.', p0=target['name']))
+            i18n.text('🕊️ Peace agreed with **{p0}**. You can return available units to active duty or reserve in the panel.', p0=target['name']))
 
     @diplomacy_grp.command(name="alliance",
                            description="Propose an alliance / Zaproponuj sojusz")

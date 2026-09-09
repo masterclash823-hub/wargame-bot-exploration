@@ -7,6 +7,9 @@ so local dev still works without Supabase.
 import os
 import sqlite3
 from contextlib import contextmanager
+from contextvars import ContextVar
+
+_transaction = ContextVar('database_transaction', default=None)
 
 try:
     import psycopg2
@@ -23,6 +26,8 @@ USE_POSTGRES  = bool(DATABASE_URL and HAS_PSYCOPG2)
 # SQLite differences handled by _sqlite_schema() below.
 # ---------------------------------------------------------------------------
 SCHEMA_PG = """
+CREATE TABLE IF NOT EXISTS economy_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
 CREATE TABLE IF NOT EXISTS user_prefs (
     user_id  TEXT PRIMARY KEY,
     language TEXT NOT NULL DEFAULT 'en'
@@ -229,6 +234,33 @@ CREATE TABLE IF NOT EXISTS tech (
     last_drift_ts TIMESTAMPTZ,
     PRIMARY KEY (nation_id, category)
 );
+
+CREATE TABLE IF NOT EXISTS economy_policy (
+    nation_id INTEGER PRIMARY KEY REFERENCES nations(id) ON DELETE CASCADE,
+    tax TEXT NOT NULL DEFAULT 'normal', priority TEXT NOT NULL DEFAULT 'balanced',
+    luxury TEXT NOT NULL DEFAULT 'auto', unrest REAL NOT NULL DEFAULT 0,
+    arrears REAL NOT NULL DEFAULT 0, unpaid_months INTEGER NOT NULL DEFAULT 0,
+    hunger_months INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS province_development (
+    province_id INTEGER PRIMARY KEY REFERENCES provinces(id) ON DELETE CASCADE,
+    levels_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS military_posture (
+    unit_id INTEGER PRIMARY KEY REFERENCES military_units(id) ON DELETE CASCADE,
+    mode TEXT NOT NULL DEFAULT 'active', ready_month INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS economy_months (
+    month_index INTEGER PRIMARY KEY, report_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS trade_contracts (
+    trade_id INTEGER PRIMARY KEY REFERENCES trades(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'proposed', last_month INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS route_assignments (
+    route_id INTEGER PRIMARY KEY REFERENCES trade_routes(id) ON DELETE CASCADE,
+    ship_id INTEGER NOT NULL UNIQUE REFERENCES military_units(id) ON DELETE CASCADE
+);
 """
 
 # SQLite version — same structure, SQLite-compatible types
@@ -349,6 +381,10 @@ class _UnifiedCursor:
 
 @contextmanager
 def cursor():
+    current = _transaction.get()
+    if current is not None:
+        yield current
+        return
     if USE_POSTGRES:
         conn = _pg_conn()
         try:
@@ -383,6 +419,22 @@ def cursor():
 
 
 # ---------------------------------------------------------------------------
+@contextmanager
+def atomic():
+    """Share one transaction across synchronous service calls, never across awaits."""
+    if _transaction.get() is not None:
+        yield _transaction.get()
+        return
+    with cursor() as cur:
+        if not USE_POSTGRES:
+            cur.execute('BEGIN IMMEDIATE')
+        token = _transaction.set(cur)
+        try:
+            yield cur
+        finally:
+            _transaction.reset(token)
+
+
 # INSERT helper that returns the new row's id reliably on both backends
 # ---------------------------------------------------------------------------
 def insert_returning_id(sql: str, params: tuple) -> int:
@@ -391,6 +443,12 @@ def insert_returning_id(sql: str, params: tuple) -> int:
     On Postgres: appends RETURNING id.
     On SQLite: uses lastrowid.
     """
+    if _transaction.get() is not None:
+        cur = _transaction.get()
+        statement=sql.rstrip().rstrip(';')
+        if not statement.upper().endswith('RETURNING ID'):statement+=' RETURNING id'
+        cur.execute(statement, params)
+        return cur.fetchone()['id']
     if USE_POSTGRES:
         if not sql.strip().upper().endswith("RETURNING id"):
             sql = sql.rstrip().rstrip(";") + " RETURNING id"
