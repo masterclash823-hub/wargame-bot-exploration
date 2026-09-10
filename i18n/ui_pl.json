@@ -1,4 +1,6 @@
 {
+  "Plan ID / ID planu": "ID planu",
+  "Full plan as UTF-8 .txt (up to 100000 characters) / Pełny plan w pliku .txt": "Pełny plan w pliku .txt UTF-8 (do 100 000 znaków)",
   "Effective attack reached {p0}, against {p1} defense. Losses are listed separately for each unit group. {p2}": "Efektywny atak wyniósł {p0} wobec obrony {p1}. Straty podano osobno dla każdego oddziału. {p2}",
   "Attacker losses": "Straty atakującego",
   "Defender losses": "Straty obrońcy",

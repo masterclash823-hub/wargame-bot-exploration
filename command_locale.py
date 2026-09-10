@@ -3,6 +3,7 @@ from discord import Locale, app_commands
 import i18n
 
 PARAMETERS = {
+    'orders_file':'plik_rozkazów', 'plan_id':'id_planu',
     'player':'gracz', 'hour_utc':'godzina_utc', 'language':'język',
     'kind':'rodzaj', 'duration':'czas_trwania', 'give_cells':'oddawane_prowincje',
     'receive_cells':'otrzymywane_prowincje', 'note':'opis', 'treaty_id':'id_traktatu', 'payer':'płatnik',

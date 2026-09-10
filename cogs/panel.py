@@ -317,7 +317,8 @@ class PlayerPanel(OwnedView):
             view = HelpView(is_gm=gm_only(interaction), current="general", lang=self.lang)
             await reply(interaction, embed=view._embed(), view=view); return
         if action == "tutorial":
-            await reply(interaction, content=("Użyj kategorii powyżej, wybierz działanie i wskaż obiekt z listy. Formularz pojawi się tylko dla nazw, liczb lub rozkazów." if self.lang == "pl" else "Choose a category, select an action, then pick an item from the list. A form appears only for names, numbers or orders.")); return
+            from tutorial import show_tutorial
+            await show_tutorial(self.bot,interaction); return
         if not nation:
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
@@ -572,10 +573,10 @@ class PlayerPanel(OwnedView):
         await self.rows(i,"SELECT id,status,COALESCE(NULLIF(gm_final_text,''),ai_draft_text) AS text FROM events WHERE nation_id=? AND status IN ('posted','active') ORDER BY id DESC",(n['id'],),lambda r:discord.SelectOption(label=f"Event #{r['id']}",value=str(r['id']),description=(r['text'] or r['status'])[:100]),done)
 
 
-async def send_panel(bot, interaction):
+async def send_panel(bot, interaction, *, section="home"):
     if not active_guild(interaction.guild_id):
         await reply(interaction, content=i18n.text("⛔ Bot not activated on this server. The GM must run `/activate <auth_key>` first.", lang=language(interaction))); return
-    lang=language(interaction); view=PlayerPanel(bot,interaction.user.id,lang)
+    lang=language(interaction); view=PlayerPanel(bot,interaction.user.id,lang,section=section)
     await reply(interaction,embed=view.embed(),view=view)
 
 

@@ -1,5 +1,15 @@
 # Wargame Bot
 
+## Pierwsza rada państwa — przewodnik gracza
+
+`/tutorial` oraz **Panel → Ustawienia → Poradnik** otwierają ten sam przewodnik
+z dziewięcioma krótkimi rozdziałami: start, gospodarka, cele, wymiany, traktaty,
+wojsko, ekspansja, eventy i codzienna gra. Każdy rozdział zawiera scenkę,
+propozycję następnego ruchu oraz przycisk otwierający właściwą kategorię panelu.
+Można czytać kolejno albo wybierać temat z listy. Gracz bez państwa otrzymuje
+instrukcję kontaktu z GM. Przewodnik jest prywatny, działa po polsku i angielsku,
+a jego przyciski nie wykonują za gracza zakupów ani decyzji.
+
 ## Kronika, traktaty i cele państwowe
 
 Panel pozwala wybrać opcjonalny cel za prestiż, przeglądać pamięć decyzji oraz
