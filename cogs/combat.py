@@ -858,8 +858,42 @@ class CombatCog(commands.Cog):
     @app_commands.describe(nation="Nation to make peace with / Narod do zawarcia pokoju")
     @i18n.localized
     async def make_peace(self, interaction: discord.Interaction, nation: str):
-        from cogs.treaties import propose_simple
-        await propose_simple(interaction, nation, 'peace')
+        lang = _lang(interaction)
+        nat  = _nat_owner(str(interaction.user.id))
+        if not nat:
+            await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
+            return
+        target = _nat_name(nation)
+        if not target:
+            await interaction.response.send_message(i18n.t(lang, "nation_not_found"), ephemeral=True)
+            return
+        current = _get_relation(nat["id"], target["id"])
+        if current != "war":
+            await interaction.response.send_message(
+                i18n.text('You are not at war with **{p0}** (status: {p1}).', p0=target['name'], p1=i18n.term(current)),
+                ephemeral=True)
+            return
+        _set_relation(nat["id"], target["id"], "peace")
+        _log(nat["id"],   "system", i18n.text('Peace agreed with {p0}.', p0=target['name']))
+        _log(target["id"],"system", i18n.text('Peace agreed with {p0}.', p0=nat['name']))
+
+        ch_id = _cfg("announce_channel_id")
+        ch    = self.bot.get_channel(int(ch_id)) if ch_id else None
+        if ch:
+            embed = flagged_embed(discord.Embed(
+                title=i18n.text('🕊️ Peace Declared'),
+                description=(
+                    i18n.text('**{p0} {p1}** and **{p2} {p3}** have made peace.', p0=flag_text(nat['flag']), p1=nat['name'], p2=flag_text(target['flag']), p3=target['name'])
+                ),
+                color=discord.Color.green(),
+            ), (nat['flag'], nat['name']), (target['flag'], target['name']))
+            try:
+                await ch.send(embed=embed)
+            except discord.Forbidden:
+                pass
+
+        await interaction.response.send_message(
+            i18n.text('🕊️ Peace agreed with **{p0}**. You can return available units to active duty or reserve in the panel.', p0=target['name']))
 
     @diplomacy_grp.command(name="alliance",
                            description="Propose an alliance / Zaproponuj sojusz")
