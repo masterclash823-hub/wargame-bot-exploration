@@ -29,6 +29,7 @@ import config
 import db
 import i18n
 import battle_resolution
+import battle_plan_text
 from utils import short_date, EmbedPager
 
 
@@ -274,11 +275,13 @@ class CombatCog(commands.Cog):
         orders="Tactical orders and intent / Rozkazy taktyczne",
         forces_note="Brief description of forces committed (optional) / Krotki opis sil",
         unit_ids="Comma-separated unit group IDs to commit (optional) / ID grup jednostek",
+        orders_file="Full plan as UTF-8 .txt (up to 100000 characters) / Pełny plan w pliku .txt",
     )
     @i18n.localized
     async def battle_plan(self, interaction: discord.Interaction,
-                          location: str, orders: str,
-                          forces_note: str = "", unit_ids: str = ""):
+                          location: app_commands.Range[str, 1, 1000], orders: app_commands.Range[str, 0, 6000] = "",
+                          forces_note: app_commands.Range[str, 0, 1000] = "", unit_ids: str = "",
+                          orders_file: discord.Attachment = None):
         lang = _lang(interaction)
         nat  = _nat_owner(str(interaction.user.id))
         if not nat:
@@ -334,6 +337,23 @@ class CombatCog(commands.Cog):
                     ephemeral=True)
                 return
 
+        if orders_file is not None:
+            await interaction.response.defer(ephemeral=True)
+            try:
+                if not orders_file.filename.lower().endswith('.txt') or orders_file.size > battle_plan_text.MAX_FILE_BYTES:
+                    raise ValueError('Use a UTF-8 .txt file, up to 100000 characters. / Użyj pliku UTF-8 .txt, do 100000 znaków.')
+                raw = await orders_file.read()
+                if len(raw) > battle_plan_text.MAX_FILE_BYTES:
+                    raise ValueError('File too large. / Plik jest zbyt duży.')
+                file_text = raw.decode('utf-8-sig')
+                orders = orders + ('\n\n' if orders else '') + file_text
+            except (ValueError, discord.HTTPException) as exc:
+                await interaction.followup.send(str(exc), ephemeral=True)
+                return
+        send = interaction.followup.send if orders_file is not None else interaction.response.send_message
+        if not orders.strip() or len(orders) > battle_plan_text.MAX_ORDERS or '\x00' in orders:
+            await send('Plan: 1–100000 characters, plain text. / Plan: 1–100000 znaków, zwykły tekst.', ephemeral=True)
+            return
         plan_data = {
             "location_text": location,
             "orders_text":   orders,
@@ -345,7 +365,7 @@ class CombatCog(commands.Cog):
                 "INSERT INTO battle_plans(nation_id,forces_json,provinces_json,orders_text,status)"
                 " VALUES(?,?,?,?,?)",
                 (nat["id"], json.dumps(forces), json.dumps([location]),
-                 f"{orders} | Location: {location} | Forces: {forces_note or 'see unit_ids'}",
+                 battle_plan_text.pack(orders, location, forces_note),
                  "unmatched")
             )
             plan_id = c.lastrowid
@@ -359,7 +379,7 @@ class CombatCog(commands.Cog):
             color=discord.Color.orange(),
         )
         embed.add_field(name=i18n.text('Location/Direction'), value=location,              inline=False)
-        embed.add_field(name=i18n.text('Orders'),             value=orders,                inline=False)
+        embed.add_field(name=i18n.text('Orders'), value=orders[:900] + ('…' if len(orders) > 900 else ''), inline=False)
         if forces_note:
             embed.add_field(name=i18n.text('Forces note'),   value=forces_note,           inline=False)
         if forces:
@@ -369,7 +389,19 @@ class CombatCog(commands.Cog):
         embed.set_footer(text=i18n.text('Only you and the GM can see this plan.'))
         if not forces:
             embed.add_field(name='⚠️', value=i18n.text('No units assigned. This plan has no registered forces; a text note does not assign units.'), inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await send(embed=embed, file=battle_plan_text.plan_file(plan_id, plan_data), ephemeral=True)
+
+    @battle_grp.command(name='plan_show', description='Download your full plan (GM: any plan) / Pobierz pełny plan')
+    @app_commands.describe(plan_id='Plan ID / ID planu')
+    @i18n.localized
+    async def plan_show(self, interaction: discord.Interaction, plan_id: int):
+        with db.cursor() as c:
+            c.execute('SELECT p.*,n.owner_id FROM battle_plans p JOIN nations n ON n.id=p.nation_id WHERE p.id=?', (plan_id,))
+            plan = c.fetchone()
+        if not plan or (str(plan['owner_id']) != str(interaction.user.id) and not _gm(interaction)):
+            await interaction.response.send_message('Plan unavailable. / Plan niedostępny.', ephemeral=True)
+            return
+        await interaction.response.send_message(file=battle_plan_text.plan_file(plan_id, battle_plan_text.unpack(plan)), ephemeral=True)
 
     # -------------------------------------------------- /battle plans_pending
     @battle_grp.command(name="plans_pending",
@@ -399,7 +431,7 @@ class CombatCog(commands.Cog):
             loc      = json.loads(r["provinces_json"])
             loc_str  = str(loc[0])[:150] if loc else i18n.text('not specified')
             orders_full = r["orders_text"]
-            orders_disp = orders_full.split(" | Location:")[0][:200]
+            orders_disp = battle_plan_text.unpack(r)['orders_text'][:200] + f'… /battle plan_show {r["id"]}'
             name = f"Plan #{r['id']} — {short_date(r['submitted_at'])}"
             if not forces:
                 name = '⚠️ ' + name
@@ -543,7 +575,7 @@ class CombatCog(commands.Cog):
                 loc  = json.loads(p["provinces_json"])
                 loc_str = loc[0][:200] if loc else "?"
                 orders_full = p["orders_text"]
-                orders_disp = orders_full.split(" | Location:")[0][:300]
+                orders_disp = battle_plan_text.unpack(p)['orders_text'][:300] + f'… /battle plan_show {p["id"]}'
                 embed.add_field(
                     name=f"🔒 {label}",
                     value=(
@@ -627,19 +659,7 @@ class CombatCog(commands.Cog):
             await interaction.followup.send(str(exc), ephemeral=True)
             return
 
-        def plan_dict(plan):
-            try:
-                locations = json.loads(plan["provinces_json"])
-            except (TypeError, ValueError):
-                locations = []
-            orders = str(plan["orders_text"] or "")
-            return {
-                "location_text": str(locations[0]) if locations else "unknown",
-                "orders_text": orders.split(" | Location:", 1)[0],
-                "forces_note": orders.split(" | Forces:", 1)[1] if " | Forces:" in orders else "",
-            }
-
-        pd_a, pd_b = plan_dict(plan_a), plan_dict(plan_b)
+        pd_a, pd_b = battle_plan_text.unpack(plan_a), battle_plan_text.unpack(plan_b)
         battlefield = battle_resolution.location_context(final_location)
         forces_a = battle_resolution.force_snapshot(plan_a, nat_a)
         forces_b = battle_resolution.force_snapshot(plan_b, nat_b)
