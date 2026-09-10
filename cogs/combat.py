@@ -827,7 +827,10 @@ class CombatCog(commands.Cog):
             await interaction.response.send_message(
                 i18n.text('You are already at war with **{p0}**.', p0=target['name']), ephemeral=True)
             return
-        _set_relation(nat["id"], target["id"], "war")
+        import treaty_service
+        try: treaty_service.declare_war(nat['id'], interaction.user.id, target['id'])
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True); return
         _log(nat["id"],   "system", i18n.text('Declared war on {p0}.', p0=target['name']))
         _log(target["id"],"system", i18n.text('{p0} declared war on us.', p0=nat['name']))
 
@@ -897,20 +900,8 @@ class CombatCog(commands.Cog):
     @app_commands.describe(nation="Nation to ally with / Narod do sojuszu")
     @i18n.localized
     async def alliance(self, interaction: discord.Interaction, nation: str):
-        lang = _lang(interaction)
-        nat  = _nat_owner(str(interaction.user.id))
-        if not nat:
-            await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
-            return
-        target = _nat_name(nation)
-        if not target:
-            await interaction.response.send_message(i18n.t(lang, "nation_not_found"), ephemeral=True)
-            return
-        _set_relation(nat["id"], target["id"], "alliance")
-        _log(nat["id"],   "system", i18n.text('Alliance formed with {p0}.', p0=target['name']))
-        _log(target["id"],"system", i18n.text('Alliance formed with {p0}.', p0=nat['name']))
-        await interaction.response.send_message(
-            i18n.text('🤝 Alliance formed with **{p0}**.', p0=target['name']))
+        from cogs.treaties import propose_simple
+        await propose_simple(interaction, nation, 'alliance')
 
     @diplomacy_grp.command(name="status",
                            description="View your diplomatic relations / Status dyplomatyczny")

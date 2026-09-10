@@ -1,4 +1,8 @@
 {
+  "rejected":"Odrzucony", "broken":"Zerwany", "expired":"Wygasły", "abandoned":"Porzucony",
+  "failed":"Nieudana wysyłka", "uncertain":"Sprawdź kanał", "sending":"Wysyłanie", "sent":"Wysłany",
+  "non_aggression":"Pakt o nieagresji", "military_access":"Dostęp wojskowy", "guarantee":"Gwarancja bezpieczeństwa",
+  "proposer":"Autor propozycji", "recipient":"Odbiorca", "public":"Publiczne", "private":"Prywatne", "event_private":"Decyzje prywatne",
   "gold":"Złoto", "treasury":"Skarbiec", "food":"Żywność", "wood":"Drewno",
   "iron":"Żelazo", "stone":"Kamień", "coal":"Węgiel", "copper":"Miedź", "clay":"Glina",
   "tar":"Smoła", "gunpowder":"Proch", "cloth":"Sukno", "silk":"Jedwab", "spices":"Przyprawy",

@@ -1,5 +1,16 @@
 # Wargame Bot
 
+## Kronika, traktaty i cele państwowe
+
+Panel pozwala wybrać opcjonalny cel za prestiż, przeglądać pamięć decyzji oraz
+negocjować traktaty z obustronną akceptacją, reparacjami i przekazywaniem prowincji.
+GM nadaje państwo przez `/nation found player:@gracz name:nazwa history:historia`
+i może przekazać je przez `/nation transfer`.
+
+`/chronicle configure channel:#kronika` włącza codzienny raport do dwóch
+publicznych akcji graczy. Szczegółowe zasady, wpływ podatków i konfiguracja:
+[Aktualizacja świata](docs/world-update.md).
+
 ## Gospodarka z prostym panelem
 
 **Panel → Gospodarka → Zasoby** pokazuje bilans najbliższego miesiąca,

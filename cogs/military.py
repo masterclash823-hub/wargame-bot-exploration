@@ -145,7 +145,18 @@ class ShipDesignerView(i18n.LocalizedView):
         self.slots         = slots
         self.selected      = []   # list of module keys (repeats allowed)
         self.base_stats    = base_stats
+        self.saved         = False
         self._rebuild()
+
+    @i18n.localized
+    async def interaction_check(self, interaction):
+        with db.cursor() as c:
+            c.execute('SELECT owner_id FROM nations WHERE id=?', (self.nation_id,))
+            n = c.fetchone()
+        if n and n['owner_id'] == str(interaction.user.id) and not self.saved: return True
+        from world_service import tr
+        await interaction.response.send_message(tr('Projekt nie jest już dostępny dla tego gracza.', 'This design is no longer available to this player.'), ephemeral=True)
+        return False
 
     def _rebuild(self):
         self.clear_items()
@@ -196,15 +207,18 @@ class ShipDesignerView(i18n.LocalizedView):
 
     @i18n.localized
     async def _save(self, interaction: discord.Interaction):
+        from world_service import owned, tr
         stats = _ship_stats(self.hull_key, self.selected)
-        with db.cursor() as c:
-            c.execute(
-                "INSERT INTO blueprints(nation_id,type,name,hull,components_json,stats_json)"
-                " VALUES(?,?,?,?,?,?)",
-                (self.nation_id, "ship", self.bp_name, self.hull_key,
-                 json.dumps(self.selected), json.dumps(stats))
-            )
-            bp_id = c.lastrowid
+        try:
+            with db.atomic() as c:
+                owned(c, self.nation_id, interaction.user.id)
+                if self.saved: raise ValueError(tr('Projekt został już zapisany.', 'The blueprint is already saved.'))
+                bp_id = db.insert_returning_id(
+                    "INSERT INTO blueprints(nation_id,type,name,hull,components_json,stats_json) VALUES(?,?,?,?,?,?)",
+                    (self.nation_id, "ship", self.bp_name, self.hull_key, json.dumps(self.selected), json.dumps(stats)))
+            self.saved = True
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True); return
         _log(self.nation_id, "player",
              i18n.text("Designed ship blueprint '{p0}' (#{p1}): {p2} + {p3} module(s). ATK:{p4} HP:{p5} SPD:{p6} CARGO:{p7}.", p0=self.bp_name, p1=bp_id, p2=i18n.text(HULLS[self.hull_key]['name']), p3=len(self.selected), p4=stats['attack'], p5=stats['hp'], p6=stats['speed'], p7=stats['cargo']))
         for item in self.children:
@@ -614,20 +628,11 @@ class MilitaryCog(commands.Cog):
         nat  = _nat_owner(str(interaction.user.id))
         if not nat:
             await interaction.response.send_message(i18n.t(lang,"no_nation"), ephemeral=True); return
-        with db.cursor() as c:
-            c.execute("SELECT u.*,b.name as bname FROM military_units u "
-                      "LEFT JOIN blueprints b ON u.blueprint_id=b.id "
-                      "WHERE u.id=? AND u.nation_id=?", (unit_id,nat["id"]))
-            unit = c.fetchone()
-        if not unit:
-            await interaction.response.send_message(i18n.text('Unit group #{p0} not found.', p0=unit_id), ephemeral=True); return
-        with db.cursor() as c:
-            c.execute("SELECT * FROM provinces WHERE azgaar_cell_id=? AND active=1", (cell_id,))
-            prov = c.fetchone()
-        if not prov:
-            await interaction.response.send_message(i18n.text('Province {p0} not found.', p0=cell_id), ephemeral=True); return
-        with db.cursor() as c:
-            c.execute("UPDATE military_units SET province_id=? WHERE id=?", (prov["id"],unit_id))
+        import treaty_service
+        try:
+            unit, prov = treaty_service.move_unit(nat['id'], interaction.user.id, unit_id, cell_id)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True); return
         _log(nat["id"],"player",
              i18n.text('Moved group #{p0} ({p1}× {p2}) to {p3}.', p0=unit_id, p1=unit['quantity'], p2=unit['bname'], p3=prov['name'] or i18n.text('Cell #{p0}', p0=cell_id)))
         await interaction.response.send_message(

@@ -45,6 +45,8 @@ def build(nid,cell,key,upgrade=False):
                   (json.dumps(buildings),1 if key=='fort' else 0,p['id']))
         c.execute('INSERT INTO province_development(province_id,levels_json) VALUES(?,?) '
                   'ON CONFLICT(province_id) DO UPDATE SET levels_json=excluded.levels_json',(p['id'],json.dumps(levels)))
+        from world_service import activity
+        activity(c,'building',nid,f"building:{p['id']}:{key}:{old+1}",{'building':key,'level':old+1,'cell':cell})
         return old+1,cost
 
 
@@ -187,6 +189,8 @@ def found_colony(nid,cell,name):
         c.execute('UPDATE provinces SET owner_nation_id=? WHERE id=?',(nid,p['id']))
         cid=db.insert_returning_id("INSERT INTO colonies(nation_id,province_id,name,status) VALUES(?,?,?,'outpost')",(nid,p['id'],name))
         c.execute('UPDATE nations SET population=(SELECT COALESCE(SUM(population),0) FROM provinces WHERE owner_nation_id=? AND active=1) WHERE id=?',(nid,nid))
+        from world_service import activity
+        activity(c,'colony',nid,f'colony:{cid}',{'cell':cell})
         return cid
 
 
@@ -218,7 +222,7 @@ def start_megaproject(nid,mpid):
         c.execute('UPDATE megaprojects SET status=?,months_spent=0 WHERE id=?',(state,mpid))
         if state=='complete':
             c.execute('UPDATE megaprojects SET completed_at=CURRENT_TIMESTAMP WHERE id=?',(mpid,))
-            _apply_mp_effect(nid,mp['effect_json'],mp['name'])
+            _apply_mp_effect(nid,mp['effect_json'],mp['name'],mp['id'])
         return state
 
 
@@ -236,5 +240,5 @@ def advance_megaproject(mpid,months):
         c.execute('UPDATE megaprojects SET status=?,months_spent=? WHERE id=?',(state,spent,mpid))
         if state=='complete':
             c.execute('UPDATE megaprojects SET completed_at=CURRENT_TIMESTAMP WHERE id=?',(mpid,))
-            _apply_mp_effect(mp['nation_id'],mp['effect_json'],mp['name'])
+            _apply_mp_effect(mp['nation_id'],mp['effect_json'],mp['name'],mp['id'])
         return state
