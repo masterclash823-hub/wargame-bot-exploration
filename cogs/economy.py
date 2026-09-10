@@ -199,7 +199,7 @@ def _deduct(res, cost):
             res[r] = res.get(r, 0) - a
     return True, ""
 
-def _apply_mp_effect(nid, effect_str, mp_name):
+def _apply_mp_effect(nid, effect_str, mp_name, mp_id):
     effect = json.loads(effect_str) if isinstance(effect_str, str) else effect_str
     with db.cursor() as c:
         c.execute("SELECT * FROM nations WHERE id=?", (nid,))
@@ -237,6 +237,9 @@ def _apply_mp_effect(nid, effect_str, mp_name):
     if special:
         entry += f" {special}"
     _log(nid, "system", entry)
+    from world_service import activity
+    with db.cursor() as c:
+        activity(c,'project',nid,f"project:{mp_id}")
 
 def _seed_buildings():
     from economy_migration import seed_buildings
@@ -294,7 +297,9 @@ HELP_SECTIONS = {
         "title": "🏳️ Nation",
         "color": discord.Color.blue(),
         "fields": [
-            ("/nation found", "Found your nation."),
+            ("Starting a nation", "Ask the Game Master to create and assign your nation."),
+            ("/goals status", "Choose one optional goal; earn 10 prestige. Also available in the panel."),
+            ("/memories", "Read your private decision archive and recorded consequences."),
             ("/nation stats [name]", "View a nation's stats."),
             ("/nation list", "List all nations."),
             ("/nation history <name>", "View a nation's public history log."),
@@ -384,10 +389,13 @@ HELP_SECTIONS = {
             ("/battle plan", "Submit a battle plan — location (free text), orders, optional unit IDs and image URL."),
             ("/battle view <id>", "View a battle. Plans are private to parties and GM only."),
             ("/diplomacy war <nation>", "Declare war. Units committed to battle plans enter expedition posture (150% upkeep)."),
-            ("/diplomacy peace <nation>", "Make peace with a nation you are at war with."),
-            ("/diplomacy alliance <nation>", "Form an alliance with another nation."),
+            ("/diplomacy peace <nation>", "Propose peace; the recipient must accept the terms in the treaty panel."),
+            ("/diplomacy alliance <nation>", "Propose an alliance; the other nation must explicitly accept."),
             ("/diplomacy status", "View your own diplomatic relations."),
-            ("/diplomacy public", "View the world diplomatic landscape — all active wars and alliances."),
+            ("/treaty propose", "Propose a peace settlement, alliance, non-aggression pact, military access or guarantee."),
+            ("/treaty list", "Review proposals and accepted terms; accept, decline or break a treaty."),
+            ("/treaty tribute", "Add monthly reparations before acceptance. Also available through the terms button."),
+            ("/treaty calls", "Answer a guarantee call before the next game month; joining war requires your decision."),
             ("/event list [nation]", "View posted events for a nation or your own."),
             ("/event play <id>", "Resume an event: 3 choices or a custom response, 3 decisions maximum."),
         ],
@@ -395,6 +403,10 @@ HELP_SECTIONS = {
 }
 
 GM_HELP_FIELDS = [
+    ("/nation found <player> <name> <history>", "Create a nation and assign it to a player. Existing nations remain unchanged."),
+    ("/nation transfer <nation> <player>", "Transfer ownership after reviewing inherited obligations. Pending proposals are cancelled."),
+    ("/chronicle configure <channel> [hour_utc] [language]", "Enable a daily report of up to two public actions. Default: 18:00 UTC, Polish."),
+    ("/chronicle preview / pause / status / retry", "Preview, pause and inspect reports; explicitly retry a failed or uncertain delivery."),
     ("/nation history_add", "Add a manual history entry."),
     ("/nation delete <name>", "Delete a nation and release all their provinces (confirmation required)."),
     ("/province claim", "Claim provinces by cell ID(s)."),
@@ -441,7 +453,9 @@ HELP_SECTIONS_PL = {
         "title": "🏳️ Naród",
         "color": discord.Color.blue(),
         "fields": [
-            ("/nation found <nazwa>", "Załóż swój naród (wymaga historii założenia)."),
+            ("Pierwsze państwo", "Poproś Game Mastera o utworzenie państwa i nadanie go Tobie."),
+            ("/goals status", "Wybierz jeden opcjonalny cel za 10 prestiżu. Dostępne także w panelu."),
+            ("/memories", "Czytaj prywatne archiwum decyzji i ich zapisanych skutków."),
             ("/nation stats [nazwa]", "Statystyki narodu. Puste = twój naród."),
             ("/nation list", "Lista wszystkich narodów."),
             ("/nation history <nazwa>", "Publiczna historia narodu."),
@@ -517,10 +531,13 @@ HELP_SECTIONS_PL = {
             ("/battle plan", "Wyślij plan bitwy — lokalizacja (tekst), rozkazy, opcjonalne ID jednostek i URL mapy."),
             ("/battle view <id>", "Szczegóły bitwy. Plany prywatne dla stron i GM."),
             ("/diplomacy war <naród>", "Wypowiedz wojnę. Jednostki zgłoszone do planu bitwy przechodzą na wyprawę (150% utrzymania)."),
-            ("/diplomacy peace <naród>", "Zawrzyj pokój z narodem z którym jesteś w stanie wojny."),
+            ("/diplomacy peace <naród>", "Zaproponuj pokój; odbiorca musi zaakceptować warunki w panelu traktatów."),
             ("/diplomacy alliance <naród>", "Zaproponuj sojusz innemu narodowi."),
             ("/diplomacy status", "Twoje relacje dyplomatyczne."),
-            ("/diplomacy public", "Mapa dyplomatyczna świata — wszystkie aktywne wojny i sojusze."),
+            ("/treaty propose", "Zaproponuj pokój, sojusz, nieagresję, dostęp wojskowy lub gwarancję bezpieczeństwa."),
+            ("/treaty list", "Przejrzyj propozycje i warunki; zaakceptuj, odrzuć lub zerwij traktat."),
+            ("/treaty tribute", "Dodaj raty reparacji przed akceptacją. Dostępne też przyciskiem warunków."),
+            ("/treaty calls", "Odpowiedz na gwarancję przed następnym miesiącem gry. Sam decydujesz o wejściu do wojny."),
             ("/event list [naród]", "Lista opublikowanych eventów dla narodu."),
             ("/event play <id>", "Wznów event: 3 opcje lub własna odpowiedź, maksymalnie 3 decyzje."),
         ],
@@ -543,6 +560,10 @@ HELP_SECTIONS_PL = {
 }
 
 GM_HELP_FIELDS_PL = [
+    ("/nation found <gracz> <nazwa> <historia>", "Utwórz państwo i nadaj je graczowi. Istniejące państwa pozostają bez zmian."),
+    ("/nation transfer <naród> <gracz>", "Przekaż państwo po sprawdzeniu przejmowanych zobowiązań. Oczekujące propozycje zostaną anulowane."),
+    ("/chronicle configure <kanał> [godzina_utc] [język]", "Włącz codzienny raport do dwóch publicznych akcji. Domyślnie: 18:00 UTC, polski."),
+    ("/chronicle preview / pause / status / retry", "Podgląd, wstrzymanie i stan raportów; świadome ponowienie nieudanej lub niepewnej wysyłki."),
     ("/nation history_add", "Dodaj ręcznie wpis do historii narodu."),
     ("/nation delete <nazwa>", "Usuń naród z potwierdzeniem (prowincje zwolnione)."),
     ("/province claim", "Przyznaj prowincje narodowi po ID komórek."),

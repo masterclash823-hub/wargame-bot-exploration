@@ -261,6 +261,67 @@ CREATE TABLE IF NOT EXISTS route_assignments (
     route_id INTEGER PRIMARY KEY REFERENCES trade_routes(id) ON DELETE CASCADE,
     ship_id INTEGER NOT NULL UNIQUE REFERENCES military_units(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS nation_profiles (
+    nation_id INTEGER PRIMARY KEY REFERENCES nations(id) ON DELETE CASCADE,
+    prestige INTEGER NOT NULL DEFAULT 0, reputation INTEGER NOT NULL DEFAULT 50
+);
+CREATE TABLE IF NOT EXISTS ownership_changes (
+    id SERIAL PRIMARY KEY, nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    previous_owner TEXT NOT NULL, new_owner TEXT NOT NULL, gm_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS nation_memories (
+    id SERIAL PRIMARY KEY, nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL, payload_json TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(nation_id,source_key)
+);
+CREATE TABLE IF NOT EXISTS world_activity (
+    id SERIAL PRIMARY KEY, nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    other_nation_id INTEGER REFERENCES nations(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL, source_key TEXT NOT NULL UNIQUE, payload_json TEXT NOT NULL DEFAULT '{}',
+    occurred_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_world_activity_time ON world_activity(occurred_at);
+CREATE TABLE IF NOT EXISTS nation_goals (
+    id SERIAL PRIMARY KEY, nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', start_month INTEGER NOT NULL,
+    baseline_json TEXT NOT NULL DEFAULT '{}', progress_json TEXT NOT NULL DEFAULT '{}',
+    last_month INTEGER NOT NULL, completed_month INTEGER, activity_after INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_goal ON nation_goals(nation_id) WHERE status='active';
+CREATE TABLE IF NOT EXISTS treaties (
+    id SERIAL PRIMARY KEY,
+    proposer_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    recipient_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    proposer_owner TEXT NOT NULL, recipient_owner TEXT NOT NULL,
+    kind TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'proposed', visibility TEXT NOT NULL DEFAULT 'public',
+    version INTEGER NOT NULL DEFAULT 0,
+    terms_json TEXT NOT NULL DEFAULT '{}', duration INTEGER NOT NULL DEFAULT 12,
+    created_month INTEGER NOT NULL, submitted_month INTEGER, accepted_month INTEGER, expires_month INTEGER,
+    last_paid_month INTEGER, payments_left INTEGER NOT NULL DEFAULT 0,
+    arrears REAL NOT NULL DEFAULT 0, missed_payments INTEGER NOT NULL DEFAULT 0,
+    broken_by INTEGER REFERENCES nations(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS guarantee_calls (
+    id SERIAL PRIMARY KEY, treaty_id INTEGER NOT NULL REFERENCES treaties(id) ON DELETE CASCADE,
+    attacker_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    defender_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending', deadline_month INTEGER NOT NULL,
+    source_key TEXT NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS news_settings (
+    guild_id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, language TEXT NOT NULL DEFAULT 'pl',
+    hour_utc INTEGER NOT NULL DEFAULT 18, enabled INTEGER NOT NULL DEFAULT 1,
+    next_due_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS news_deliveries (
+    guild_id TEXT NOT NULL, slot TEXT NOT NULL, channel_id TEXT NOT NULL,
+    language TEXT NOT NULL, report_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+    message_id TEXT, updated_at TEXT NOT NULL, error TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(guild_id,slot)
+);
 """
 
 # SQLite version — same structure, SQLite-compatible types

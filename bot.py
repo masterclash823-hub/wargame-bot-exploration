@@ -25,6 +25,9 @@ COGS = [
     "cogs.combat",
     "cogs.events",
     "cogs.colonialism",
+    "cogs.treaties",
+    "cogs.world",
+    "cogs.chronicle",
     "cogs.panel",
 ]
 

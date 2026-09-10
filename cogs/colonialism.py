@@ -163,6 +163,8 @@ def expand_colony(nation_id: int, source_cell_id: int, target_cell_id: int, name
             "INSERT INTO colonies(nation_id,province_id,name,status) VALUES(?,?,?,?)",
             (nation_id, target["id"], name, "outpost"),
         )
+        from world_service import activity
+        activity(c,'expansion',nation_id,f"expansion:{target['id']}",{'cell':target_cell_id})
     return {"name": name, "cost": cost, "target": target, "source": source}
 
 

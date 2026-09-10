@@ -296,6 +296,8 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
         c.execute("UPDATE battle_plans SET status='resolved' WHERE id IN (?,?)",
                   (plan_a["id"], plan_b["id"]))
         winner_name = nat_a["name"] if result["winner"] == "attacker" else nat_b["name"] if result["winner"] == "defender" else i18n.text('Draw')
+        from world_service import activity
+        activity(c,'battle',nat_a['id'],f'battle:{battle_id}',{'winner':result['winner']},nat_b['id'])
         for nation, role in ((nat_a, "attacker"), (nat_b, "defender")):
             pct = result["atk_casualties_pct"] if role == "attacker" else result["def_casualties_pct"]
             c.execute("INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,?,?)",

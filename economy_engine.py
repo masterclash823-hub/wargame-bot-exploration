@@ -244,7 +244,7 @@ def _megaprojects(c,nid):
             c.execute('UPDATE megaprojects SET months_spent=? WHERE id=?',(spent,mp['id']))
             if mp['duration_months']>0 and spent>=mp['duration_months']:
                 c.execute("UPDATE megaprojects SET status='complete',completed_at=CURRENT_TIMESTAMP WHERE id=?",(mp['id'],))
-                _apply_mp_effect(nid,mp['effect_json'],mp['name'])
+                _apply_mp_effect(nid,mp['effect_json'],mp['name'],mp['id'])
             continue  # Monthly yields start in the following month.
         effect=read_json(mp['effect_json'])
         excluded={'gold','gold_per_tick','gold_once','resources_once','stability','special_note','resources_per_tick'}
@@ -269,6 +269,8 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
         c.execute("INSERT INTO economy_meta(key,value) VALUES('tick_lock','1') ON CONFLICT(key) DO NOTHING")
         c.execute("SELECT value FROM economy_meta WHERE key='tick_lock'"+(' FOR UPDATE' if db.USE_POSTGRES else ''))
         c.fetchone()
+        from world_service import world_lock,progress_goals
+        world_lock(c)
         month=int(_config(c,'current_month','1')); year=int(_config(c,'current_year','1'))
         current=year*12+month-1
         if expected_month is not None and current!=expected_month: return None
@@ -289,6 +291,8 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
         c.execute('SELECT month_index FROM economy_months WHERE month_index=?',(target,))
         if c.fetchone(): raise ValueError('This month has already been settled.')
         from economy_services import settle_contracts
+        from treaty_service import tick as treaty_tick
+        treaty_tick(c,target)
         settle_contracts(c,target)
         c.execute("UPDATE military_posture SET mode='active' WHERE mode='mobilizing' AND ready_month<=?",(target,))
         reports={}
@@ -316,6 +320,7 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
             from cogs.colonialism import tick_colonies
             with i18n.using_language(i18n.get_user_language(n['owner_id'])):
                 tick_colonies(nid,1)
+            progress_goals(c,nid,target,result)
             reports[str(nid)]=result
         year,month=target//12,target%12+1
         _set(c,'current_month',month); _set(c,'current_year',year)

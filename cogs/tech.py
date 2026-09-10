@@ -323,11 +323,15 @@ class TechCog(commands.Cog):
                 try:
                     with db.atomic() as c:
                         current=lock_nation(c,nat['id'])
+                        from world_service import owned,activity
+                        owned(c,nat['id'],btn_interaction.user.id)
                         live_tech=read_json(current['tech_json'])
                         if live_tech.get(cat,3)!=old:raise ValueError(i18n.text('Technology changed. Open research again.'))
                         spend(c,current,{'gold':gold_cost,'universal_knowledge':uk_cost})
                         live_tech[cat]=new
                         c.execute('UPDATE nations SET tech_json=? WHERE id=?',(json.dumps(live_tech),nat['id']))
+                        import uuid
+                        activity(c,'research',nat['id'],'research:'+uuid.uuid4().hex,{'category':cat})
                 except ValueError as exc:
                     await btn_interaction.response.send_message(str(exc),ephemeral=True)
                     return
