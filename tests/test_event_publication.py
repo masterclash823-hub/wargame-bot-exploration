@@ -50,13 +50,25 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
             import event_adventure
             await event_adventure.decide(self.eid, 0, 1, choice=0)
 
-    async def test_image_failure_leaves_draft_retryable(self):
+    async def test_image_failure_still_publishes_event(self):
         with patch('cogs.events.find_event_image', AsyncMock(return_value=None)):
             await self.cog.event_post.callback(self.cog, self.gm, self.eid, 'public', self.channel)
         with db.cursor() as c:
             c.execute('SELECT status FROM events WHERE id=?', (self.eid,))
-            self.assertEqual(c.fetchone()['status'], 'draft')
-        self.channel.send.assert_not_awaited()
+            self.assertEqual(c.fetchone()['status'], 'active')
+        self.channel.send.assert_awaited_once()
+        self.assertIsNone(self.channel.send.call_args.kwargs['embed'].image.url)
+        self.owner.send.assert_awaited_once()
+
+    async def test_disabled_image_skips_search_even_with_query(self):
+        with patch('cogs.events.find_event_image', AsyncMock()) as search:
+            await self.cog.event_post.callback(self.cog, self.gm, self.eid, 'public',
+                                               self.channel, 'old search', include_image=False)
+            search.assert_not_awaited()
+        self.channel.send.assert_awaited_once()
+        self.assertIsNone(self.channel.send.call_args.kwargs['embed'].image.url)
+        self.assertNotIn('illustration', self.gm.followup.send.call_args.args[0])
+        self.owner.send.assert_awaited_once()
 
     async def test_private_resolution_history_is_private(self):
         import event_adventure as flow

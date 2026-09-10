@@ -74,7 +74,7 @@ class BattleResolveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
                 "attacker_modifier": 1, "defender_modifier": 1, "reasoning": "Even"})), \
              patch.object(combat, "_get_ai_battle_report", AsyncMock(return_value={
                 "opening":"The lines met on the hills.", "turning_point":"A flanking attack broke the line.",
-                "outcome":"The defender withdrew."})), \
+                "outcome":"The defender withdrew."})) as narrate, \
              patch.object(resolution.random, "uniform", return_value=1):
             await CombatCog.battle_resolve.callback(CombatCog(bot), inter, bid, "55")
         self.assertEqual(self.quantities(1), [8, 7])
@@ -88,6 +88,8 @@ class BattleResolveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(battle["resolved_at"])
         self.assertEqual(statuses, ["resolved", "resolved"])
         report = json.loads(battle["report_json"])
+        self.assertEqual(narrate.call_args.args[7]['attacker_losses'], report['attacker_losses'])
+        self.assertEqual(narrate.call_args.args[7]['defender_losses'], report['defender_losses'])
         self.assertEqual(report["attacker_losses"][0]["committed"], 4)
         self.assertEqual(report["attacker_losses"][0]["lost"], 2)
         self.assertEqual(report["defender_losses"][0]["lost"], 1)
@@ -124,6 +126,25 @@ class BattleResolveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.quantities(1), [10, 7])
         self.assertFalse(settled["result"]["casualties_applied"])
         self.assertEqual(settled["fort_bonus"], 1.2)
+        self.assertTrue(settled['result']['attacker_losses'])
+
+    async def test_tactical_exposure_changes_real_unit_losses(self):
+        bid, pa, _ = self.battle()
+        with db.cursor() as c:
+            c.execute('SELECT id FROM military_units WHERE nation_id=1 ORDER BY id')
+            front, reserve = [r['id'] for r in c.fetchall()]
+            c.execute('UPDATE battle_plans SET forces_json=? WHERE id=?',
+                      (json.dumps([{'unit_id':front,'qty':4}, {'unit_id':reserve,'qty':4}]), pa))
+        ai = {'attacker_exposure': {str(front): {'weight':4, 'reason':'Assault'},
+                                    str(reserve): {'weight':.25, 'reason':'Rear reserve'}}}
+        with patch.object(resolution.random, 'uniform', return_value=1):
+            settled = resolution.resolve(bid, ai, final_location='55')
+        losses = settled['result']['attacker_losses']
+        self.assertGreater(losses[0]['lost'], losses[1]['lost'])
+        self.assertEqual(self.quantities(1), [10-losses[0]['lost'], 7-losses[1]['lost']])
+        with db.cursor() as c:
+            c.execute('SELECT report_json FROM battles WHERE id=?', (bid,))
+            self.assertEqual(json.loads(c.fetchone()['report_json'])['attacker_losses'], losses)
 
     async def test_duplicate_and_concurrent_resolution_pay_once(self):
         bid, _, _ = self.battle()
