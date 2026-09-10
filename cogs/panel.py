@@ -557,7 +557,7 @@ class PlayerPanel(OwnedView):
         opts=[discord.SelectOption(label=f"#{r['id']} {r['name'] or 'Unit'} ×{r['quantity']}"[:100],value=str(r['id'])) for r in rows[:25]]
         async def units(i2,ids):
             async def submit(i3,location,orders,note): await invoke(self.cog("CombatCog"),"battle_plan",i3,location,orders,note,ids)
-            await i2.response.send_modal(FieldsModal(tr(self.lang,"battle_plan"),[{"label":"Miejsce / Location"},{"label":"Rozkazy / Orders","style":discord.TextStyle.paragraph,"max_length":1000},{"label":"Opis sił / Forces note","required":False,"style":discord.TextStyle.paragraph,"max_length":500}],submit))
+            await i2.response.send_modal(FieldsModal(tr(self.lang,"battle_plan"),[{"label":"Miejsce / Location"},{"label":"Rozkazy / Orders","style":discord.TextStyle.paragraph,"max_length":4000,"placeholder":"Dłuższy plan: /battle plan orders_file (.txt)"},{"label":"Opis sił / Forces note","required":False,"style":discord.TextStyle.paragraph,"max_length":1000}],submit))
         if rows: await reply(i,content=(tr(self.lang,"shortened") if len(rows)>25 else None),view=ChoiceView(self.owner_id,self.lang,opts,units,multiple=True))
         else: await units(i,"")
 
