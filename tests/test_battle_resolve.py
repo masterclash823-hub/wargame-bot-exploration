@@ -11,6 +11,7 @@ from test_regressions import DatabaseFixture, interaction
 import battle_resolution as resolution
 import config
 import db
+import i18n
 from cogs import combat
 from cogs.combat import CombatCog
 
@@ -70,13 +71,18 @@ class BattleResolveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         bid, pa, pb = self.battle()
         bot = NS(get_channel=lambda _: None)
         inter = interaction(999, [NS(id=12, name=config.GM_ROLE_NAME)])
+        i18n.set_user_language(999, 'pl')
+        i18n.set_user_language(1, 'en')
+        i18n.set_user_language(2, 'en')
         with patch.object(combat, "_get_ai_modifier", AsyncMock(return_value={
-                "attacker_modifier": 1, "defender_modifier": 1, "reasoning": "Even"})), \
+                "attacker_modifier": 1, "defender_modifier": 1, "reasoning": "Even"})) as modifier, \
              patch.object(combat, "_get_ai_battle_report", AsyncMock(return_value={
                 "opening":"The lines met on the hills.", "turning_point":"A flanking attack broke the line.",
                 "outcome":"The defender withdrew."})) as narrate, \
              patch.object(resolution.random, "uniform", return_value=1):
             await CombatCog.battle_resolve.callback(CombatCog(bot), inter, bid, "55")
+        self.assertEqual(modifier.call_args.kwargs['lang'], 'pl')
+        self.assertEqual(narrative.call_args.kwargs['lang'], 'pl')
         self.assertEqual(self.quantities(1), [8, 7])
         self.assertEqual(self.quantities(2), [9, 7])
         with db.cursor() as c:
@@ -97,7 +103,7 @@ class BattleResolveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["battlefield"]["cell_id"], 55)
         self.assertIn("flanking", report["narrative"]["turning_point"])
         self.assertEqual(report["attacker_forces"][0]["name"], "Infantry 1")
-        self.assertIn("Resolved", inter.followup.send.call_args.kwargs["embed"].title)
+        self.assertIn("rozstrzygnięta", inter.followup.send.call_args.kwargs["embed"].title)
 
     async def test_missing_final_location_opens_modal_without_resolving(self):
         bid, _, _ = self.battle()
@@ -224,6 +230,23 @@ class BattleResolveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIn("hills", story["opening"])
         self.assertIn("120", story["turning_point"])
         self.assertIn("20%", story["outcome"])
+
+    async def test_report_explicit_language_overrides_ambient_context(self):
+        generate = Mock(return_value=NS(text=json.dumps(dict(opening='A', turning_point='B', outcome='C'))))
+        google = NS(genai=NS(Client=Mock(return_value=NS(models=NS(generate_content=generate)))))
+        plan = dict(orders_text='Defend', location_text='Harbor')
+        result = dict(winner='attacker', eff_attack=120, eff_defense=90,
+                      atk_casualties_pct=20, def_casualties_pct=40)
+        args = (plan, plan, {'name':'A'}, {'name':'B'}, {'terrain':'hills'}, [], [], result, '')
+        for lang, other, expected in [('pl', 'en', 'Polish'), ('en', 'pl', 'English')]:
+            with i18n.using_language(other), patch.dict(sys.modules, {'google': google}):
+                await combat._get_ai_battle_report(*args, lang=lang)
+                self.assertIn(f'written in {expected}', generate.call_args.kwargs['contents'])
+                self.assertEqual(i18n.current_language(), other)
+            with i18n.using_language(other), patch.dict(sys.modules, {'google': NS(
+                    genai=NS(Client=Mock(side_effect=RuntimeError('offline'))))}):
+                story = await combat._get_ai_battle_report(*args, lang=lang)
+                self.assertIn('Straty' if lang == 'pl' else 'casualties', story['outcome'])
 
     async def test_postgres_specific_sql_is_portable(self):
         source = Path("battle_resolution.py").read_text(encoding="utf-8")
