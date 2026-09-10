@@ -1,5 +1,28 @@
 # Wargame Bot
 
+## Kronika, traktaty i cele państwowe
+
+Panel pozwala wybrać opcjonalny cel za prestiż, przeglądać pamięć decyzji oraz
+negocjować traktaty z obustronną akceptacją, reparacjami i przekazywaniem prowincji.
+GM nadaje państwo przez `/nation found player:@gracz name:nazwa history:historia`
+i może przekazać je przez `/nation transfer`.
+
+`/chronicle configure channel:#kronika` włącza codzienny raport do dwóch
+publicznych akcji graczy. Szczegółowe zasady, wpływ podatków i konfiguracja:
+[Aktualizacja świata](docs/world-update.md).
+
+## Gospodarka z prostym panelem
+
+**Panel → Gospodarka → Zasoby** pokazuje bilans najbliższego miesiąca,
+żywność i podpowiedzi. Normalne podatki, obsada pracowników oraz obsługa
+luksusów działają automatycznie. Gracz może opcjonalnie ulepszać budynki
+do poziomu 3, korzystać z rezerw, zawierać umowy miesięczne i wysyłać osadników.
+
+Docelowa średnia wynosi 2000 mieszkańców na prowincję. Populacja istniejącej
+gry pozostaje zachowana; GM dostaje `/economy population` z podglądem zmian.
+Szczegółowe zasady, stawki i aktualizacja Rendera:
+[Gospodarka v2](docs/economy-v2.md).
+
 ## Podział strat w bitwie
 
 AI ocenia narażenie każdego oddziału na podstawie obu planów, terenu i jednostek
@@ -88,11 +111,11 @@ Decision views expire after 10 minutes, but saved progress does not expire.
 Resuming after a restart requires retaining the same database (use the configured
 PostgreSQL database on the hosted bot, not a disposable test SQLite file).
 
-See [the economy review](docs/economy-review.md) for confirmed economic issues
-and [the offline diagnostic](scripts/audit_economy.py) to reproduce them.
-**Important:** the old non-atomic monthly tick can overwrite concurrent balance
-updates. This PR protects event settlement itself but does not repair that
-separate economy issue. No production PostgreSQL or Discord tests were run.
+The [historical economy review](docs/economy-review.md) describes issues in the
+previous implementation. The [economy update](docs/economy-v2.md) replaces monthly
+settlement with one transaction, protects megaproject rewards, limits production
+by available inputs and preserves scheduler backlog. Current regression tests
+include `tests/test_economy_v2.py`; no live PostgreSQL or Discord tests were run.
 ## Battle resolution
 
 `/battle match` now returns the real PostgreSQL battle ID. `/battle resolve`

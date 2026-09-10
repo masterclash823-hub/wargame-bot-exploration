@@ -1,6 +1,7 @@
 """
 Nation commands:
-  /nation found  <name> [flag] [government]  - create your nation
+  /nation found <player> <name> <history>    - GM creates and assigns a nation
+  /nation transfer <nation> <player>         - GM transfers nation ownership
   /nation stats  [name]                      - view a nation's stats
   /nation history <name> [page]              - public history log (paginated)
   /nation history_add <name> <text>          - GM only: add a history entry
@@ -54,79 +55,46 @@ class NationCog(commands.Cog):
         description="Nation commands / Komendy narodów",
     )
 
-    # ------------------------------------------------------------------ /nation found
-    @nation_group.command(name="found", description="Found your nation / Zaloz swoj narod")
-    @app_commands.describe(
-        name="Nation name / Nazwa narodu",
-        history="Brief lore or history of your nation / Historia narodu",
-        flag="Flag emoji or URL / Emoji flagi lub URL",
-        government="Government type / Typ rzadu",
-    )
+    @nation_group.command(name="found", description="GM: create and assign a nation / GM: utwórz i nadaj państwo")
+    @app_commands.describe(player="Player who will own the nation / Gracz otrzymujący państwo",
+                           name="Nation name / Nazwa państwa", history="Nation lore / Historia państwa",
+                           flag="Flag emoji or URL / Flaga lub URL", government="Government type / Ustrój")
     @i18n.localized
-    async def found(
-        self,
-        interaction: discord.Interaction,
-        name: str,
-        history: str,
-        flag: str = "",
-        government: str = "",
-    ):
-        lang = _lang(interaction)
-        government = government or i18n.text("Monarchy")
-        clean_history = history.strip()
-        if not clean_history:
-            await interaction.response.send_message(
-                i18n.text('You must provide a brief history/lore to found a nation.'),
-                ephemeral=True,
-            )
-            return
+    async def found(self, interaction: discord.Interaction, player: discord.Member,
+                    name: str, history: str, flag: str = "", government: str = ""):
+        from world_service import create_nation, tr
+        if not _gm(interaction):
+            await interaction.response.send_message(i18n.t(_lang(interaction), 'gm_only'), ephemeral=True); return
+        if player.bot:
+            await interaction.response.send_message(tr('Wybierz gracza, nie bota.', 'Choose a player account.'), ephemeral=True); return
+        try: create_nation(player.id, name, history, flag, government, interaction.user.id)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True); return
+        embed = flagged_embed(discord.Embed(title=tr('Państwo utworzone i nadane', 'Nation created and assigned'),
+            description=f"**{name.strip()}** → <@{player.id}>",
+            color=discord.Color.green()), (flag, name))
+        lore=history.strip()
+        for start in range(0,len(lore),1000):
+            embed.add_field(name=tr('Historia państwa', 'Nation lore'), value=lore[start:start+1000], inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        if _get_by_owner(str(interaction.user.id)):
-            existing = _get_by_owner(str(interaction.user.id))
-            await interaction.response.send_message(
-                i18n.t(lang, "nation_already_exists", nation=existing["name"]),
-                ephemeral=True,
-            )
-            return
-
-        if _get_by_name(name):
-            await interaction.response.send_message(
-                i18n.t(lang, "nation_name_taken", name=name),
-                ephemeral=True,
-            )
-            return
-
-        # Execute INSERT and retrieve the newly generated ID via RETURNING id
-        with db.cursor() as cur:
-            cur.execute(
-                "INSERT INTO nations (owner_id, name, flag, government_type) VALUES (?, ?, ?, ?) RETURNING id",
-                (str(interaction.user.id), name, flag, government),
-            )
-            row = cur.fetchone()
-            nation_id = row[0] if isinstance(row, (tuple, list)) else row["id"]
-
-        # Seed default blueprints into the new nation
-        try:
-            from cogs.military import seed_nation_blueprints
-            seed_nation_blueprints(nation_id)
-        except Exception as e:
-            print(f"[MILITARY] Blueprint seed failed: {e}", flush=True)
-
-        # Log default foundation entry
-        _log(nation_id, "system", i18n.t("en", "history_founded", nation=name))
-
-        # Log required lore entry
-        _log(nation_id, "lore", clean_history)
-
-        embed = discord.Embed(
-            title=i18n.t(lang, "nation_founded_title"),
-            description=i18n.t(lang, "nation_founded_desc", name=name, flag=flag_text(flag), government=government),
-            color=discord.Color.green(),
-        )
-        embed.add_field(name=i18n.text('History / Lore'), value=clean_history, inline=False)
-        flagged_embed(embed, (flag, name))
-
-        await interaction.response.send_message(embed=embed)
+    @nation_group.command(name='transfer', description='GM: transfer a nation to a player / GM: przekaż państwo graczowi')
+    @i18n.localized
+    async def transfer(self, interaction: discord.Interaction, nation: str, player: discord.Member):
+        from world_service import tr
+        from nation_admin import TransferView
+        if not _gm(interaction):
+            await interaction.response.send_message(i18n.t(_lang(interaction), 'gm_only'), ephemeral=True); return
+        n = _get_by_name(nation)
+        if not n:
+            await interaction.response.send_message(i18n.t(_lang(interaction), 'nation_not_found'), ephemeral=True); return
+        if player.bot or _get_by_owner(str(player.id)):
+            await interaction.response.send_message(tr('Wybierz gracza, który nie ma państwa.', 'Choose a player without a nation.'), ephemeral=True); return
+        text = f"**{n['name']}**: <@{n['owner_id']}> → <@{player.id}>\n\n" + tr(
+            'Zasoby, wojsko, historia, cele i pamięć decyzji pozostaną przy państwie. Nowy właściciel przejmie aktywne traktaty i umowy, w tym reparacje. Oczekujące propozycje traktatów i wymian zostaną anulowane.',
+            'Resources, forces, history, goals and decision memory remain with the nation. The new owner inherits active treaties and contracts, including reparations. Pending treaty and trade proposals will be cancelled.')
+        embed = flagged_embed(discord.Embed(title=tr('Potwierdź przekazanie państwa', 'Confirm nation transfer'), description=text), (n['flag'],n['name']))
+        await interaction.response.send_message(embed=embed, view=TransferView(interaction.user.id,n,player.id), ephemeral=True)
 
     # ------------------------------------------------------------------ /nation stats
     @nation_group.command(name="stats", description="View nation stats / Statystyki narodu")
@@ -170,6 +138,10 @@ class NationCog(commands.Cog):
         embed.add_field(name=i18n.text('Stability'),   value=stab_str,                          inline=True)
         embed.add_field(name=i18n.text('Population'),  value=f"{total_population:,}",           inline=True)
         
+        from world_service import profile, tr
+        with db.cursor() as cur: identity = profile(cur, nation['id'])
+        embed.add_field(name=tr('Prestiż', 'Prestige'), value=str(identity['prestige']))
+        embed.add_field(name=tr('Reputacja dyplomatyczna', 'Diplomatic reputation'), value=f"{identity['reputation']}/100")
         stab_mod = 0.75 + (stab / 100.0) * 0.25
         embed.add_field(name=i18n.text('Production'),  value=i18n.text('×{p0:.2f} (stability)', p0=stab_mod),   inline=True)
         

@@ -322,6 +322,13 @@ class CombatCog(commands.Cog):
                     await interaction.response.send_message(
                         i18n.text('Unit group #{p0} not found or not yours.', p0=uid), ephemeral=True)
                     return
+                from economy_services import assert_ready
+                try:
+                    with db.cursor() as c:
+                        assert_ready(c,nat['id'],uid)
+                except ValueError as exc:
+                    await interaction.response.send_message(str(exc),ephemeral=True)
+                    return
                 forces.append({"unit_id": uid, "qty": u["quantity"]})
 
         # Check no unit is already committed to another pending plan
@@ -820,7 +827,10 @@ class CombatCog(commands.Cog):
             await interaction.response.send_message(
                 i18n.text('You are already at war with **{p0}**.', p0=target['name']), ephemeral=True)
             return
-        _set_relation(nat["id"], target["id"], "war")
+        import treaty_service
+        try: treaty_service.declare_war(nat['id'], interaction.user.id, target['id'])
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True); return
         _log(nat["id"],   "system", i18n.text('Declared war on {p0}.', p0=target['name']))
         _log(target["id"],"system", i18n.text('{p0} declared war on us.', p0=nat['name']))
 
@@ -840,7 +850,7 @@ class CombatCog(commands.Cog):
                 pass
 
         await interaction.response.send_message(
-            i18n.text('⚔️ War declared on **{p0}**. Your upkeep is now at war rate (×3). Submit battle plans with `/battle plan`.', p0=target['name']),
+            i18n.text('⚔️ War declared on **{p0}**. Units committed to battle plans use expedition upkeep (150%).', p0=target['name']),
         )
 
     @diplomacy_grp.command(name="peace",
@@ -848,62 +858,16 @@ class CombatCog(commands.Cog):
     @app_commands.describe(nation="Nation to make peace with / Narod do zawarcia pokoju")
     @i18n.localized
     async def make_peace(self, interaction: discord.Interaction, nation: str):
-        lang = _lang(interaction)
-        nat  = _nat_owner(str(interaction.user.id))
-        if not nat:
-            await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
-            return
-        target = _nat_name(nation)
-        if not target:
-            await interaction.response.send_message(i18n.t(lang, "nation_not_found"), ephemeral=True)
-            return
-        current = _get_relation(nat["id"], target["id"])
-        if current != "war":
-            await interaction.response.send_message(
-                i18n.text('You are not at war with **{p0}** (status: {p1}).', p0=target['name'], p1=i18n.term(current)),
-                ephemeral=True)
-            return
-        _set_relation(nat["id"], target["id"], "peace")
-        _log(nat["id"],   "system", i18n.text('Peace agreed with {p0}.', p0=target['name']))
-        _log(target["id"],"system", i18n.text('Peace agreed with {p0}.', p0=nat['name']))
-
-        ch_id = _cfg("announce_channel_id")
-        ch    = self.bot.get_channel(int(ch_id)) if ch_id else None
-        if ch:
-            embed = flagged_embed(discord.Embed(
-                title=i18n.text('🕊️ Peace Declared'),
-                description=(
-                    i18n.text('**{p0} {p1}** and **{p2} {p3}** have made peace.', p0=flag_text(nat['flag']), p1=nat['name'], p2=flag_text(target['flag']), p3=target['name'])
-                ),
-                color=discord.Color.green(),
-            ), (nat['flag'], nat['name']), (target['flag'], target['name']))
-            try:
-                await ch.send(embed=embed)
-            except discord.Forbidden:
-                pass
-
-        await interaction.response.send_message(
-            i18n.text('🕊️ Peace agreed with **{p0}**. Upkeep returns to peace rate.', p0=target['name']))
+        from cogs.treaties import propose_simple
+        await propose_simple(interaction, nation, 'peace')
 
     @diplomacy_grp.command(name="alliance",
                            description="Propose an alliance / Zaproponuj sojusz")
     @app_commands.describe(nation="Nation to ally with / Narod do sojuszu")
     @i18n.localized
     async def alliance(self, interaction: discord.Interaction, nation: str):
-        lang = _lang(interaction)
-        nat  = _nat_owner(str(interaction.user.id))
-        if not nat:
-            await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
-            return
-        target = _nat_name(nation)
-        if not target:
-            await interaction.response.send_message(i18n.t(lang, "nation_not_found"), ephemeral=True)
-            return
-        _set_relation(nat["id"], target["id"], "alliance")
-        _log(nat["id"],   "system", i18n.text('Alliance formed with {p0}.', p0=target['name']))
-        _log(target["id"],"system", i18n.text('Alliance formed with {p0}.', p0=nat['name']))
-        await interaction.response.send_message(
-            i18n.text('🤝 Alliance formed with **{p0}**.', p0=target['name']))
+        from cogs.treaties import propose_simple
+        await propose_simple(interaction, nation, 'alliance')
 
     @diplomacy_grp.command(name="status",
                            description="View your diplomatic relations / Status dyplomatyczny")

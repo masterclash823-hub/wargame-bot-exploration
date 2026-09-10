@@ -150,6 +150,8 @@ def _power(c, plan, nation):
     committed = []
     lock = " FOR UPDATE OF u" if db.USE_POSTGRES else ""
     for unit_id, requested in _entries(plan["forces_json"]):
+        from economy_services import assert_ready
+        assert_ready(c,nation['id'],unit_id)
         c.execute("SELECT u.*,b.stats_json,b.type AS btype FROM military_units u "
                   "LEFT JOIN blueprints b ON u.blueprint_id=b.id "
                   "WHERE u.id=? AND u.nation_id=?" + lock, (unit_id, nation["id"]))
@@ -166,7 +168,10 @@ def _power(c, plan, nation):
         attack += float(stats.get("attack", 0)) * qty
         defense += float(stats.get("hp", 100) if unit["btype"] == "ship" else stats.get("defense", 0)) * qty * (0.1 if unit["btype"] == "ship" else 1)
         committed.append((unit["id"], qty, int(unit["quantity"])))
-    return attack * tech_mod, defense * tech_mod, committed
+    from economy_engine import policy
+    arrears=policy(c,nation['id'])['unpaid_months']
+    morale=max(.5,1-.1*arrears)
+    return attack * tech_mod * morale, defense * tech_mod * morale, committed
 
 
 def _fort_bonus(c, location):
@@ -291,6 +296,8 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
         c.execute("UPDATE battle_plans SET status='resolved' WHERE id IN (?,?)",
                   (plan_a["id"], plan_b["id"]))
         winner_name = nat_a["name"] if result["winner"] == "attacker" else nat_b["name"] if result["winner"] == "defender" else i18n.text('Draw')
+        from world_service import activity
+        activity(c,'battle',nat_a['id'],f'battle:{battle_id}',{'winner':result['winner']},nat_b['id'])
         for nation, role in ((nat_a, "attacker"), (nat_b, "defender")):
             pct = result["atk_casualties_pct"] if role == "attacker" else result["def_casualties_pct"]
             c.execute("INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,?,?)",

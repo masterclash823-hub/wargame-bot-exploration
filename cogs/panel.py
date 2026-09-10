@@ -15,6 +15,9 @@ from utils import get_nation_by_owner, gm_only
 
 
 PL = {
+    'goals':'Cele państwowe', 'memories':'Pamięć decyzji', 'treaties':'Traktaty i propozycje',
+    'new_treaty':'Nowy traktat', 'calls':'Wezwania do obrony',
+    'posture':'Rezerwa i mobilizacja', 'settlers':'Wyślij osadników', 'contracts':'Umowy miesięczne',
     "panel": "Panel gracza", "open": "Otwórz panel gracza", "home": "Przegląd",
     "economy": "Gospodarka", "military": "Wojsko i technologia", "territory": "Terytorium",
     "diplomacy": "Dyplomacja i bitwy", "events": "Wydarzenia", "settings": "Ustawienia",
@@ -32,16 +35,19 @@ PL = {
     "war": "Wypowiedz wojnę", "peace": "Zawrzyj pokój", "alliance": "Zawrzyj sojusz",
     "battle_plan": "Wyślij plan bitwy", "battles": "Raporty bitew", "event_list": "Lista wydarzeń",
     "event_play": "Rozegraj wydarzenie", "help": "Pomoc", "tutorial": "Poradnik",
-    "no_nation": "Nie masz jeszcze państwa. Załóż je przyciskiem poniżej.",
-    "private": "Ten panel jest prywatny. Wyniki działań również zobaczysz tylko Ty.",
+    "no_nation": "Nie masz jeszcze państwa. Poproś Game Mastera o utworzenie i nadanie go Tobie.",
+    "private": "Ten panel jest prywatny. Publiczne wydarzenia, wojny i osiągnięcia mogą trafić do kroniki.",
     "not_yours": "To nie jest Twój panel.", "empty": "Brak dostępnych pozycji.",
     "shortened": "Pokazano pierwsze 25 pozycji.", "select": "Wybierz pozycję",
-    "published": "Panel gracza został opublikowany.", "launcher_desc": "Kliknij przycisk, aby otworzyć prywatny panel. Wszystkie działania i wyniki widzi tylko gracz.",
+    "published": "Panel gracza został opublikowany.", "launcher_desc": "Kliknij przycisk, aby otworzyć prywatny panel. Szczegóły decyzji i propozycji pozostają prywatne.",
 }
 
 
 def tr(lang: str, key: str) -> str:
     en = {
+        'goals':'National goals', 'memories':'Decision memory', 'treaties':'Treaties & proposals',
+        'new_treaty':'New treaty', 'calls':'Defense calls',
+        'posture':'Reserves & mobilization', 'settlers':'Send settlers', 'contracts':'Monthly contracts',
         "panel":"Player panel","open":"Open player panel","home":"Overview","economy":"Economy",
         "military":"Military & technology","territory":"Territory","diplomacy":"Diplomacy & battles",
         "events":"Events","settings":"Settings","choose":"Choose a category","refresh":"Refresh",
@@ -57,11 +63,11 @@ def tr(lang: str, key: str) -> str:
         "war":"Declare war","peace":"Make peace","alliance":"Form alliance",
         "battle_plan":"Submit battle plan","battles":"Battle reports","event_list":"Event list",
         "event_play":"Play event","help":"Help","tutorial":"Tutorial",
-        "no_nation":"You do not have a nation yet. Use the button below to found one.",
-        "private":"This panel is private. Only you can see action results.","not_yours":"This is not your panel.",
+        "no_nation":"You do not have a nation yet. Ask the Game Master to create and assign one to you.",
+        "private":"This panel is private. Public events, wars and milestones may appear in the chronicle.","not_yours":"This is not your panel.",
         "empty":"There are no available items.","shortened":"Only the first 25 items are shown.",
         "select":"Choose an item","published":"The player panel has been published.",
-        "launcher_desc":"Click the button to open your private panel. Only the player can see its actions and results.",
+        "launcher_desc":"Click the button to open your private panel. Decision and proposal details remain private.",
     }
     return PL[key] if lang == "pl" else en[key]
 
@@ -208,16 +214,16 @@ SECTIONS = [
 ]
 
 ACTIONS = {
-    "home": [("stats","📊"),("resources","📦"),("calendar","📅"),("refresh","🔄")],
-    "economy": [("build","🏗️"),("buildings","📚"),("yield","🌾"),("trades","🔁"),("new_trade","➕"),
-                ("projects","🏛️"),("new_project","📝"),("start_project","▶️")],
+    "home": [("stats","📊"),("resources","📦"),("calendar","📅"),("goals","🎯"),("refresh","🔄")],
+    "economy": [("resources","💰"),("build","🏗️"),("buildings","📚"),("yield","🌾"),("trades","🔁"),("new_trade","➕"),
+                ("projects","🏛️"),("new_project","📝"),("start_project","▶️"),("contracts","📆")],
     "military": [("forces","🛡️"),("blueprints","📐"),("recruit","➕"),("move","➡️"),
-                 ("new_blueprint","🧰"),("tech","🔬"),("research","🧪")],
+                 ("new_blueprint","🧰"),("tech","🔬"),("research","🧪"),("posture","⏳")],
     "territory": [("provinces","🗺️"),("province","🔎"),("colonies","🏝️"),("colony_view","🔎"),
-                  ("colony_found","🚩"),("colony_develop","📈"),("colony_expand","🧭"),("routes","🚢")],
+                  ("colony_found","🚩"),("colony_develop","📈"),("colony_expand","🧭"),("routes","🚢"),("settlers","👥")],
     "diplomacy": [("relations","📜"),("war","⚔️"),("peace","🕊️"),("alliance","🤝"),
-                  ("battle_plan","🗒️"),("battles","📖")],
-    "events": [("event_list","📋"),("event_play","🎭")],
+                  ("battle_plan","🗒️"),("battles","📖"),("treaties","📜"),("new_treaty","📝"),("calls","🛡️")],
+    "events": [("event_list","📋"),("event_play","🎭"),("memories","🧠")],
     "settings": [("help","❓"),("tutorial","📘"),("language_pl","🇵🇱"),("language_en","🇬🇧")],
 }
 
@@ -267,11 +273,19 @@ class PlayerPanel(OwnedView):
             trades = cur.fetchone()["n"]
             cur.execute("SELECT COUNT(*) AS n FROM events WHERE nation_id=? AND status IN ('posted','active')", (nation["id"],))
             events = cur.fetchone()["n"]
+            cur.execute("SELECT COUNT(*) AS n FROM treaties WHERE status='proposed' AND recipient_id=?",(nation['id'],))
+            proposals=cur.fetchone()['n']
+            cur.execute("SELECT COUNT(*) AS n FROM guarantee_calls g JOIN treaties t ON t.id=g.treaty_id WHERE t.proposer_id=? AND g.status='pending'",(nation['id'],))
+            calls=cur.fetchone()['n']
         embed.description = f"{flag_text(nation['flag'])} **{nation['name']}**\n{tr(self.lang, 'private')}"
         flagged_embed(embed, (nation['flag'], nation['name']))
         embed.add_field(name="💰 " + ("Skarbiec" if self.lang == "pl" else "Treasury"), value=f"{nation['treasury']:,.0f}")
         embed.add_field(name="⚖️ " + ("Stabilność" if self.lang == "pl" else "Stability"), value=f"{nation['stability']:.0f}/100")
         embed.add_field(name="🗺️/⚔️/🔁/🎭", value=f"{provinces} / {forces} / {trades} / {events}")
+        if proposals or calls:
+            embed.add_field(name='📬 '+tr(self.lang,'diplomacy'),
+                value=(f'{proposals} propozycji traktatów · {calls} wezwań do obrony. Otwórz kategorię Dyplomacja.' if self.lang=='pl' else
+                       f'{proposals} treaty proposals · {calls} defense calls. Open Diplomacy.'),inline=False)
         shown = sorted(resources.items(), key=lambda x: -float(x[1]))[:6]
         embed.add_field(name="📦 " + tr(self.lang, "resources"),
                         value=" · ".join(f"{i18n.term(k, self.lang)} {v:g}" for k,v in shown) or "—", inline=False)
@@ -305,9 +319,11 @@ class PlayerPanel(OwnedView):
         if action == "tutorial":
             await reply(interaction, content=("Użyj kategorii powyżej, wybierz działanie i wskaż obiekt z listy. Formularz pojawi się tylko dla nazw, liczb lub rozkazów." if self.lang == "pl" else "Choose a category, select an action, then pick an item from the list. A form appears only for names, numbers or orders.")); return
         if not nation:
-            await interaction.response.send_modal(self.found_modal()); return
+            await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
+            'goals':('WorldCog','status',[]), 'memories':('WorldCog','memory',[]),
+            'treaties':('TreatiesCog','list_treaties',[]), 'calls':('TreatiesCog','calls',[]),
             "stats":("NationCog","stats",[""]), "resources":("EconomyCog","resources",[]),
             "calendar":("EconomyCog","calendar_status",[]), "buildings":("EconomyCog","buildings_list",[]),
             "yield":("ProvincesCog","province_yield",[""]), "projects":("EconomyCog","mp_list",[]),
@@ -319,6 +335,7 @@ class PlayerPanel(OwnedView):
         if action in simple:
             cog, attr, args = simple[action]; await invoke(self.cog(cog), attr, interaction, *args); return
         handlers = {
+            "new_treaty":self.choose_treaty,
             "build":self.choose_build, "province":self.choose_province, "new_trade":self.choose_trade_target,
             "trades":self.choose_trade, "new_project":self.project_modal, "start_project":self.choose_project,
             "recruit":self.choose_blueprint, "move":self.choose_unit, "new_blueprint":self.choose_blueprint_type,
@@ -328,21 +345,89 @@ class PlayerPanel(OwnedView):
             "war":lambda i:self.choose_nation(i,"declare_war"), "peace":lambda i:self.choose_nation(i,"make_peace"),
             "alliance":lambda i:self.choose_nation(i,"alliance"), "battle_plan":self.choose_battle_units,
             "battles":self.choose_battle, "event_play":self.choose_event,
+            'posture':self.choose_posture, 'settlers':self.choose_settlers, 'contracts':self.choose_contract,
         }
         if action in handlers: await handlers[action](interaction)
 
-    def found_modal(self):
-        async def submit(i,name,history,flag,government): await invoke(self.cog("NationCog"),"found",i,name,history,flag,government)
-        return FieldsModal(tr(self.lang,"found"),[
-            {"label":"Nazwa państwa / Nation name"},{"label":"Historia / Lore","style":discord.TextStyle.paragraph,"max_length":1000},
-            {"label":"Flaga / Flag","required":False},{"label":"Ustrój / Government","required":False}],submit)
+    async def choose_posture(self,i):
+        n=get_nation_by_owner(str(self.owner_id))
+        async def unit(i2,uid):
+            opts=[discord.SelectOption(label=label,value=value) for value,label in
+                  [('reserve','Rezerwa 35% / Reserve 35%'),('active','Mobilizacja 100% / Mobilize 100%'),('deployed','Wyprawa 150% / Expedition 150%')]]
+            async def mode(i3,value):await invoke(self.cog('EconomyControlCog'),'posture',i3,int(uid),value)
+            await reply(i2,view=ChoiceView(self.owner_id,self.lang,opts,mode))
+        await self.rows(i,'SELECT u.id,u.quantity,b.name FROM military_units u LEFT JOIN blueprints b ON b.id=u.blueprint_id WHERE u.nation_id=? ORDER BY u.id',(n['id'],),
+                        lambda r:discord.SelectOption(label=f"#{r['id']} {r['name'] or 'Unit'} ×{r['quantity']}"[:100],value=str(r['id'])),unit)
+
+    async def choose_settlers(self,i):
+        async def target(i2,cell):await invoke(self.cog('EconomyControlCog'),'settlers',i2,int(cell))
+        n=get_nation_by_owner(str(self.owner_id))
+        await self.rows(i,'SELECT p.azgaar_cell_id,p.name FROM provinces p JOIN colonies x ON x.province_id=p.id WHERE p.owner_nation_id=? AND p.active=1 ORDER BY p.name',
+                        (n['id'],),lambda r:discord.SelectOption(label=(r['name'] or str(r['azgaar_cell_id']))[:100],value=str(r['azgaar_cell_id']),
+                        description='300 osadników · 50g + 3 żywności' if self.lang=='pl' else '300 settlers · 50g + 3 food'),target)
+
+    async def choose_contract(self,i):
+        n=get_nation_by_owner(str(self.owner_id))
+        async def choose(i2,tid):
+            with db.cursor() as c:
+                c.execute('SELECT t.*,x.status AS contract FROM trades t LEFT JOIN trade_contracts x ON x.trade_id=t.id WHERE t.id=?',(int(tid),))
+                trade=c.fetchone()
+            pl=self.lang=='pl'
+            opts=[]
+            if trade['status']=='pending' and trade['from_nation_id']==n['id'] and trade['contract'] is None:
+                opts.append(discord.SelectOption(label='Zaproponuj wymianę co miesiąc' if pl else 'Propose a monthly exchange',value='recurring'))
+            if trade['status']=='pending' and trade['to_nation_id']==n['id'] and trade['contract']=='proposed':
+                opts.append(discord.SelectOption(label='Akceptuj teraz i co miesiąc' if pl else 'Accept now and every month',value='accept'))
+            if trade['contract'] in ('active','waiting','proposed'):
+                opts.append(discord.SelectOption(label='Zatrzymaj umowę' if pl else 'Stop contract',value='contract_stop'))
+            if not opts:
+                await reply(i2,content='Autor musi najpierw oznaczyć ofertę jako miesięczną.' if pl else 'The author must first mark this offer as monthly.');return
+            async def action(i3,value):
+                if value=='accept':await invoke(self.cog('EconomyCog'),'trade_accept',i3,int(tid),True)
+                else:await invoke(self.cog('EconomyControlCog'),value,i3,int(tid))
+            giving='offer' if trade['from_nation_id']==n['id'] else 'receive'
+            receiving='receive' if giving=='offer' else 'offer'
+            def terms(prefix):return i18n.resource_list(dict(json.loads(trade[prefix+'_resources_json']),gold=trade[prefix+'_gold']),self.lang)
+            message=('Pierwsza wymiana po akceptacji, kolejne co miesiąc. Każda strona może zatrzymać umowę.' if pl else
+                     'First exchange on acceptance, then every month. Either party can stop the contract.')
+            message+='\n'+('Oddajesz: ' if pl else 'You give: ')+terms(giving)+'\n'+('Otrzymujesz: ' if pl else 'You receive: ')+terms(receiving)
+            await reply(i2,content=message,view=ChoiceView(self.owner_id,self.lang,opts,action))
+        await self.rows(i,"SELECT t.id,t.status,c.status AS contract FROM trades t LEFT JOIN trade_contracts c ON c.trade_id=t.id WHERE (t.from_nation_id=? OR t.to_nation_id=?) AND (t.status='pending' OR c.status IN ('active','waiting')) ORDER BY t.id",(n['id'],n['id']),
+                        lambda r:discord.SelectOption(label=f"#{r['id']} · {i18n.term(r['contract'] or r['status'],self.lang)}"[:100],value=str(r['id'])),choose)
+
+    async def choose_treaty(self, interaction):
+        import treaty_service
+        n=get_nation_by_owner(str(self.owner_id))
+        async def target(i, name):
+            options=[discord.SelectOption(label=labels[0 if self.lang=='pl' else 1],value=key)
+                     for key,labels in treaty_service.KINDS.items()]
+            async def kind(i2, key):
+                async def submit(i3, duration, give, receive, give_cells, receive_cells):
+                    await invoke(self.cog('TreatiesCog'),'propose',i3,name,key,int(duration),float(give or 0),float(receive or 0),give_cells,receive_cells)
+                await i2.response.send_modal(FieldsModal(tr(self.lang,'new_treaty'),[
+                    {'label':'Czas w miesiącach / Months','default':'12'},
+                    {'label':'Oddajesz złoto / Gold you give','default':'0'},
+                    {'label':'Otrzymujesz złoto / Gold you receive','default':'0'},
+                    {'label':'Oddajesz ID prowincji / Ceded cell IDs','required':False,'placeholder':'1, 2, 3'},
+                    {'label':'Otrzymujesz ID prowincji / Received IDs','required':False,'placeholder':'4, 5, 6'},
+                ],submit))
+            await reply(i,view=ChoiceView(self.owner_id,self.lang,options,kind))
+        await self.rows(interaction,'SELECT name FROM nations WHERE id<>? ORDER BY name',(n['id'],),
+                        lambda r:discord.SelectOption(label=r['name'][:100],value=r['name']),target)
 
     async def choose_build(self, i):
         n=get_nation_by_owner(str(self.owner_id))
         async def province(i2,cell):
-            async def building(i3,key): await invoke(self.cog("EconomyCog"),"build",i3,int(cell),key)
+            with db.cursor() as c:
+                c.execute('SELECT buildings_json FROM provinces WHERE azgaar_cell_id=?',(int(cell),))
+                existing=json.loads(c.fetchone()['buildings_json'])
+            async def building(i3,key):
+                if key in existing:
+                    await invoke(self.cog('EconomyControlCog'),'upgrade',i3,int(cell),key)
+                else:
+                    await invoke(self.cog("EconomyCog"),"build",i3,int(cell),key)
             await self.rows(i2,"SELECT key,name,description FROM building_defs ORDER BY tier,name",(),
-                lambda r:discord.SelectOption(label=r['name'][:100],value=r['key'],description=(r['description'] or '')[:100]),building)
+                lambda r:discord.SelectOption(label=((('↑ ' if r['key'] in existing else '+ '))+i18n.term(r['key'],self.lang))[:100],value=r['key'],description=('Ulepsz / Upgrade' if r['key'] in existing else 'Buduj / Build')),building)
         await self.owned_provinces(i,n,province)
 
     async def owned_provinces(self,i,n,handler):
@@ -491,10 +576,6 @@ async def send_panel(bot, interaction):
     if not active_guild(interaction.guild_id):
         await reply(interaction, content=i18n.text("⛔ Bot not activated on this server. The GM must run `/activate <auth_key>` first.", lang=language(interaction))); return
     lang=language(interaction); view=PlayerPanel(bot,interaction.user.id,lang)
-    if not get_nation_by_owner(str(interaction.user.id)):
-        button=discord.ui.Button(label=tr(lang,"found"),emoji="🚩",style=discord.ButtonStyle.success,row=1)
-        async def found(i): await i.response.send_modal(view.found_modal())
-        button.callback=found; view.add_item(button)
     await reply(interaction,embed=view.embed(),view=view)
 
 

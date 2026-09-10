@@ -1,4 +1,8 @@
 {
+  "rejected":"Odrzucony", "broken":"Zerwany", "expired":"Wygasły", "abandoned":"Porzucony",
+  "failed":"Nieudana wysyłka", "uncertain":"Sprawdź kanał", "sending":"Wysyłanie", "sent":"Wysłany",
+  "non_aggression":"Pakt o nieagresji", "military_access":"Dostęp wojskowy", "guarantee":"Gwarancja bezpieczeństwa",
+  "proposer":"Autor propozycji", "recipient":"Odbiorca", "public":"Publiczne", "private":"Prywatne", "event_private":"Decyzje prywatne",
   "gold":"Złoto", "treasury":"Skarbiec", "food":"Żywność", "wood":"Drewno",
   "iron":"Żelazo", "stone":"Kamień", "coal":"Węgiel", "copper":"Miedź", "clay":"Glina",
   "tar":"Smoła", "gunpowder":"Proch", "cloth":"Sukno", "silk":"Jedwab", "spices":"Przyprawy",
@@ -34,5 +38,7 @@
   "name":"Nazwa", "description":"Opis", "tier":"Poziom", "cost_json":"Koszt JSON",
   "effect_json":"Efekty JSON", "upkeep_json":"Utrzymanie JSON", "requires_terrain":"Wymagany teren",
   "requires_tech":"Wymagana technologia", "gold_per_tick":"Złoto co miesiąc",
+  "granary":"Spichlerz", "reserve":"Rezerwa", "active":"Aktywne", "deployed":"Wyprawa",
+  "mobilizing":"Mobilizacja", "waiting":"Oczekuje na zasoby", "complete":"Ukończony",
   "free":"Bezpłatnie", "unknown":"Nieznany", "trade_private":"Handel prywatny", "ai":"AI"
 }

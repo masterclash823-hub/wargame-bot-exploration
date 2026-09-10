@@ -3,7 +3,7 @@
   "help_intro": "Uzyj przyciskow ponizej aby przegladac sekcje komend.",
   "help_help": "Pokaz te liste komend.",
   "help_language": "Ustaw preferowany jezyk odpowiedzi bota (en / pl).",
-  "help_nation_found": "Zaloz swoj narod. Wymagane: nazwa, historia zalozenia.",
+  "help_nation_found": "[GM] Utwórz i nadaj państwo: /nation found <gracz> <nazwa> <historia>",
   "help_nation_stats": "Statystyki narodu. Puste pole = twoj narod.",
   "help_nation_list": "Lista wszystkich zalozonych narodow.",
   "help_nation_history": "Publiczna historia narodu (strony).",
@@ -31,7 +31,7 @@
 
   "gm_only": "Ta komenda wymaga roli Game Master.",
   "generic_error": "Coś poszło nie tak. Spróbuj ponownie lub poproś Game Mastera o pomoc.",
-  "no_nation": "Nie masz jeszcze narodu. Użyj /nation found, aby go stworzyć.",
+  "no_nation": "Nie masz jeszcze państwa. Poproś Game Mastera o utworzenie i nadanie go Tobie.",
 
   "nation_already_exists": "Masz juz narod: **{nation}**. Kazdy gracz moze zalozyc tylko jeden.",
   "nation_name_taken": "Nazwa **{name}** jest juz zajeta. Wybierz inna.",

@@ -103,7 +103,7 @@ def _bdef(key):
 def _building_label(row, lang=None):
     """Only localize built-in names; retain custom names entered by the GM."""
     default = next((b for b in DEFAULT_BUILDINGS if b['key'] == row['key']), None)
-    if default and row['name'] == default['name']:
+    if (default and row['name'] == default['name']) or (row['key']=='granary' and row['name']=='Granary'):
         return i18n.term(row['key'], lang)
     return row['name']
 
@@ -199,7 +199,7 @@ def _deduct(res, cost):
             res[r] = res.get(r, 0) - a
     return True, ""
 
-def _apply_mp_effect(nid, effect_str, mp_name):
+def _apply_mp_effect(nid, effect_str, mp_name, mp_id):
     effect = json.loads(effect_str) if isinstance(effect_str, str) else effect_str
     with db.cursor() as c:
         c.execute("SELECT * FROM nations WHERE id=?", (nid,))
@@ -211,15 +211,16 @@ def _apply_mp_effect(nid, effect_str, mp_name):
     stability = nat["stability"]
     parts     = []
     for k, v in effect.get("resources_once", {}).items():
-        res[k] = res.get(k, 0) + v
+        if k=='gold':treasury=max(0,treasury+v)
+        else:res[k] = max(0,res.get(k, 0) + v)
         parts.append(f"+{v} {i18n.term(k)}")
     gold_once = effect.get("gold_once", 0)
     if gold_once:
-        treasury += gold_once
+        treasury = max(0,treasury+gold_once)
         parts.append(i18n.text('+{p0} gold', p0=gold_once))
     stab = effect.get("stability", 0)
     if stab:
-        stability = min(100.0, stability + stab)
+        stability = max(0,min(100.0, stability + stab))
         parts.append(i18n.text('+{p0} stability', p0=stab))
     with db.cursor() as c:
         c.execute(
@@ -236,302 +237,17 @@ def _apply_mp_effect(nid, effect_str, mp_name):
     if special:
         entry += f" {special}"
     _log(nid, "system", entry)
+    from world_service import activity
+    with db.cursor() as c:
+        activity(c,'project',nid,f"project:{mp_id}")
 
 def _seed_buildings():
-    with db.cursor() as c:
-        for b in DEFAULT_BUILDINGS:
-            c.execute(
-                """
-                INSERT INTO building_defs 
-                (key, name, tier, cost_json, effect_json, upkeep_json, requires_terrain, requires_tech, description) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (key) DO UPDATE SET 
-                    name = EXCLUDED.name,
-                    tier = EXCLUDED.tier,
-                    cost_json = EXCLUDED.cost_json,
-                    effect_json = EXCLUDED.effect_json,
-                    upkeep_json = EXCLUDED.upkeep_json,
-                    requires_terrain = EXCLUDED.requires_terrain,
-                    requires_tech = EXCLUDED.requires_tech,
-                    description = EXCLUDED.description
-                """,
-                (
-                    b["key"],
-                    b["name"],
-                    b["tier"],
-                    json.dumps(b["cost"]),
-                    json.dumps(b["effect"]),
-                    json.dumps(b["upkeep"]),
-                    b["terrain"],
-                    b["tech"],
-                    b["desc"],
-                ),
-            )
+    from economy_migration import seed_buildings
+    seed_buildings(DEFAULT_BUILDINGS)
 
 def _run_tick(months=1):
-    with db.cursor() as c:
-        c.execute("SELECT * FROM nations")
-        nations = c.fetchall()
-    month = int(_cfg("current_month", "1"))
-    year  = int(_cfg("current_year",  "1"))
-    for _ in range(months):
-        month += 1
-        if month > 12:
-            month = 1
-            year += 1
-    _cfg_set("current_month", month)
-    _cfg_set("current_year",  year)
-    summaries = []
-    for nat in nations:
-        nid       = nat["id"]
-        res       = json.loads(nat["resources_json"])
-        treasury  = nat["treasury"]
-        upkeep    = 0.0
-        stability = nat["stability"]
-
-        # Sync nation population from provinces
-        with db.cursor() as c:
-            c.execute(
-                "SELECT COALESCE(SUM(population),0) as total_pop "
-                "FROM provinces WHERE owner_nation_id=? AND active=1",
-                (nid,)
-            )
-            total_pop = c.fetchone()["total_pop"] or 0
-
-        # Stability modifier on production (low stability = reduced output)
-        # 100 stability = 1.0x, 50 = 0.9x, 0 = 0.75x
-        stab_mod = 0.75 + (stability / 100.0) * 0.25
-
-        with db.cursor() as c:
-            c.execute("SELECT * FROM provinces WHERE owner_nation_id=? AND active=1", (nid,))
-            provs = c.fetchall()
-        for prov in provs:
-            base = json.loads(prov["base_resources_json"])
-            # Apply colony yield modifier if this is a colony province
-            try:
-                from cogs.colonialism import get_colony_yield_modifier
-                col_mod = get_colony_yield_modifier(prov["id"])
-            except Exception:
-                col_mod = 1.0
-            for k, v in base.items():
-                res[k] = res.get(k, 0) + v * months * stab_mod * col_mod
-            for bkey in json.loads(prov["buildings_json"]):
-                bd = _bdef(bkey)
-                if not bd:
-                    continue
-                for k, v in json.loads(bd["effect_json"]).items():
-                    if k == "gold":
-                        treasury += v * months * stab_mod * col_mod
-                    else:
-                        res[k] = res.get(k, 0) + v * months * stab_mod * col_mod
-                upkeep += json.loads(bd["upkeep_json"]).get("gold", 0) * months
-
-        # ---- MEGAPROJECTS (Yields processed BEFORE food consumption) ----
-        with db.cursor() as c:
-            c.execute(
-                "SELECT * FROM megaprojects WHERE nation_id=? AND status IN ('building','complete')",
-                (nid,)
-            )
-            mps = c.fetchall()
-        for mp in mps:
-            try:
-                eff = json.loads(mp["effect_json"]) if mp["effect_json"] else {}
-            except Exception:
-                eff = {}
-
-            # 1. Handle completed megaproject monthly output
-            if mp["status"] == "complete":
-                # Support nested resources_per_tick OR flat JSON structures (e.g. {"food": 500})
-                per_tick = eff.get("resources_per_tick", {})
-                if not per_tick and isinstance(eff, dict):
-                    # Exclude non-resource keys
-                    per_tick = {k: v for k, v in eff.items() if k not in ("gold", "gold_per_tick", "resources_per_tick")}
-
-                for k, v in per_tick.items():
-                    # Safeguard: Extract numeric value if v is a dictionary or string
-                    if isinstance(v, dict):
-                        val = v.get("amount", v.get("value", 0))
-                    else:
-                        val = v
-                    
-                    try:
-                        amount = float(val)
-                    except (ValueError, TypeError):
-                        amount = 0
-
-                    res[k] = res.get(k, 0) + (amount * months)
-                
-                # Safely extract gold/treasury output
-                gold_val = eff.get("gold_per_tick", eff.get("gold", 0))
-                if isinstance(gold_val, dict):
-                    gold_val = gold_val.get("amount", gold_val.get("value", 0))
-                try:
-                    gold_amount = float(gold_val)
-                except (ValueError, TypeError):
-                    gold_amount = 0
-
-                treasury += gold_amount * months
-
-            # 2. Handle ongoing megaproject construction
-            elif mp["status"] == "building" and mp.get("duration_months", 0) > 0:
-                new_spent = min(mp.get("months_spent", 0) + months, mp["duration_months"])
-                if new_spent >= mp["duration_months"]:
-                    with db.cursor() as c:
-                        # Fixed PostgreSQL placeholders (%s instead of ?)
-                        c.execute(
-                            "UPDATE megaprojects SET status='complete', months_spent=%s, "
-                            "completed_at=NOW() WHERE id=%s",
-                            (new_spent, mp["id"])
-                        )
-                    _apply_mp_effect(nid, mp["effect_json"], mp["name"])
-                    
-                    # Refetch resources & treasury to catch instant payout changes from _apply_mp_effect
-                    with db.cursor() as c:
-                        # Fixed PostgreSQL placeholders (%s instead of ?)
-                        c.execute("SELECT resources_json, treasury FROM nations WHERE id=%s", (nid,))
-                        updated_nat = c.fetchone()
-                        if updated_nat:
-                            res_raw = updated_nat["resources_json"]
-                            res = json.loads(res_raw) if isinstance(res_raw, str) else res_raw
-                            treasury = updated_nat["treasury"]
-                else:
-                    with db.cursor() as c:
-                        # Fixed PostgreSQL placeholders (%s instead of ?)
-                        c.execute(
-                            "UPDATE megaprojects SET months_spent=%s WHERE id=%s",
-                            (new_spent, mp["id"])
-                        )
-        # Military upkeep
-        try:
-            from cogs.military import compute_military_upkeep
-            upkeep += compute_military_upkeep(nid) * months
-        except Exception:
-            pass
-
-        # Colony progress must not be blocked by a failure in trade-route income.
-        try:
-            from cogs.colonialism import tick_colonies
-            tick_colonies(nid, months)
-        except Exception as e:
-            print(f"[TICK] Colony error for nation {nid}: {e}", flush=True)
-        try:
-            from cogs.colonialism import compute_trade_route_income
-            treasury += compute_trade_route_income(nid) * months
-        except Exception as e:
-            print(f"[TICK] Trade-route error for nation {nid}: {e}", flush=True)
-
-        # ---- FOOD: feeds population + military ----
-        food_needed = 0.0
-        try:
-            # Count total population across owned provinces
-            with db.cursor() as c:
-                c.execute(
-                    "SELECT COALESCE(SUM(population),0) as total_pop "
-                    "FROM provinces WHERE owner_nation_id=? AND active=1",
-                    (nid,)
-                )
-                total_pop = c.fetchone()["total_pop"] or 0
-
-            # Count military units
-            with db.cursor() as c:
-                c.execute(
-                    "SELECT COALESCE(SUM(quantity),0) as total "
-                    "FROM military_units WHERE nation_id=?",
-                    (nid,)
-                )
-                total_units = c.fetchone()["total"] or 0
-
-            # Food needed: 1 per 100 pop + 1 per 10 military units, per month
-            food_for_pop      = (total_pop / 100.0) * months
-            food_for_military = (total_units / 10.0) * months
-            food_needed       = food_for_pop + food_for_military
-            food_have         = res.get("food", 0)
-
-            if food_needed <= 0:
-                pass  # no consumption needed
-            elif food_have >= food_needed:
-                # Sufficient food
-                res["food"] = food_have - food_needed
-                surplus_ratio = food_have / food_needed
-
-                # Population growth if well-fed (surplus > 20%)
-                if surplus_ratio >= 1.2 and total_pop > 0:
-                    growth_rate = min(0.005, (surplus_ratio - 1.0) * 0.01) * months
-                    with db.cursor() as c:
-                        c.execute(
-                            "SELECT id, population FROM provinces "
-                            "WHERE owner_nation_id=? AND active=1 AND population>0",
-                            (nid,)
-                        )
-                        provs_pop = c.fetchall()
-                    for pp in provs_pop:
-                        new_pop = int(pp["population"] * (1 + growth_rate))
-                        if new_pop != pp["population"]:
-                            with db.cursor() as c:
-                                c.execute(
-                                    "UPDATE provinces SET population=? WHERE id=?",
-                                    (new_pop, pp["id"])
-                                )
-            else:
-                # Food shortage
-                shortage_ratio = food_have / food_needed if food_needed > 0 else 0
-                res["food"]    = 0
-                stab_penalty   = max(1, int((1.0 - shortage_ratio) * 8 * months))
-
-                with db.cursor() as c:
-                    c.execute("SELECT stability FROM nations WHERE id=?", (nid,))
-                    cur_stab = c.fetchone()["stability"]
-                new_stab = max(0.0, cur_stab - stab_penalty)
-                with db.cursor() as c:
-                    c.execute("UPDATE nations SET stability=? WHERE id=?", (new_stab, nid))
-
-                # Population decline if severe shortage (< 50% fed)
-                if shortage_ratio < 0.5 and total_pop > 0:
-                    decline_rate = (0.5 - shortage_ratio) * 0.02 * months
-                    with db.cursor() as c:
-                        c.execute(
-                            "SELECT id, population FROM provinces "
-                            "WHERE owner_nation_id=? AND active=1 AND population>0",
-                            (nid,)
-                        )
-                        provs_pop = c.fetchall()
-                    for pp in provs_pop:
-                        new_pop = max(0, int(pp["population"] * (1 - decline_rate)))
-                        if new_pop != pp["population"]:
-                            with db.cursor() as c:
-                                c.execute(
-                                    "UPDATE provinces SET population=? WHERE id=?",
-                                    (new_pop, pp["id"])
-                                )
-
-                _log(nid, "system",
-                     i18n.text('Food shortage! Needed {p0:.0f} (pop {p1:,} + {p2} units), had {p3:.0f}. Stability -{p4}.', p0=food_needed, p1=total_pop, p2=total_units, p3=food_have, p4=stab_penalty)
-                     + (i18n.text(' Population declining.') if shortage_ratio < 0.5 else ""))
-        except Exception as e:
-            print(f"[TICK] Food calc error for nation {nid}: {e}", flush=True)
-
-        # SILK + SPICES: luxury income (1 gold per 5 units held, capped at 50g/tick)
-        silk_income   = min(50.0, res.get("silk",   0) / 5) * months
-        spices_income = min(50.0, res.get("spices", 0) / 5) * months
-        luxury_income = silk_income + spices_income
-        if luxury_income > 0:
-            treasury += luxury_income
-
-        treasury = max(0.0, treasury - upkeep)
-        with db.cursor() as c:
-            c.execute(
-                "UPDATE nations SET resources_json=?,treasury=?,population=? WHERE id=?",
-                (json.dumps(res), treasury, total_pop, nid)
-            )
-        summary_parts = [i18n.text('{p0}: -{p1:.0f}g upkeep, {p2:.0f}g treasury', p0=nat['name'], p1=upkeep, p2=treasury)]
-        if luxury_income > 0:
-            summary_parts.append(i18n.text('+{p0:.0f}g luxury', p0=luxury_income))
-        _log(nid, "system",
-             i18n.text('Month {p0}/{p1}: upkeep -{p2:.0f}g', p0=month, p1=year, p2=upkeep)
-             + (i18n.text(', luxury income +{p0:.0f}g', p0=luxury_income) if luxury_income > 0 else "")
-             + i18n.text(', treasury {p0:.0f}g.', p0=treasury))
-        summaries.append(", ".join(summary_parts))
-    return month, year, summaries
+    from economy_engine import run_tick
+    return run_tick(months)
 
 # ---------------------------------------------------------------------------
 # UI: paginated buildings list
@@ -581,7 +297,9 @@ HELP_SECTIONS = {
         "title": "🏳️ Nation",
         "color": discord.Color.blue(),
         "fields": [
-            ("/nation found", "Found your nation."),
+            ("Starting a nation", "Ask the Game Master to create and assign your nation."),
+            ("/goals status", "Choose one optional goal; earn 10 prestige. Also available in the panel."),
+            ("/memories", "Read your private decision archive and recorded consequences."),
             ("/nation stats [name]", "View a nation's stats."),
             ("/nation list", "List all nations."),
             ("/nation history <name>", "View a nation's public history log."),
@@ -601,7 +319,12 @@ HELP_SECTIONS = {
         "color": discord.Color.gold(),
         "fields": [
             ("/resources", "View stockpile, treasury, food status, luxury income, and population."),
-            ("/build <cell_id> <key>", "Construct a building. Fort+University now require Clay."),
+            ("/build <cell_id> <key>", "Construct one of each building type per province. Workers are assigned automatically."),
+            ("/economy status", "Monthly balance, warnings and optional settings. Also available from the panel."),
+            ("/economy upgrade <cell_id> <building>", "Upgrade a building to level 2 or 3. Output: 170% / 240%."),
+            ("/economy posture <unit_id> <mode>", "Reserve 35%, active 100%, expedition 150% upkeep. Mobilization takes one month."),
+            ("/economy recurring <trade_id>", "Propose monthly deliveries. The recipient must explicitly accept monthly:True."),
+            ("/economy contract_stop <trade_id>", "Either party can stop monthly deliveries."),
             ("/buildings list", "Browse all building types with costs and effects."),
             ("/buildings province <cell_id>", "List buildings in a specific province."),
             ("/megaproject propose", "Propose a megaproject for GM approval."),
@@ -612,7 +335,7 @@ HELP_SECTIONS = {
             ("Resource mechanics",
              "• **Food**: consumed by population (1/100 pop) + military (1/10 units) per tick. "
              "Surplus → pop growth. Shortage → stability loss. Severe shortage → pop decline.\n"
-             "• **Silk + Spices**: generate luxury income (1g per 5 held, cap 50g/tick each).\n"
+             "• **Silk + Spices**: automatically consumed; surplus can be sold by markets/ports. Holding goods gives no gold.\n"
              "• **Cloth**: consumed when building land units (1 per 5 units).\n"
              "• **Coal + Copper**: required for Powder Mill and Cannon Foundry.\n"
              "• **Clay**: required for Fort and University construction."),
@@ -622,14 +345,15 @@ HELP_SECTIONS = {
         "title": "🗺️ Colonialism & Trade Routes",
         "color": discord.Color.dark_green(),
         "fields": [
-            ("/colony found <cell_id> <name>", "Found a colony on an unclaimed province (costs gold + fleet cargo)."),
-            ("/colony develop <cell_id> <gold>", "Invest gold; the colony advances automatically when cost, time and technology are met."),
-            ("/colony expand <source> <target> <name>", "Create an outpost on an unclaimed cell adjacent to a Settlement or larger (500g)."),
+            ("/colony found <cell_id> <name>", "Found a colony: 500 gold, 5 free cargo and 300 settlers moved from a home province."),
+            ("/colony develop <cell_id> <gold>", "Invest gold; automatic advancement requires time, technology, population and food."),
+            ("/colony expand <source> <target> <name>", "Expand next to a Settlement or larger: 500 gold and 300 settlers from that province."),
+            ("/economy settlers <cell_id>", "Move 300 people to your colony for 50 gold and 3 food."),
             ("/colony list [nation]", "List all colonies of a nation."),
             ("/colony view <cell_id>", "View detailed colony status and progress bars."),
-            ("/traderoute add <from> <to> <name>", "Establish a trade route. Income = ship cargo × 2g/tick (or 20g flat)."),
+            ("/traderoute add <from> <to> <ship_id> <route_name>", "Assign one cargo ship group to export surplus luxuries. One endpoint needs your port."),
             ("/traderoute remove <id>", "Remove a trade route."),
-            ("/traderoute list", "List your trade routes and income per tick."),
+            ("/traderoute list", "List your trade routes and assigned ship groups."),
         ],
     },
     "trade": {
@@ -664,11 +388,14 @@ HELP_SECTIONS = {
         "fields": [
             ("/battle plan", "Submit a battle plan — location (free text), orders, optional unit IDs and image URL."),
             ("/battle view <id>", "View a battle. Plans are private to parties and GM only."),
-            ("/diplomacy war <nation>", "Declare war. Upkeep rises to war rate (×3) immediately."),
-            ("/diplomacy peace <nation>", "Make peace with a nation you are at war with."),
-            ("/diplomacy alliance <nation>", "Form an alliance with another nation."),
+            ("/diplomacy war <nation>", "Declare war. Units committed to battle plans enter expedition posture (150% upkeep)."),
+            ("/diplomacy peace <nation>", "Propose peace; the recipient must accept the terms in the treaty panel."),
+            ("/diplomacy alliance <nation>", "Propose an alliance; the other nation must explicitly accept."),
             ("/diplomacy status", "View your own diplomatic relations."),
-            ("/diplomacy public", "View the world diplomatic landscape — all active wars and alliances."),
+            ("/treaty propose", "Propose a peace settlement, alliance, non-aggression pact, military access or guarantee."),
+            ("/treaty list", "Review proposals and accepted terms; accept, decline or break a treaty."),
+            ("/treaty tribute", "Add monthly reparations before acceptance. Also available through the terms button."),
+            ("/treaty calls", "Answer a guarantee call before the next game month; joining war requires your decision."),
             ("/event list [nation]", "View posted events for a nation or your own."),
             ("/event play <id>", "Resume an event: 3 choices or a custom response, 3 decisions maximum."),
         ],
@@ -676,6 +403,10 @@ HELP_SECTIONS = {
 }
 
 GM_HELP_FIELDS = [
+    ("/nation found <player> <name> <history>", "Create a nation and assign it to a player. Existing nations remain unchanged."),
+    ("/nation transfer <nation> <player>", "Transfer ownership after reviewing inherited obligations. Pending proposals are cancelled."),
+    ("/chronicle configure <channel> [hour_utc] [language]", "Enable a daily report of up to two public actions. Default: 18:00 UTC, Polish."),
+    ("/chronicle preview / pause / status / retry", "Preview, pause and inspect reports; explicitly retry a failed or uncertain delivery."),
     ("/nation history_add", "Add a manual history entry."),
     ("/nation delete <name>", "Delete a nation and release all their provinces (confirmation required)."),
     ("/province claim", "Claim provinces by cell ID(s)."),
@@ -722,7 +453,9 @@ HELP_SECTIONS_PL = {
         "title": "🏳️ Naród",
         "color": discord.Color.blue(),
         "fields": [
-            ("/nation found <nazwa>", "Załóż swój naród (wymaga historii założenia)."),
+            ("Pierwsze państwo", "Poproś Game Mastera o utworzenie państwa i nadanie go Tobie."),
+            ("/goals status", "Wybierz jeden opcjonalny cel za 10 prestiżu. Dostępne także w panelu."),
+            ("/memories", "Czytaj prywatne archiwum decyzji i ich zapisanych skutków."),
             ("/nation stats [nazwa]", "Statystyki narodu. Puste = twój naród."),
             ("/nation list", "Lista wszystkich narodów."),
             ("/nation history <nazwa>", "Publiczna historia narodu."),
@@ -744,6 +477,11 @@ HELP_SECTIONS_PL = {
         "fields": [
             ("/resources", "Zasoby, skarbiec, status żywności i populacja."),
             ("/build <id> <klucz>", "Wybuduj budynek w prowincji."),
+            ("/economy status", "Bilans miesiąca, podpowiedzi i opcjonalne ustawienia. Dostępne też w panelu."),
+            ("/economy upgrade <id> <budynek>", "Ulepsz budynek do poziomu 2 lub 3: 170% / 240% produkcji. Obsada automatyczna."),
+            ("/economy posture <id> <tryb>", "Utrzymanie: rezerwa 35%, aktywne 100%, wyprawa 150%. Mobilizacja trwa miesiąc."),
+            ("/economy recurring <id>", "Zaproponuj wymianę co miesiąc. Odbiorca musi wyrazić zgodę na miesięczne dostawy."),
+            ("/economy contract_stop <id>", "Każda strona może zatrzymać umowę miesięczną."),
             ("/buildings list", "Lista wszystkich typów budynków z kosztami i efektami."),
             ("/buildings province <id>", "Lista budynków w konkretnej prowincji."),
             ("/megaproject propose", "Zaproponuj megaprojekt do zatwierdzenia przez GM."),
@@ -753,11 +491,11 @@ HELP_SECTIONS_PL = {
             ("/tech research <kategoria>", "Wydaj złoto + Powszechną Wiedzę aby rozwinąć technologię."),
             ("Mechaniki zasobów",
              "• **Żywność**: zużywana przez populację (1/100) + wojsko (1/10) na tick.\n"
-             "• **Jedwab + Przyprawy**: dochód luksusowy (1g/5 jednostek, max 50g/tick każdy).\n"
+             "• **Jedwab + Przyprawy**: zużywane automatycznie; nadwyżki sprzedają rynki i porty. Sam zapas nie daje złota.\n"
              "• **Sukno**: zużywane przy budowie jednostek lądowych (1 na 5 jednostek).\n"
              "• **Węgiel + Miedź**: wymagane do Młyna Prochowego i Ludwisarni.\n"
              "• **Glina**: wymagana do budowy Fortu i Uniwersytetu.\n"
-             "• **Decay**: zapasy >500 tracą 2%/tick (oprócz żywności/złota/PW/alg)."),
+             "• **Psucie**: 2% nadwyżki żywności ponad 3 miesiące potrzeb; spichlerz ogranicza straty do 0,5%."),
         ],
     },
     "trade": {
@@ -792,11 +530,14 @@ HELP_SECTIONS_PL = {
         "fields": [
             ("/battle plan", "Wyślij plan bitwy — lokalizacja (tekst), rozkazy, opcjonalne ID jednostek i URL mapy."),
             ("/battle view <id>", "Szczegóły bitwy. Plany prywatne dla stron i GM."),
-            ("/diplomacy war <naród>", "Wypowiedz wojnę. Utrzymanie rośnie do ×3 natychmiast."),
-            ("/diplomacy peace <naród>", "Zawrzyj pokój z narodem z którym jesteś w stanie wojny."),
+            ("/diplomacy war <naród>", "Wypowiedz wojnę. Jednostki zgłoszone do planu bitwy przechodzą na wyprawę (150% utrzymania)."),
+            ("/diplomacy peace <naród>", "Zaproponuj pokój; odbiorca musi zaakceptować warunki w panelu traktatów."),
             ("/diplomacy alliance <naród>", "Zaproponuj sojusz innemu narodowi."),
             ("/diplomacy status", "Twoje relacje dyplomatyczne."),
-            ("/diplomacy public", "Mapa dyplomatyczna świata — wszystkie aktywne wojny i sojusze."),
+            ("/treaty propose", "Zaproponuj pokój, sojusz, nieagresję, dostęp wojskowy lub gwarancję bezpieczeństwa."),
+            ("/treaty list", "Przejrzyj propozycje i warunki; zaakceptuj, odrzuć lub zerwij traktat."),
+            ("/treaty tribute", "Dodaj raty reparacji przed akceptacją. Dostępne też przyciskiem warunków."),
+            ("/treaty calls", "Odpowiedz na gwarancję przed następnym miesiącem gry. Sam decydujesz o wejściu do wojny."),
             ("/event list [naród]", "Lista opublikowanych eventów dla narodu."),
             ("/event play <id>", "Wznów event: 3 opcje lub własna odpowiedź, maksymalnie 3 decyzje."),
         ],
@@ -805,19 +546,24 @@ HELP_SECTIONS_PL = {
         "title": "🗺️ Kolonializm i Szlaki Handlowe",
         "color": discord.Color.dark_green(),
         "fields": [
-            ("/colony found <id> <nazwa>", "Załóż kolonię na niezajętej prowincji (koszt: złoto + ładowność floty)."),
-            ("/colony develop <id> <złoto>", "Zainwestuj złoto; kolonia awansuje automatycznie po spełnieniu kosztu, czasu i technologii."),
-            ("/colony expand <źródło> <cel> <nazwa>", "Utwórz placówkę na niezajętym polu sąsiadującym z osadą lub większą kolonią (500 złota)."),
+            ("/colony found <id> <nazwa>", "Załóż kolonię: 500 złota, 5 wolnej ładowności i 300 osadników z własnej prowincji."),
+            ("/colony develop <id> <złoto>", "Awans automatyczny po spełnieniu kosztu, czasu, technologii, populacji i wyżywienia."),
+            ("/colony expand <źródło> <cel> <nazwa>", "Rozrost obok osady lub większej kolonii: 500 złota i 300 osadników z prowincji źródłowej."),
+            ("/economy settlers <id>", "Przenieś 300 osadników do własnej kolonii za 50 złota i 3 żywności."),
             ("/colony list [naród]", "Lista wszystkich kolonii narodu."),
             ("/colony view <id>", "Szczegóły kolonii z paskami postępu."),
-            ("/traderoute add <od> <do> <nazwa>", "Ustanów szlak handlowy. Dochód = ładowność statków ×2g/tick."),
+            ("/traderoute add <od> <do> <id_okrętu> <nazwa>", "Eksport nadwyżek luksusów: przypisz okręt towarowy; jeden koniec wymaga własnego portu."),
             ("/traderoute remove <id>", "Usuń szlak handlowy."),
-            ("/traderoute list", "Lista twoich szlaków handlowych i dochód na tick."),
+            ("/traderoute list", "Lista szlaków i przypisanych okrętów."),
         ],
     },
 }
 
 GM_HELP_FIELDS_PL = [
+    ("/nation found <gracz> <nazwa> <historia>", "Utwórz państwo i nadaj je graczowi. Istniejące państwa pozostają bez zmian."),
+    ("/nation transfer <naród> <gracz>", "Przekaż państwo po sprawdzeniu przejmowanych zobowiązań. Oczekujące propozycje zostaną anulowane."),
+    ("/chronicle configure <kanał> [godzina_utc] [język]", "Włącz codzienny raport do dwóch publicznych akcji. Domyślnie: 18:00 UTC, polski."),
+    ("/chronicle preview / pause / status / retry", "Podgląd, wstrzymanie i stan raportów; świadome ponowienie nieudanej lub niepewnej wysyłki."),
     ("/nation history_add", "Dodaj ręcznie wpis do historii narodu."),
     ("/nation delete <nazwa>", "Usuń naród z potwierdzeniem (prowincje zwolnione)."),
     ("/province claim", "Przyznaj prowincje narodowi po ID komórek."),
@@ -946,75 +692,24 @@ class EconomyCog(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def calendar_loop(self):
+        from economy_engine import run_month
         try:
-            # Check if calendar is active
-            if _cfg("calendar_running", "0") != "1":
-                return
-            
-            hpm = float(_cfg("hours_per_month", "24"))
-            last_str = _cfg("last_tick_ts")
-            if not last_str:
-                print("[CALENDAR] No last_tick_ts set — run /calendar start", flush=True)
-                return
-
-            now_utc = datetime.now(timezone.utc)
-            elapsed = (now_utc - datetime.fromisoformat(last_str)).total_seconds() / 3600
-            if elapsed < hpm:
-                return
-
-            months = max(1, int(elapsed / hpm))
-            # Cap catch-up to 3 months max per loop iteration
-            months = min(months, 3)
-            
-            print(f"[CALENDAR] {months} month(s) elapsed, running tick...", flush=True)
-
-            ch_id = _cfg("announce_channel_id")
-            print(f"[CALENDAR] Announce channel ID: {ch_id!r}", flush=True)
-            ch = self.bot.get_channel(int(ch_id)) if ch_id else None
-            print(f"[CALENDAR] Channel object: {ch}", flush=True)
-
-            # Process each month tick
-            for i in range(months):
-                month, year, summaries = await asyncio.get_event_loop().run_in_executor(
-                    None, lambda: _run_tick(1)
-                )
-                print(f"[CALENDAR] Month {month}/{year} ticked. Summaries: {summaries}", flush=True)
-
-                if not ch:
-                    print("[CALENDAR] No channel found — skipping announcement.", flush=True)
-                    continue
-
-                # Safely get language locale without relying on undefined interaction
-                lang = config.DEFAULT_LANGUAGE
-                mname = _month_name(month, lang)
-
-                # Original embed formatting
-                embed = discord.Embed(
-                    title=i18n.text('📅 New Month: {p0}, Year {p1}', p0=mname, p1=year),
-                    description=i18n.text('A new month has begun. Nations have collected their income.'),
-                    color=discord.Color.gold(),
-                )
-                if summaries:
-                    embed.add_field(
-                        name=i18n.text('⚙️ Resource Tick'),
-                        value="\n".join(summaries[:20]),
-                        inline=False,
-                    )
-                try:
-                    await ch.send(embed=embed)
-                    print(f"[CALENDAR] Announcement sent to #{ch.name}", flush=True)
-                except Exception as send_err:
-                    print(f"[CALENDAR] Failed to send announcement: {send_err}", flush=True)
-
-            # Update last_tick_ts after ticks succeed
-            _cfg_set("last_tick_ts", now_utc.isoformat())
-
-        except (psycopg2.OperationalError, psycopg2.DatabaseError, psycopg2.Error) as db_err:
-            print(f"[CALENDAR WARNING] Temporary DB disconnect, retrying next cycle: {db_err}", flush=True)
-        except Exception as e:
-            import traceback
-            print(f"[CALENDAR ERROR] {e}", flush=True)
-            traceback.print_exc()
+            now = datetime.now(timezone.utc)
+            for _ in range(3):
+                result = await asyncio.to_thread(run_month, scheduled_at=now)
+                if result is None:
+                    break
+                month, year, summaries = result
+                channel_id = _cfg("announce_channel_id")
+                channel = self.bot.get_channel(int(channel_id)) if channel_id else None
+                if channel:
+                    embed = discord.Embed(title=f"📅 {month}/{year}", description=i18n.text('A new month has begun. Nations have collected their income.'))
+                    try:
+                        await channel.send(embed=embed)
+                    except discord.HTTPException:
+                        pass
+        except Exception as exc:
+            print(f"[CALENDAR] Month rolled back: {type(exc).__name__}: {exc}", flush=True)
 
     @calendar_loop.before_loop
     async def _before(self):
@@ -1034,186 +729,33 @@ class EconomyCog(commands.Cog):
     @app_commands.command(name="resources", description="View your resources / Twoje zasoby")
     @i18n.localized
     async def resources(self, interaction: discord.Interaction):
-        lang = _lang(interaction)
-        n = _nation_owner(str(interaction.user.id))
-        if not n:
-            await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
-            return
-        res  = json.loads(n["resources_json"])
-
-        # Calculate food needs
-        with db.cursor() as c:
-            c.execute(
-                "SELECT COALESCE(SUM(population),0) as total_pop "
-                "FROM provinces WHERE owner_nation_id=? AND active=1",
-                (n["id"],)
-            )
-            total_pop = c.fetchone()["total_pop"] or 0
-            c.execute(
-                "SELECT COALESCE(SUM(quantity),0) as total "
-                "FROM military_units WHERE nation_id=?",
-                (n["id"],)
-            )
-            total_units = c.fetchone()["total"] or 0
-
-        # Calculate food production rate per tick
-        food_prod = 0.0
-        with db.cursor() as c:
-            c.execute(
-                "SELECT id, buildings_json, base_resources_json FROM provinces "
-                "WHERE owner_nation_id=? AND active=1",
-                (n["id"],)
-            )
-            prod_provs = c.fetchall()
-        for pp in prod_provs:
-            try:
-                from cogs.colonialism import get_colony_yield_modifier
-                col_mod = get_colony_yield_modifier(pp["id"])
-            except Exception:
-                col_mod = 1.0
-            base = json.loads(pp["base_resources_json"])
-            food_prod += base.get("food", 0) * col_mod
-            for bkey in json.loads(pp["buildings_json"]):
-                bd = _bdef(bkey)
-                if bd:
-                    food_prod += json.loads(bd["effect_json"]).get("food", 0) * col_mod
-
-       # Ensure all variables used in formatting are populated
-        food_have = res.get("food", 0)
-        food_for_pop = (total_pop / 100.0)
-        food_for_military = (total_units / 10.0)
-        food_needed = food_for_pop + food_for_military
-        food_balance = food_prod - food_needed
-
-        if total_pop == 0 and total_units == 0:
-            food_status = i18n.text('✅ No population ({p0:.0f} stored, +{p1:.0f}/tick)', p0=food_have, p1=food_prod)
-
-        if food_needed > 0:
-            food_ratio = food_have / food_needed if food_have > 0 else 0
-            if food_ratio >= 1.2:
-                food_status = i18n.text('✅ Well-fed ({p0:.0f} stored)', p0=food_have)
-            elif food_ratio >= 1.0:
-                food_status = i18n.text('🟡 Sufficient ({p0:.0f} stored)', p0=food_have)
-            elif food_ratio >= 0.5:
-                food_status = i18n.text('🟠 Shortage ({p0:.0f} stored) — stability declining', p0=food_have)
-            else:
-                food_status = i18n.text('🔴 Severe shortage ({p0:.0f} stored) — population declining', p0=food_have)
-            food_status += (
-                i18n.text('\nNeeds: {p0:.0f}/tick | Produces: {p1:.0f}/tick | Balance: {p2:+.0f}/tick', p0=food_needed, p1=food_prod, p2=food_balance)
-            )
-        else:
-            food_status = i18n.text('✅ No population ({p0:.0f} stored, +{p1:.0f}/tick)', p0=food_have, p1=food_prod)
-
-        # Luxury income preview
-        silk_income   = min(50.0, res.get("silk",   0) / 5)
-        spices_income = min(50.0, res.get("spices", 0) / 5)
-        luxury_income = silk_income + spices_income
-
-        # Build resource display — exclude food (shown separately)
-        other_res = {k: v for k, v in sorted(res.items()) if k != "food" and v > 0}
-        desc = "\n".join(f"**{i18n.term(k)}**: {v:,.1f}"
-                         for k, v in other_res.items()) or i18n.text('*No resources yet.*')
-
-        embed = flagged_embed(discord.Embed(
-            title=i18n.text('{p0} {p1} — Resources', p0=flag_text(n['flag']), p1=n['name']).strip(),
-            description=desc,
-            color=discord.Color.green(),
-        ), (n['flag'], n['name']))
-        embed.add_field(name=i18n.text('🌾 Food'), value=food_status, inline=False)
-        embed.add_field(name=i18n.text('💰 Treasury'), value=i18n.text('{p0:,.0f} gold', p0=n['treasury']), inline=True)
-        if luxury_income > 0:
-            embed.add_field(
-                name=i18n.text('💎 Luxury Income'),
-                value=i18n.text('+{p0:.0f}g/tick (silk+spices)', p0=luxury_income),
-                inline=True,
-            )
-        embed.add_field(
-            name=i18n.text('👥 Population'),
-            value=i18n.text('{p0:,} total | {p1} military units', p0=total_pop, p1=total_units),
-            inline=True,
-        )
-        embed.set_footer(
-            text=i18n.text('In-game: Month {p0}, Year {p1}', p0=_cfg('current_month', '?'), p1=_cfg('current_year', '?'))
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        from economy_ui import show_dashboard
+        await show_dashboard(interaction)
 
     @app_commands.command(name="build", description="Construct a building / Buduj w prowincji")
     @app_commands.describe(cell_id="Province cell ID", building="Building key e.g. farm, mine")
     @app_commands.autocomplete(building=_building_choices)
     @i18n.localized
     async def build(self, interaction: discord.Interaction, cell_id: int, building: str):
-        lang = _lang(interaction)
+        from economy_services import build as construct
         n = _nation_owner(str(interaction.user.id))
         if not n:
-            await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
-            return
-        with db.cursor() as c:
-            c.execute("SELECT * FROM provinces WHERE azgaar_cell_id=? AND active=1", (cell_id,))
-            prov = c.fetchone()
-        if not prov:
-            await interaction.response.send_message(
-                i18n.t(lang, "province_not_found", cell_id=cell_id), ephemeral=True)
-            return
-        if prov["owner_nation_id"] != n["id"]:
-            await interaction.response.send_message(i18n.t(lang, "build_not_owner"), ephemeral=True)
+            await interaction.response.send_message(i18n.t(_lang(interaction), 'no_nation'), ephemeral=True)
             return
         bd = _bdef(building)
         if not bd:
-            await interaction.response.send_message(
-                i18n.t(lang, "build_unknown", key=building), ephemeral=True)
+            await interaction.response.send_message(i18n.text('Unknown building.'), ephemeral=True)
             return
-        building = bd['key']
-        if not _terrain_ok(prov["terrain"], bd["requires_terrain"]):
-            await interaction.response.send_message(
-                i18n.t(lang, "build_wrong_terrain",
-                        building=_building_label(bd), terrain=i18n.term(prov["terrain"])), ephemeral=True)
-            return
-        if not _tech_ok(n, bd["requires_tech"], bd["key"]):
-            await interaction.response.send_message(
-                i18n.t(lang, "build_need_tech",
-                        building=_building_label(bd), level=bd["requires_tech"]), ephemeral=True)
-            return
-        bldgs = json.loads(prov["buildings_json"])
-        if building.lower() in bldgs:
-            await interaction.response.send_message(
-                i18n.t(lang, "build_already_exists", building=_building_label(bd)), ephemeral=True)
-            return
-        cost      = json.loads(bd["cost_json"])
-        gold_cost = cost.get("gold", 0)
-        if n["treasury"] < gold_cost:
-            await interaction.response.send_message(
-                i18n.t(lang, "build_no_gold", need=gold_cost, have=n["treasury"]), ephemeral=True)
-            return
-        res = json.loads(n["resources_json"])
-        ok, missing = _deduct(res, cost)
-        if not ok:
-            await interaction.response.send_message(
-                i18n.t(lang, "build_no_resource", resource=i18n.term(missing)), ephemeral=True)
-            return
-        bldgs.append(building.lower())
-        fort_bonus = 1 if building.lower() == "fort" else 0
-        with db.cursor() as c:
-            c.execute(
-                "UPDATE provinces SET buildings_json=?,"
-                "fortification_level=fortification_level+? WHERE azgaar_cell_id=?",
-                (json.dumps(bldgs), fort_bonus, cell_id)
-            )
-            c.execute(
-                "UPDATE nations SET resources_json=?,treasury=? WHERE id=?",
-                (json.dumps(res), n["treasury"] - gold_cost, n["id"])
-            )
-        _log(n["id"], "system", i18n.text('Built {p0} in province {p1}.', p0=_building_label(bd), p1=prov['name'] or cell_id))
-        effects  = json.loads(bd["effect_json"])
-        eff_str  = ", ".join(i18n.text('+{p0} {p1}/month', p0=v, p1=i18n.term(k)) for k, v in effects.items()) or i18n.term("special")
-        embed = discord.Embed(
-            title=i18n.t(lang, "build_success_title"),
-            description=i18n.t(lang, "build_success_desc",
-                                building=_building_label(bd),
-                                province=prov["name"] or i18n.text('Cell #{p0}', p0=cell_id),
-                                effects=eff_str),
-            color=discord.Color.green(),
-        )
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.defer(ephemeral=True)
+        try:
+            level, cost = await asyncio.to_thread(construct, n['id'], cell_id, bd['key'])
+            with db.cursor() as c:
+                c.execute('SELECT name FROM provinces WHERE azgaar_cell_id=?',(cell_id,))
+                place=c.fetchone()['name'] or str(cell_id)
+            embed=discord.Embed(title=i18n.text('Building completed.'),description=_building_label(bd)+' — '+place)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
 
     # ======================================================================
     # BUILDINGS GROUP
@@ -1283,13 +825,19 @@ class EconomyCog(commands.Cog):
                 i18n.text('No buildings in **{p0}**.', p0=prov['name'] or i18n.text('Cell #{p0}', p0=cell_id)), ephemeral=True)
             return
         lines = []
+        with db.cursor() as c:
+            c.execute('SELECT levels_json FROM province_development WHERE province_id=?',(prov['id'],))
+            row=c.fetchone()
+        levels=json.loads(row['levels_json']) if row else {}
         for bkey in bldgs:
             bd  = _bdef(bkey)
             nm  = _building_label(bd) if bd else bkey
             eff = json.loads(bd["effect_json"]) if bd else {}
+            from economy_engine import LEVEL_OUTPUT
+            level=min(3,max(1,int(levels.get(bkey,1))))
             lines.append(
-                f"**{nm}** — "
-                + (", ".join(i18n.text('+{p0} {p1}/tick', p0=v, p1=i18n.term(k)) for k, v in eff.items()) or i18n.term("special"))
+                f"**{nm} · {level}/3** — "
+                + (", ".join(f"{v*LEVEL_OUTPUT[level]:+g} {i18n.term(k)}" for k, v in eff.items() if isinstance(v,(int,float))) or i18n.term("special"))
             )
         embed = discord.Embed(
             title=i18n.text('Buildings — {p0}', p0=prov['name'] or i18n.text('Cell #{p0}', p0=cell_id)),
@@ -1297,6 +845,8 @@ class EconomyCog(commands.Cog):
             color=discord.Color.blue(),
         )
         embed.add_field(name=i18n.text('Fortification'), value=str(prov["fortification_level"]), inline=True)
+        embed.set_footer(text='Produkcja przy pełnej obsadzie, przed mnożnikami; rzeczywisty bilans w panelu.' if _lang(interaction)=='pl' else
+                              'Output at full staffing, before modifiers; the panel shows the actual forecast.')
         await interaction.response.send_message(embed=embed)
 
     # ======================================================================
@@ -1351,28 +901,12 @@ class EconomyCog(commands.Cog):
                 i18n.text('Megaproject #{p0} is **{p1}** — only approved projects can be started.', p0=mp_id, p1=i18n.term(mp['status'])),
                 ephemeral=True)
             return
-        cost      = json.loads(mp["cost_json"])
-        gold_cost = cost.get("gold", 0)
-        if nat["treasury"] < gold_cost:
-            await interaction.response.send_message(
-                i18n.text('Not enough gold. Need **{p0:,}g**, have **{p1:,.0f}g**.', p0=gold_cost, p1=nat['treasury']),
-                ephemeral=True)
-            return
-        res = json.loads(nat["resources_json"])
-        ok, missing = _deduct(res, cost)
-        if not ok:
-            await interaction.response.send_message(i18n.text('Not enough **{p0}**.', p0=i18n.term(missing)), ephemeral=True)
-            return
-        new_status = "building" if mp["duration_months"] > 0 else "complete"
-        with db.cursor() as c:
-            c.execute(
-                "UPDATE megaprojects SET status=?,months_spent=0 WHERE id=?",
-                (new_status, mp_id)
-            )
-            c.execute("UPDATE nations SET resources_json=?,treasury=? WHERE id=?",
-                      (json.dumps(res), nat["treasury"] - gold_cost, nat["id"]))
+        from economy_services import start_megaproject
+        try:
+            new_status=start_megaproject(nat['id'],mp_id)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
         if new_status == "complete":
-            _apply_mp_effect(nat["id"], mp["effect_json"], mp["name"])
             _log(nat["id"], "system", i18n.text("Megaproject '{p0}' completed instantly.", p0=mp['name']))
             await interaction.response.send_message(
                 i18n.text('✅ **{p0}** built and completed! Effects applied.', p0=mp['name']), ephemeral=False)
@@ -1551,13 +1085,13 @@ class EconomyCog(commands.Cog):
                         pass
 
     @trade_grp.command(name="accept", description="Accept a trade / Zaakceptuj handel")
-    @app_commands.describe(trade_id="Trade ID")
+    @app_commands.describe(trade_id="Trade ID",monthly="Agree to repeat this offer every month / Zgoda na wymianę co miesiąc")
     @i18n.localized
-    async def trade_accept(self, interaction: discord.Interaction, trade_id: int):
+    async def trade_accept(self, interaction: discord.Interaction, trade_id: int, monthly: bool = False):
         await interaction.response.defer()
         try:
             trade, fn, tn, give_res, recv_res, give_gold, recv_gold = accept_trade(
-                trade_id, interaction.user.id, _gm(interaction))
+                trade_id, interaction.user.id, _gm(interaction), monthly=monthly)
         except ValueError as exc:
             await interaction.followup.send(str(exc), ephemeral=True)
             return
@@ -1678,6 +1212,11 @@ class EconomyCog(commands.Cog):
             color=discord.Color.orange(),
         ), (t['fflag'], t['fname']), (t['tflag'], t['tname']))
         embed.add_field(name=i18n.text('Status'), value=i18n.term(t["status"]), inline=True)
+        with db.cursor() as c:
+            c.execute('SELECT status FROM trade_contracts WHERE trade_id=?',(trade_id,))
+            contract=c.fetchone()
+        if contract:
+            embed.add_field(name=i18n.text('Monthly contract'),value=i18n.text('Repeats monthly until either party cancels. Accept with monthly:True.')+' '+i18n.term(contract['status']),inline=False)
         embed.add_field(name=i18n.text('Date'),   value=short_date(t["created_at"]), inline=True)
         give_res  = json.loads(t["offer_resources_json"])
         recv_res  = json.loads(t["receive_resources_json"])
@@ -1775,7 +1314,7 @@ class EconomyCog(commands.Cog):
     @admineco_grp.command(name="tick", description="[GM] Manual resource tick / [GM] Recznie uruchom tick")
     @app_commands.describe(months="Months to advance (default 1)")
     @i18n.localized
-    async def admin_tick(self, interaction: discord.Interaction, months: int = 1):
+    async def admin_tick(self, interaction: discord.Interaction, months: app_commands.Range[int,1,120] = 1):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
@@ -1939,32 +1478,12 @@ class EconomyCog(commands.Cog):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
-        with db.cursor() as c:
-            c.execute("SELECT * FROM megaprojects WHERE id=?", (mp_id,))
-            mp = c.fetchone()
-        if not mp or mp["status"] != "building":
-            await interaction.response.send_message(
-                i18n.text('Megaproject #{p0} not found or not under construction.', p0=mp_id), ephemeral=True)
-            return
-        new_spent = min(mp["months_spent"] + months, mp["duration_months"])
-        complete  = new_spent >= mp["duration_months"]
-        with db.cursor() as c:
-            if complete:
-                c.execute(
-                    "UPDATE megaprojects SET status='complete',months_spent=?,"
-                    "completed_at=datetime('now') WHERE id=?",
-                    (new_spent, mp_id)
-                )
-            else:
-                c.execute("UPDATE megaprojects SET months_spent=? WHERE id=?", (new_spent, mp_id))
-        if complete:
-            _apply_mp_effect(mp["nation_id"], mp["effect_json"], mp["name"])
-            await interaction.response.send_message(
-                i18n.text('✅ **{p0}** completed! Effects applied.', p0=mp['name']), ephemeral=True)
-        else:
-            await interaction.response.send_message(
-                i18n.text('⏩ Advanced **{p0}** by {p1} month(s). ({p2}/{p3})', p0=mp['name'], p1=months, p2=new_spent, p3=mp['duration_months']),
-                ephemeral=True)
+        from economy_services import advance_megaproject
+        try:
+            state=advance_megaproject(mp_id,months)
+            await interaction.response.send_message(i18n.term(state),ephemeral=True)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True)
 
     @admineco_grp.command(name="tech_set", description="[GM] Set a nation's tech level / [GM] Ustaw poziom technologii")
     @app_commands.describe(
@@ -2128,3 +1647,5 @@ class EconomyCog(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(EconomyCog(bot))
+    from economy_ui import EconomyControlCog
+    await bot.add_cog(EconomyControlCog())

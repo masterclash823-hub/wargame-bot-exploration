@@ -1,5 +1,8 @@
 # Przegląd gospodarki — 6 września 2026
 
+To zapis historyczny. Aktualne zasady i naprawy opisuje
+[Gospodarka v2](economy-v2.md); poniższe stawki dotyczą starszego kodu.
+
 Zakres: kod z `main` po PR #2 (cdfb91e), szczególnie `cogs/economy.py`,
 `cogs/colonialism.py`, `cogs/military.py` i schemat `db.py`.
 Nie odczytywano bazy produkcyjnej ani konfiguracji Rendera.

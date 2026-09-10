@@ -7,6 +7,9 @@ so local dev still works without Supabase.
 import os
 import sqlite3
 from contextlib import contextmanager
+from contextvars import ContextVar
+
+_transaction = ContextVar('database_transaction', default=None)
 
 try:
     import psycopg2
@@ -23,6 +26,8 @@ USE_POSTGRES  = bool(DATABASE_URL and HAS_PSYCOPG2)
 # SQLite differences handled by _sqlite_schema() below.
 # ---------------------------------------------------------------------------
 SCHEMA_PG = """
+CREATE TABLE IF NOT EXISTS economy_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
 CREATE TABLE IF NOT EXISTS user_prefs (
     user_id  TEXT PRIMARY KEY,
     language TEXT NOT NULL DEFAULT 'en'
@@ -229,6 +234,94 @@ CREATE TABLE IF NOT EXISTS tech (
     last_drift_ts TIMESTAMPTZ,
     PRIMARY KEY (nation_id, category)
 );
+
+CREATE TABLE IF NOT EXISTS economy_policy (
+    nation_id INTEGER PRIMARY KEY REFERENCES nations(id) ON DELETE CASCADE,
+    tax TEXT NOT NULL DEFAULT 'normal', priority TEXT NOT NULL DEFAULT 'balanced',
+    luxury TEXT NOT NULL DEFAULT 'auto', unrest REAL NOT NULL DEFAULT 0,
+    arrears REAL NOT NULL DEFAULT 0, unpaid_months INTEGER NOT NULL DEFAULT 0,
+    hunger_months INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS province_development (
+    province_id INTEGER PRIMARY KEY REFERENCES provinces(id) ON DELETE CASCADE,
+    levels_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS military_posture (
+    unit_id INTEGER PRIMARY KEY REFERENCES military_units(id) ON DELETE CASCADE,
+    mode TEXT NOT NULL DEFAULT 'active', ready_month INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS economy_months (
+    month_index INTEGER PRIMARY KEY, report_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS trade_contracts (
+    trade_id INTEGER PRIMARY KEY REFERENCES trades(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'proposed', last_month INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS route_assignments (
+    route_id INTEGER PRIMARY KEY REFERENCES trade_routes(id) ON DELETE CASCADE,
+    ship_id INTEGER NOT NULL UNIQUE REFERENCES military_units(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS nation_profiles (
+    nation_id INTEGER PRIMARY KEY REFERENCES nations(id) ON DELETE CASCADE,
+    prestige INTEGER NOT NULL DEFAULT 0, reputation INTEGER NOT NULL DEFAULT 50
+);
+CREATE TABLE IF NOT EXISTS ownership_changes (
+    id SERIAL PRIMARY KEY, nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    previous_owner TEXT NOT NULL, new_owner TEXT NOT NULL, gm_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS nation_memories (
+    id SERIAL PRIMARY KEY, nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL, payload_json TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(nation_id,source_key)
+);
+CREATE TABLE IF NOT EXISTS world_activity (
+    id SERIAL PRIMARY KEY, nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    other_nation_id INTEGER REFERENCES nations(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL, source_key TEXT NOT NULL UNIQUE, payload_json TEXT NOT NULL DEFAULT '{}',
+    occurred_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_world_activity_time ON world_activity(occurred_at);
+CREATE TABLE IF NOT EXISTS nation_goals (
+    id SERIAL PRIMARY KEY, nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', start_month INTEGER NOT NULL,
+    baseline_json TEXT NOT NULL DEFAULT '{}', progress_json TEXT NOT NULL DEFAULT '{}',
+    last_month INTEGER NOT NULL, completed_month INTEGER, activity_after INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_goal ON nation_goals(nation_id) WHERE status='active';
+CREATE TABLE IF NOT EXISTS treaties (
+    id SERIAL PRIMARY KEY,
+    proposer_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    recipient_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    proposer_owner TEXT NOT NULL, recipient_owner TEXT NOT NULL,
+    kind TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'proposed', visibility TEXT NOT NULL DEFAULT 'public',
+    version INTEGER NOT NULL DEFAULT 0,
+    terms_json TEXT NOT NULL DEFAULT '{}', duration INTEGER NOT NULL DEFAULT 12,
+    created_month INTEGER NOT NULL, submitted_month INTEGER, accepted_month INTEGER, expires_month INTEGER,
+    last_paid_month INTEGER, payments_left INTEGER NOT NULL DEFAULT 0,
+    arrears REAL NOT NULL DEFAULT 0, missed_payments INTEGER NOT NULL DEFAULT 0,
+    broken_by INTEGER REFERENCES nations(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS guarantee_calls (
+    id SERIAL PRIMARY KEY, treaty_id INTEGER NOT NULL REFERENCES treaties(id) ON DELETE CASCADE,
+    attacker_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    defender_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending', deadline_month INTEGER NOT NULL,
+    source_key TEXT NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS news_settings (
+    guild_id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, language TEXT NOT NULL DEFAULT 'pl',
+    hour_utc INTEGER NOT NULL DEFAULT 18, enabled INTEGER NOT NULL DEFAULT 1,
+    next_due_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS news_deliveries (
+    guild_id TEXT NOT NULL, slot TEXT NOT NULL, channel_id TEXT NOT NULL,
+    language TEXT NOT NULL, report_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+    message_id TEXT, updated_at TEXT NOT NULL, error TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(guild_id,slot)
+);
 """
 
 # SQLite version — same structure, SQLite-compatible types
@@ -349,6 +442,10 @@ class _UnifiedCursor:
 
 @contextmanager
 def cursor():
+    current = _transaction.get()
+    if current is not None:
+        yield current
+        return
     if USE_POSTGRES:
         conn = _pg_conn()
         try:
@@ -383,6 +480,22 @@ def cursor():
 
 
 # ---------------------------------------------------------------------------
+@contextmanager
+def atomic():
+    """Share one transaction across synchronous service calls, never across awaits."""
+    if _transaction.get() is not None:
+        yield _transaction.get()
+        return
+    with cursor() as cur:
+        if not USE_POSTGRES:
+            cur.execute('BEGIN IMMEDIATE')
+        token = _transaction.set(cur)
+        try:
+            yield cur
+        finally:
+            _transaction.reset(token)
+
+
 # INSERT helper that returns the new row's id reliably on both backends
 # ---------------------------------------------------------------------------
 def insert_returning_id(sql: str, params: tuple) -> int:
@@ -391,6 +504,12 @@ def insert_returning_id(sql: str, params: tuple) -> int:
     On Postgres: appends RETURNING id.
     On SQLite: uses lastrowid.
     """
+    if _transaction.get() is not None:
+        cur = _transaction.get()
+        statement=sql.rstrip().rstrip(';')
+        if not statement.upper().endswith('RETURNING ID'):statement+=' RETURNING id'
+        cur.execute(statement, params)
+        return cur.fetchone()['id']
     if USE_POSTGRES:
         if not sql.strip().upper().endswith("RETURNING id"):
             sql = sql.rstrip().rstrip(";") + " RETURNING id"

@@ -97,6 +97,13 @@ async def _maybe_announce(bot, nation_name: str, tier: int):
         pass
 
 def _run_drift():
+    with db.atomic() as c:
+        c.execute('SELECT id FROM nations ORDER BY id'+(' FOR UPDATE' if db.USE_POSTGRES else ''))
+        c.fetchall()
+        return _run_drift_locked()
+
+
+def _run_drift_locked():
     """
     Apply +DRIFT_PER_DAY to each tech category for every nation.
     Guaranteed to run at most once per 24 hours.
@@ -305,16 +312,29 @@ class TechCog(commands.Cog):
             @discord.ui.button(label="✅ Confirm", style=discord.ButtonStyle.success)
             @i18n.localized
             async def confirm(self, btn_interaction: discord.Interaction, button: discord.ui.Button):
+                if str(btn_interaction.user.id)!=str(nat['owner_id']) or self.confirmed:
+                    await btn_interaction.response.send_message(i18n.text('This is not your menu.'),ephemeral=True)
+                    return
                 self.confirmed = True
                 self.stop()
                 # Deduct and apply
-                tech[cat] = new
-                res["universal_knowledge"] = uk_have - uk_cost
-                with db.cursor() as c:
-                    c.execute(
-                        "UPDATE nations SET tech_json=?,resources_json=?,treasury=? WHERE id=?",
-                        (json.dumps(tech), json.dumps(res), nat["treasury"] - gold_cost, nat["id"])
-                    )
+                from economy_engine import lock_nation,read_json
+                from economy_services import spend
+                try:
+                    with db.atomic() as c:
+                        current=lock_nation(c,nat['id'])
+                        from world_service import owned,activity
+                        owned(c,nat['id'],btn_interaction.user.id)
+                        live_tech=read_json(current['tech_json'])
+                        if live_tech.get(cat,3)!=old:raise ValueError(i18n.text('Technology changed. Open research again.'))
+                        spend(c,current,{'gold':gold_cost,'universal_knowledge':uk_cost})
+                        live_tech[cat]=new
+                        c.execute('UPDATE nations SET tech_json=? WHERE id=?',(json.dumps(live_tech),nat['id']))
+                        import uuid
+                        activity(c,'research',nat['id'],'research:'+uuid.uuid4().hex,{'category':cat})
+                except ValueError as exc:
+                    await btn_interaction.response.send_message(str(exc),ephemeral=True)
+                    return
                 _log(nat["id"], "player",
                      i18n.text('Researched {p0}: {p1:.1f} → {p2:.1f} (cost: {p3}g + {p4} UK).', p0=i18n.term(cat), p1=old, p2=new, p3=gold_cost, p4=uk_cost))
                 for tier in _tier_crossed(old, new):

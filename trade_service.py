@@ -26,11 +26,9 @@ def parse_resources(raw):
     return resources
 
 
-def accept_trade(trade_id, owner_id, is_gm=False):
+def accept_trade(trade_id, owner_id, is_gm=False, monthly=False):
     """Lock the trade and both balances, validate, then commit exactly once."""
-    with db.cursor() as c:
-        if not db.USE_POSTGRES:
-            c.execute("BEGIN IMMEDIATE")
+    with db.atomic() as c:
         lock = " FOR UPDATE" if db.USE_POSTGRES else ""
         c.execute("SELECT * FROM trades WHERE id=?" + lock, (trade_id,))
         trade = c.fetchone()
@@ -47,6 +45,12 @@ def accept_trade(trade_id, owner_id, is_gm=False):
             raise ValueError(i18n.text('This trade is not addressed to your nation.'))
         if trade["status"] != "pending":
             raise ValueError(i18n.text('Trade #{p0} is already {p1}.', p0=trade_id, p1=i18n.term(trade['status'])))
+        c.execute("SELECT * FROM trade_contracts WHERE trade_id=? AND status='proposed'",(trade_id,))
+        contract=c.fetchone()
+        if contract and not monthly:
+            raise ValueError(i18n.text('Monthly contract: confirm with /trade accept monthly:True.'))
+        if monthly and not contract:
+            raise ValueError(i18n.text('The author must first mark this offer as monthly.'))
         give_res = parse_resources(trade["offer_resources_json"])
         recv_res = parse_resources(trade["receive_resources_json"])
         give_gold, recv_gold = trade["offer_gold"], trade["receive_gold"]
@@ -71,4 +75,8 @@ def accept_trade(trade_id, owner_id, is_gm=False):
                       (json.dumps(resources), nation["treasury"] + delta, nation["id"]))
         c.execute("UPDATE trades SET status='accepted',resolved_at=CURRENT_TIMESTAMP WHERE id=?",
                   (trade_id,))
+        if contract:
+            from economy_engine import _config
+            month=int(_config(c,'current_year','1'))*12+int(_config(c,'current_month','1'))-1
+            c.execute("UPDATE trade_contracts SET status='active',last_month=? WHERE trade_id=?",(month,trade_id))
     return trade, fn, tn, give_res, recv_res, give_gold, recv_gold

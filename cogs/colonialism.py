@@ -1,7 +1,7 @@
 """
 Colonialism and Trade Route commands.
 Colony stages: outpost(50%) -> settlement(75%) -> colony(90%) -> province(100%)
-Trade routes: income = ship cargo x 2g/tick, fallback 20g if no ships.
+Trade routes export surplus luxuries using exclusively assigned cargo ships.
 """
 from flags import flag_text, flagged_embed
 import json
@@ -43,25 +43,14 @@ def _total_cargo(nation_id):
     return sum(json.loads(s["stats_json"]).get("cargo",0)*s["quantity"] for s in ships)
 
 def _route_income(nation_id):
+    # Marginal luxury sales unlocked by shipping, never gold for an empty route.
+    from economy_engine import snapshot,project
     with db.cursor() as c:
-        c.execute("SELECT * FROM trade_routes WHERE nation_id=? AND active=1", (nation_id,))
-        routes = c.fetchall()
-    total = 0.0
-    for r in routes:
-        cargo = 0.0
-        for cid in [r["from_cell_id"], r["to_cell_id"]]:
-            prov = _prov_by_cell(cid)
-            if not prov: continue
-            with db.cursor() as c:
-                c.execute("SELECT u.quantity,b.stats_json FROM military_units u JOIN blueprints b ON u.blueprint_id=b.id WHERE u.province_id=? AND b.type='ship'", (prov["id"],))
-                ships = c.fetchall()
-            cargo += sum(json.loads(s["stats_json"]).get("cargo",0)*s["quantity"] for s in ships)
-        total += cargo*2.0 if cargo>0 else 20.0
-    return total
+        data=snapshot(c,nation_id)
+    return max(0,project(*data)['luxury_income']-project(*data[:-1],cargo=0)['luxury_income'])
 
 def compute_trade_route_income(nation_id: int) -> float:
-    # Income is derived from the ships currently present at both endpoints.
-    # ``income_per_tick`` never existed in the current trade_routes schema.
+    # Compatibility for callers; the monthly engine already includes these sales.
     return float(_route_income(nation_id))
 
 def get_colony_yield_modifier(province_id):
@@ -120,7 +109,10 @@ def expand_colony(nation_id: int, source_cell_id: int, target_cell_id: int, name
         raise ValueError(i18n.text("Colony name cannot be empty."))
     cost = STAGE_CONFIG["outpost"]["found_cost"].get("gold", 500)
     lock = " FOR UPDATE" if db.USE_POSTGRES else ""
-    with db.cursor() as c:
+    with db.atomic() as c:
+        from economy_engine import lock_nation
+        from economy_services import move_settlers
+        lock_nation(c,nation_id)
         c.execute(
             "SELECT p.id AS province_id,p.name AS province_name,c.id AS colony_id,c.status "
             "FROM provinces p JOIN colonies c ON c.province_id=p.id "
@@ -157,6 +149,7 @@ def expand_colony(nation_id: int, source_cell_id: int, target_cell_id: int, name
         if not c.fetchone():
             raise ValueError(i18n.text("Province {p0} is not adjacent to the source colony.", p0=target_cell_id))
 
+        move_settlers(c,nation_id,target['id'],source['province_id'])
         c.execute("UPDATE nations SET treasury=treasury-? WHERE id=? AND treasury>=?", (cost, nation_id, cost))
         if c.rowcount != 1:
             raise ValueError(i18n.text("You need {p0}g to expand the colony.", p0=cost))
@@ -170,6 +163,8 @@ def expand_colony(nation_id: int, source_cell_id: int, target_cell_id: int, name
             "INSERT INTO colonies(nation_id,province_id,name,status) VALUES(?,?,?,?)",
             (nation_id, target["id"], name, "outpost"),
         )
+        from world_service import activity
+        activity(c,'expansion',nation_id,f"expansion:{target['id']}",{'cell':target_cell_id})
     return {"name": name, "cost": cost, "target": target, "source": source}
 
 
@@ -240,6 +235,16 @@ def colony_advance_readiness(col, owner) -> tuple[str, str | None]:
             "{p0} lacks Colonial tech (needs {p1:.0f}).",
             p0=owner["name"], p1=required_tech,
         )
+    with db.cursor() as c:
+        c.execute('SELECT population FROM provinces WHERE id=?',(col['province_id'],))
+        province=c.fetchone()
+        c.execute('SELECT hunger_months FROM economy_policy WHERE nation_id=?',(owner['id'],))
+        hunger=c.fetchone()
+    required_population={'settlement':300,'colony':800,'province':1500}[new_stage]
+    if not province or province['population']<required_population:
+        return new_stage,i18n.text('Colony needs {p0} inhabitants. Send settlers from the panel.',p0=required_population)
+    if hunger and hunger['hunger_months']>=2:
+        return new_stage,i18n.text('Restore food supplies before advancing the colony.')
     return new_stage, None
 
 
@@ -262,140 +267,40 @@ class ColonialismCog(commands.Cog):
         route_name: str, 
         ship_id: int
     ):
-        nat = _nation_owner(interaction.user.id)
+        from economy_services import create_route
+        nat = _nat_owner(str(interaction.user.id))
         if not nat:
-            return await interaction.response.send_message(i18n.text('❌ You do not own a nation.'), ephemeral=True)
-        
-        nid = nat["id"]
-    
-        with db.cursor() as c:
-            # 1. Check maximum trade routes cap (e.g., max 5 active routes per nation)
-            c.execute("SELECT COUNT(*) as cnt FROM trade_routes WHERE nation_id=%s", (nid,))
-            row = c.fetchone()
-            route_count = row["cnt"] if isinstance(row, dict) else row[0]
-            if route_count >= 5:
-                return await interaction.response.send_message(
-                    i18n.text('❌ You have reached your maximum limit of 5 trade routes!'), ephemeral=True
-                )
-    
-            # 2. Check for existing duplicate route
-            c.execute(
-                "SELECT id FROM trade_routes WHERE nation_id=%s AND from_cell=%s AND to_cell=%s",
-                (nid, from_cell, to_cell)
-            )
-            if c.fetchone():
-                return await interaction.response.send_message(
-                    i18n.text('❌ A trade route between these two provinces already exists!'), ephemeral=True
-                )
-    
-            # 3. Validate that the specified ship exists, belongs to nation, has cargo capacity, and is not already assigned
-            c.execute(
-                "SELECT u.id, b.stats_json FROM military_units u "
-                "JOIN unit_blueprints b ON u.blueprint_id = b.id "
-                "WHERE u.id=%s AND u.nation_id=%s AND b.unit_type='ship'",
-                (ship_id, nid)
-            )
-            ship = c.fetchone()
-            if not ship:
-                return await interaction.response.send_message(
-                    i18n.text('❌ Valid ship not found or does not belong to your nation.'), ephemeral=True
-                )
-    
-            # Check if ship is already assigned to another trade route
-            c.execute("SELECT id FROM trade_routes WHERE ship_id=%s", (ship_id,))
-            if c.fetchone():
-                return await interaction.response.send_message(
-                    i18n.text('❌ This ship is already assigned to another trade route!'), ephemeral=True
-                )
-    
-            # Read cargo capacity from ship's blueprint stats
-            stats = json.loads(ship["stats_json"]) if isinstance(ship["stats_json"], str) else ship["stats_json"]
-            cargo_capacity = stats.get("cargo", 0)
-    
-            if cargo_capacity <= 0:
-                return await interaction.response.send_message(
-                    i18n.text('❌ This ship has 0 cargo capacity and cannot carry trade cargo!'), ephemeral=True
-                )
-    
-            # Income formula: Cargo * 2g / tick
-            income_per_tick = cargo_capacity * 2
-    
-            # 4. Insert trade route with attached ship ID
-            c.execute(
-                "INSERT INTO trade_routes (nation_id, name, from_cell, to_cell, ship_id, income_per_tick) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (nid, route_name, from_cell, to_cell, ship_id, income_per_tick)
-            )
-    
-        await interaction.response.send_message(
-            i18n.text('✅ Trade route **{p0}** established using Ship #{p1}! Yielding **+{p2}g/month** (Cargo: {p3}).', p0=route_name, p1=ship_id, p2=income_per_tick, p3=cargo_capacity)
-        )
+            await interaction.response.send_message(i18n.text('Nation not found.'),ephemeral=True); return
+        try:
+            rid=create_route(nat['id'],route_name,from_cell,to_cell,ship_id)
+            await interaction.response.send_message(i18n.text('Trade route ready; assigned cargo exports available luxuries.')+f' #{rid}',ephemeral=True)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True)
 
     @traderoute_grp.command(name="remove", description="Remove a trade route / Usun szlak")
     @i18n.localized
     async def traderoute_remove(self, interaction: discord.Interaction, route_id: int):
-        nat = _nation_owner(interaction.user.id)
+        nat = _nat_owner(str(interaction.user.id))
         if not nat:
-            return await interaction.response.send_message(i18n.text('❌ You do not own a nation.'), ephemeral=True)
-        
-        nid = nat["id"]
-    
-        with db.cursor() as c:
-            # 1. Fetch trade route to verify ownership and grab info
-            c.execute(
-                "SELECT id, name, ship_id FROM trade_routes WHERE id=%s AND nation_id=%s",
-                (route_id, nid)
-            )
-            route = c.fetchone()
-            if not route:
-                return await interaction.response.send_message(
-                    i18n.text('❌ Trade route not found or does not belong to your nation.'), ephemeral=True
-                )
-    
-            # Handle dict vs tuple cursors safely
-            route_name = route["name"] if isinstance(route, dict) else route[1]
-            ship_id = route["ship_id"] if isinstance(route, dict) else route[2]
-    
-            # 2. Delete the route record
-            c.execute("DELETE FROM trade_routes WHERE id=%s AND nation_id=%s", (route_id, nid))
-    
-        ship_msg = i18n.text(' Ship **#{p0}** is now unassigned and available.', p0=ship_id) if ship_id else ""
-        await interaction.response.send_message(
-            i18n.text('✅ Trade route **{p0}** (ID: `{p1}`) has been cancelled.{p2}', p0=route_name, p1=route_id, p2=ship_msg)
-        )
+            await interaction.response.send_message(i18n.text('Nation not found.'),ephemeral=True); return
+        with db.atomic() as c:
+            from economy_engine import lock_nation
+            lock_nation(c,nat['id'])
+            c.execute('DELETE FROM trade_routes WHERE id=? AND nation_id=?',(route_id,nat['id']))
+            changed=c.rowcount
+        await interaction.response.send_message(i18n.text('Trade route removed.') if changed else i18n.text('Trade route not found.'),ephemeral=True)
 
     @traderoute_grp.command(name="list", description="List your trade routes / Lista szlakow")
     @i18n.localized
     async def traderoute_list(self, interaction: discord.Interaction):
-        nat = _nation_owner(interaction.user.id)
+        nat = _nat_owner(str(interaction.user.id))
         if not nat:
-            return await interaction.response.send_message(i18n.text('❌ You do not own a nation.'), ephemeral=True)
-    
-        nid = nat["id"]
+            await interaction.response.send_message(i18n.text('Nation not found.'),ephemeral=True); return
         with db.cursor() as c:
-            c.execute("SELECT id, name, from_cell, to_cell, ship_id, income_per_tick FROM trade_routes WHERE nation_id=%s", (nid,))
-            routes = c.fetchall()
-    
-        if not routes:
-            return await interaction.response.send_message(i18n.text('ℹ️ You currently have no active trade routes.'), ephemeral=True)
-    
-        embed = discord.Embed(title=i18n.text('📜 Trade Routes — {p0}', p0=nat['name']), color=discord.Color.gold())
-        
-        for r in routes:
-            r_id = r["id"] if isinstance(r, dict) else r[0]
-            r_name = r["name"] if isinstance(r, dict) else r[1]
-            from_c = r["from_cell"] if isinstance(r, dict) else r[2]
-            to_c = r["to_cell"] if isinstance(r, dict) else r[3]
-            s_id = r["ship_id"] if isinstance(r, dict) else r[4]
-            income = r["income_per_tick"] if isinstance(r, dict) else r[5]
-    
-            embed.add_field(
-                name=f"ID `{r_id}`: {r_name}",
-                value=i18n.text('• **From:** Cell {p0} ➔ **To:** Cell {p1}\n• **Ship Assigned:** #{p2}\n• **Income:** +{p3}g/month', p0=from_c, p1=to_c, p2=s_id, p3=income),
-                inline=False
-            )
-    
-        await interaction.response.send_message(embed=embed)
+            c.execute('SELECT r.*,a.ship_id FROM trade_routes r LEFT JOIN route_assignments a ON a.route_id=r.id WHERE r.nation_id=? ORDER BY r.id',(nat['id'],))
+            rows=c.fetchall()
+        lines=[f"#{r['id']} {r['name']}: {r['from_cell_id']} → {r['to_cell_id']} · "+i18n.text('Ship')+f" #{r['ship_id'] or '—'}" for r in rows]
+        await interaction.response.send_message(('\n'.join(lines) or '—')[:1900],ephemeral=True)
 
     # ---- COLONIES ----
 
@@ -414,10 +319,11 @@ class ColonialismCog(commands.Cog):
         cfg=STAGE_CONFIG["outpost"]; gold_cost=cfg["found_cost"].get("gold",500); min_cargo=cfg["min_cargo"]
         if nat["treasury"]<gold_cost: await interaction.response.send_message(i18n.text('Need {p0}g, have {p1:.0f}g.', p0=gold_cost, p1=nat['treasury']),ephemeral=True); return
         if _total_cargo(nat["id"])<min_cargo: await interaction.response.send_message(i18n.text('Need {p0} fleet cargo capacity. Build ships with cargo modules.', p0=min_cargo),ephemeral=True); return
-        with db.cursor() as c:
-            c.execute("UPDATE provinces SET owner_nation_id=? WHERE id=?",(nat["id"],prov["id"]))
-            c.execute("INSERT INTO colonies(nation_id,province_id,name,status) VALUES(?,?,?,?)",(nat["id"],prov["id"],name,"outpost")); col_id=c.lastrowid
-            c.execute("UPDATE nations SET treasury=treasury-? WHERE id=?",(gold_cost,nat["id"]))
+        from economy_services import found_colony
+        try:
+            col_id=found_colony(nat['id'],cell_id,name)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
         _log(nat["id"],"system",i18n.text("Founded colony '{p0}' (#{p1}) at {p2}. Cost: {p3}g.", p0=name, p1=col_id, p2=prov['name'] or i18n.text('Cell #{p0}', p0=cell_id), p3=gold_cost))
         embed=discord.Embed(title=i18n.text('🏕️ Colony Founded — {p0}', p0=name),description=i18n.text('Outpost established at **{p0}**.\nProduces **50%** of base resources.\nInvest and wait 6 months to advance to Settlement.', p0=prov['name'] or i18n.text('Cell #{p0}', p0=cell_id)),color=discord.Color.green())
         embed.add_field(name=i18n.text('Cost'),value=f"{gold_cost}g",inline=True); embed.add_field(name=i18n.text('Status'),value=i18n.text('🏕️ Outpost'),inline=True)
@@ -525,6 +431,10 @@ class ColonialismCog(commands.Cog):
             bg="█"*(pct_g//10)+"░"*(10-pct_g//10); bt="█"*(pct_t//10)+"░"*(10-pct_t//10)
             idx=COLONY_STAGES.index(col["status"]); next_s=COLONY_STAGES[idx+1]
             embed.add_field(name=f"→ {i18n.term(next_s)}",value=i18n.text('💰 `{p0}` {p1:.0f}/{p2}g\n📅 `{p3}` {p4}/{p5}mo\n🔬 Tech req: {p6:.0f}', p0=bg, p1=inv.get('gold', 0), p2=adv_cost, p3=bt, p4=col['months_in_status'], p5=adv_mo, p6=STAGE_CONFIG[next_s].get('tech_required', 0)),inline=False)
+            needed={'settlement':300,'colony':800,'province':1500}[next_s]
+            embed.add_field(name=i18n.term('population'),value=f"{prov['population']}/{needed}",inline=True)
+            _,blocker=colony_advance_readiness(col,owner)
+            if blocker:embed.add_field(name=i18n.text('Status'),value=blocker,inline=False)
         if col["gm_notes"]: embed.add_field(name=i18n.text('GM Notes'),value=col["gm_notes"],inline=False)
         embed.set_footer(text=i18n.text('Founded: {p0}', p0=short_date(col['founded_at'])))
         await interaction.response.send_message(embed=embed)
