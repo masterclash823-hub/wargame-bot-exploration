@@ -20,8 +20,8 @@ def tr(pl,en): return pl if i18n.current_language()=='pl' else en
 def dashboard(n,r):
     p=r['policy']
     embed=flagged_embed(discord.Embed(title=tr('💰 Gospodarka — ','💰 Economy — ')+n['name'],color=discord.Color.gold()),(n['flag'],n['name']))
-    embed.description=tr('Prognoza następnego miesiąca. Pracownicy są przydzielani automatycznie; możesz grać bez zmieniania ustawień.',
-                         'Forecast for the next month. Workers are assigned automatically; you can play without changing any settings.')
+    embed.description=tr('Prognoza następnego miesiąca. Domyślnie pracowników przydziela automat. W „Pracownikach” możesz ustawić ręczne przydziały.',
+                         'Forecast for the next month. Workers are assigned automatically by default. Open Workers for manual assignments.')
     embed.add_field(name=tr('Złoto / miesiąc','Gold / month'),value=f"{r['balance']:+.1f}g\n"+tr('Dochód','Income')+f": {r['income']:.1f}g | "+tr('Utrzymanie','Upkeep')+f": {r['upkeep']:.1f}g")
     embed.add_field(name=tr('Skarbiec teraz','Treasury now'),value=f"{n['treasury']:.1f}g")
     needed=r['food_needed'];stock=read_json(n['resources_json']).get('food',0)
@@ -43,8 +43,8 @@ def dashboard(n,r):
         if program['enabled'] and not program['funded']:
             tips.append('🧪 '+i18n.term(program['category'])+': '+tr('brak algae na program w następnym miesiącu.','not enough algae for next month’s program.'))
     understaffed=sum(s['staff']<.99 and not s.get('blocked') for s in r['staffing'])
-    if understaffed:tips.append(tr(f'ℹ️ {understaffed} budynków ma za mało pracowników. Żywność ma pierwszeństwo.',
-                                   f'ℹ️ {understaffed} buildings are understaffed. Food has priority.'))
+    if understaffed:tips.append(tr(f'ℹ️ {understaffed} budynków ma za mało pracowników. Sprawdź ręczne przydziały; automat obsadza żywność najpierw.',
+                                   f'ℹ️ {understaffed} buildings are understaffed. Check manual assignments; automatic staffing prioritizes food.'))
     if not tips:tips.append(tr('✅ Podstawowe potrzeby są zabezpieczone. Możesz rozwijać prowincje.',
                                '✅ Basic needs are covered. You can develop your provinces.'))
     embed.add_field(name=tr('Co teraz?','What next?'),value='\n'.join(tips),inline=False)
@@ -80,7 +80,9 @@ class EconomyView(i18n.LocalizedView):
     async def settings(self,interaction,select):
         await interaction.response.defer()
         key,value=select.values[0].split(':')
-        await asyncio.to_thread(set_policy,self.nid,key,value)
+        try:await asyncio.to_thread(set_policy,self.nid,key,value,interaction.user.id)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True);return
         n=get_nation_by_owner(str(interaction.user.id))
         r=await asyncio.to_thread(forecast,self.nid)
         await interaction.edit_original_response(embed=dashboard(n,r),view=EconomyView(self.owner,self.nid))
@@ -94,6 +96,12 @@ class EconomyView(i18n.LocalizedView):
         lines += [f"#{s['cell']} {i18n.term(s['building'])} L{s['level']}: {s['staff']:.0%}" for s in r['staffing']]
         lines += [tr('Zaległości po miesiącu: ','Arrears after this month: ')+f"{r['policy']['arrears']:.1f}g"]
         await interaction.followup.send(file=discord.File(io.BytesIO('\n'.join(lines).encode()),filename='economy.txt'),ephemeral=True)
+
+    @discord.ui.button(label='Workers',row=1)
+    @i18n.localized
+    async def workers(self,interaction,button):
+        from labor_ui import show
+        await show(interaction,self.nid)
 
 
 async def show_dashboard(interaction):
@@ -124,6 +132,18 @@ class EconomyControlCog(commands.Cog):
     @economy.command(name='status',description='Simple balance and settings / Bilans i ustawienia')
     @i18n.localized
     async def status(self,interaction:discord.Interaction):await show_dashboard(interaction)
+
+    @economy.command(name='workers',description='View and assign workers in your provinces')
+    @i18n.localized
+    async def workers(self,interaction:discord.Interaction,cell_id:int=0):
+        from labor_ui import show
+        n=get_nation_by_owner(str(interaction.user.id))
+        if not n:
+            await interaction.response.send_message(i18n.t(i18n.current_language(),'no_nation'),ephemeral=True);return
+        try:await show(interaction,n['id'],cell_id or None)
+        except ValueError as exc:
+            from technology_ui import deliver
+            await deliver(interaction,content=str(exc))
 
     @economy.command(name='upgrade',description='Upgrade a building / Ulepsz budynek')
     @i18n.localized

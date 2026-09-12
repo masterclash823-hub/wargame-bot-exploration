@@ -1,4 +1,6 @@
 {
+  "unit_algae_guard": "Algae Guard",
+  "unit_algae_riders": "Algae Riders",
   "help_title": "Wargame Bot — Commands",
   "help_intro": "Available commands:",
   "help_help": "Show this list.",

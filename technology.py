@@ -1,5 +1,4 @@
 """Monthly research and scarce algae. All effects are deterministic game rules."""
-import hashlib
 import json
 import math
 import uuid
@@ -12,6 +11,9 @@ TECH_MAX = 10.0
 BASE_KNOWLEDGE = 1
 MAX_ALGAE_SITES = 5
 ALGAE_YIELD = .5
+GATHER_YIELD = .05
+GATHER_COST = {'gold': 100, 'wood': 10}
+GATHER_TECH = 3
 
 
 def tr(pl, en):
@@ -84,35 +86,76 @@ def discovery_story(nation_name,code):
 
 
 def seed_algae_sites(c):
-    """Select once, independently of ownership. Resync never rerolls deposits."""
-    c.execute("INSERT INTO economy_meta(key,value) VALUES('algae_sites_lock','1') ON CONFLICT(key) DO NOTHING")
-    c.execute("SELECT value FROM economy_meta WHERE key='algae_sites_lock'"+(' FOR UPDATE' if db.USE_POSTGRES else ''))
-    c.fetchone()
-    c.execute("SELECT value FROM economy_meta WHERE key='algae_sites_v1'")
-    if c.fetchone(): return
-    c.execute("SELECT * FROM provinces WHERE active=1 AND terrain NOT IN ('water','ocean','sea') ORDER BY azgaar_cell_id")
-    rows=c.fetchall()
-    if not rows: return  # The first map import will select the sites.
-    count=min(MAX_ALGAE_SITES,max(1,math.ceil(len(rows)/200)))
-    def rank(p):
-        existing='algae_farm' in json.loads(p['buildings_json'] or '[]')
-        habitat=p['terrain']=='wetland' or p['biome'].lower()=='wetland'
-        river=json.loads(p['base_resources_json'] or '{}').get('clay',0)>0
-        return (not existing,not habitat,not river,hashlib.sha256(f"algae-v1:{p['azgaar_cell_id']}".encode()).hexdigest())
-    ordered=sorted(rows,key=rank)
-    chosen=[]
-    for p in ordered:
-        if len(chosen)>=count:break
-        c.execute('SELECT neighbor_cell_id FROM province_neighbors WHERE cell_id=?',(p['azgaar_cell_id'],))
-        neighbors={r['neighbor_cell_id'] for r in c.fetchall()}
-        if any(x['azgaar_cell_id'] in neighbors for x in chosen):continue
-        chosen.append(p)
-    for p in ordered:
-        if len(chosen)>=count:break
-        if p not in chosen:chosen.append(p)
-    for p in chosen:
-        c.execute('INSERT INTO algae_sites(province_id) VALUES(?) ON CONFLICT(province_id) DO NOTHING',(p['id'],))
-    c.execute("INSERT INTO economy_meta(key,value) VALUES('algae_sites_v1','1') ON CONFLICT(key) DO NOTHING")
+    """Compatibility hook: only the GM places deposits. Preserve existing sites."""
+
+
+def set_deposit(cell, add):
+    """GM command boundary checks the role; serialize edits with the world tick."""
+    from world_service import world_lock
+    with db.atomic() as c:
+        world_lock(c)
+        c.execute('SELECT * FROM provinces WHERE azgaar_cell_id=?', (cell,))
+        p=c.fetchone()
+        if not p:raise ValueError(tr('Nie ma prowincji o tym ID.', 'No province has this ID.'))
+        c.execute('SELECT province_id FROM algae_sites WHERE province_id=?', (p['id'],))
+        exists=bool(c.fetchone())
+        if add:
+            if not p['active'] or p['terrain'] in ('water','ocean','sea'):
+                raise ValueError(tr('Wybierz aktywną prowincję lądową.', 'Choose an active land province.'))
+            if exists:raise ValueError(tr('Ta prowincja już ma złoże.', 'This province already has a deposit.'))
+            c.execute('SELECT COUNT(*) AS n FROM algae_sites')
+            if c.fetchone()['n']>=MAX_ALGAE_SITES:
+                raise ValueError(tr('Limit 5 złóż. Najpierw usuń inne złoże (także nieaktywne).', 'Limit of 5 deposits. Remove another deposit first (including inactive ones).'))
+            c.execute('INSERT INTO algae_sites(province_id) VALUES(?)', (p['id'],))
+        else:
+            if not exists:raise ValueError(tr('Ta prowincja nie ma złoża.', 'This province has no deposit.'))
+            c.execute('DELETE FROM algae_sites WHERE province_id=?', (p['id'],))
+        return p
+
+
+def gather(nid, uid):
+    """Expensive trace extraction, at most one batch per nation per game month."""
+    from world_service import world_lock, owned, month_index
+    from economy_services import spend
+    with db.atomic() as c:
+        world_lock(c);n=owned(c,nid,uid);month=month_index(c)
+        if json.loads(n['tech_json']).get('economy',3)<GATHER_TECH:
+            raise ValueError(tr('Śladowe pozyskiwanie wymaga gospodarki 3.', 'Trace gathering requires economy 3.'))
+        c.execute("SELECT p.id FROM provinces p JOIN algae_sites a ON a.province_id=p.id WHERE p.owner_nation_id=? AND p.active=1 AND p.terrain NOT IN ('water','ocean','sea') LIMIT 1", (nid,))
+        if not c.fetchone():raise ValueError(tr('Potrzebujesz własnej prowincji ze złożem algae. Sprawdź /algae locations.', 'You need your own province with an algae deposit. See /algae locations.'))
+        c.execute('SELECT last_month FROM algae_gathering WHERE nation_id=?', (nid,));last=c.fetchone()
+        if last and last['last_month']>=month:
+            raise ValueError(tr('Limit wykorzystany. Kolejna próba w następnym miesiącu gry.', 'Batch already gathered. Try again next game month.'))
+        spend(c,n,GATHER_COST)
+        c.execute('SELECT resources_json FROM nations WHERE id=?',(nid,))
+        res=json.loads(c.fetchone()['resources_json'])
+        res['algae']=round(res.get('algae',0)+GATHER_YIELD,6)
+        c.execute('UPDATE nations SET resources_json=? WHERE id=?',(json.dumps(res),nid))
+        c.execute('INSERT INTO algae_gathering(nation_id,last_month) VALUES(?,?) '
+                  'ON CONFLICT(nation_id) DO UPDATE SET last_month=excluded.last_month',(nid,month))
+        return res['algae']
+
+
+# A game-design analogy, not the historical dates of individual inventions.
+YEAR_BY_LEVEL = (1400,1450,1500,1550,1600,1650,1700,1725,1750,1775,1800)
+
+
+def historical_year(n, known):
+    """Average all four fields; the calendar and fantasy discoveries set no dates."""
+    levels=json.loads(n['tech_json'] or '{}')
+    years={}
+    for category in CATEGORIES:
+        level=max(0,min(TECH_MAX,float(levels.get(category,3))))
+        low=int(level);high=min(10,low+1)
+        year=YEAR_BY_LEVEL[low]+(YEAR_BY_LEVEL[high]-YEAR_BY_LEVEL[low])*(level-low)
+        for code,row in known.items():
+            p=PROJECTS.get(code)
+            if not p or p['category']!=category or p['algae']:continue
+            milestone={3:1550,8:1650,16:1700}[p['knowledge']]
+            if p['repeat']:milestone=min(1800,1700+25*row['completions'])
+            year=max(year,milestone)
+        years[category]=int(25*math.floor(year/25+.5))
+    return int(25*math.floor(sum(years.values())/len(years)/25+.5)),years
 
 
 def discoveries(c,nid):

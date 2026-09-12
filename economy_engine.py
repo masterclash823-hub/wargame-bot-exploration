@@ -47,13 +47,16 @@ def save_policy(c, nid, p):
               (nid, *(p[k] for k in keys)))
 
 
-def set_policy(nid, key, value):
+def set_policy(nid, key, value, uid=None):
     choices = {'tax': TAX, 'priority': ('balanced','food','industry','trade','science'),
                'luxury': ('auto','stockpile','consume','sell')}
     if key not in choices or value not in choices[key]:
         raise ValueError('Invalid economy policy')
     with db.atomic() as c:
-        lock_nation(c, nid)
+        from world_service import world_lock,owned
+        world_lock(c)
+        if uid is not None:owned(c,nid,uid)
+        else:lock_nation(c, nid)
         p = policy(c, nid)
         p[key] = value
         save_policy(c, nid, p)
@@ -80,9 +83,10 @@ def snapshot(c, nid):
     n = c.fetchone()
     from technology import bonuses
     n=dict(n, research_bonuses=bonuses(c,nid))
-    c.execute('SELECT p.*,d.levels_json,c.status AS colony_status,a.province_id AS algae_site FROM provinces p '
+    c.execute('SELECT p.*,d.levels_json,c.status AS colony_status,a.province_id AS algae_site,l.allocations_json FROM provinces p '
               'LEFT JOIN province_development d ON d.province_id=p.id LEFT JOIN colonies c ON c.province_id=p.id '
               'LEFT JOIN algae_sites a ON a.province_id=p.id '
+              'LEFT JOIN province_labor l ON l.province_id=p.id AND l.nation_id=p.owner_nation_id '
               'WHERE p.owner_nation_id=? AND p.active=1 ORDER BY p.id', (nid,))
     provinces = c.fetchall()
     c.execute('SELECT * FROM building_defs ORDER BY key')
@@ -127,6 +131,15 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
         col = {'outpost':.5,'settlement':.75,'colony':.9}.get(prov.get('colony_status'), 1)
         levels = read_json(prov.get('levels_json'))
         buildings = list(dict.fromkeys(read_json(prov['buildings_json'], [])))
+        blocked_algae=not prov.get('algae_site') or read_json(nation['tech_json']).get('economy',3)<6
+        manual={k:min(max(0,v),WORKERS.get(k,200)*LEVEL_WORK[min(3,max(1,int(levels.get(k,1))))])
+                for k,v in read_json(prov.get('allocations_json')).items()
+                if k in buildings and k in definitions and isinstance(v,(int,float)) and math.isfinite(v)
+                and not (k=='algae_farm' and blocked_algae)}
+        requested=sum(manual.values())
+        scale=min(1,workforce/requested) if requested else 1
+        assigned={k:v*scale for k,v in manual.items()}
+        workforce=max(0,workforce-sum(assigned.values()))
         def rank(key):
             if key in FOOD: return 0  # Feeding people is automatic, including industrial/science presets.
             preferred = {'science':{'university'}, 'trade':TRADE, 'industry':set(WORKERS)-FOOD-TRADE-{'university'}}.get(p['priority'], set())
@@ -135,15 +148,18 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
         for key in sorted(buildings, key=lambda k:(rank(k),k)):
             bd = definitions.get(key)
             if not bd: continue
-            if key=='algae_farm' and (not prov.get('algae_site') or read_json(nation['tech_json']).get('economy',3)<6):
-                staffing.append(dict(cell=prov['azgaar_cell_id'],building=key,level=levels.get(key,1),staff=0,blocked='algae_site_or_tech'))
+            if key=='algae_farm' and blocked_algae:
+                staffing.append(dict(cell=prov['azgaar_cell_id'],building=key,level=levels.get(key,1),staff=0,workers=0,need=250*LEVEL_WORK[min(3,max(1,int(levels.get(key,1))))],blocked='algae_site_or_tech'))
                 continue  # Dormant legacy farms have no workers or upkeep.
             level = min(3,max(1,int(levels.get(key,1))))
             need = WORKERS.get(key,200)*LEVEL_WORK[level]
-            ratio = min(1,workforce/need) if need else 1.
-            workforce = max(0,workforce-need*ratio)
+            workers=assigned[key] if key in assigned else min(need,workforce)
+            ratio=workers/need if need else 1.
+            if key not in assigned:workforce=max(0,workforce-workers)
             amount = LEVEL_OUTPUT[level]*ratio*stab*col
-            staffing.append(dict(cell=prov['azgaar_cell_id'],building=key,level=level,staff=round(ratio,3)))
+            staffing.append(dict(cell=prov['azgaar_cell_id'],building=key,level=level,staff=round(ratio,3),
+                                 workers=round(workers,2),need=need,manual=key in manual,
+                                 requested=manual.get(key),scaled=key in manual and scale<1))
             building_upkeep += max(0, read_json(bd['upkeep_json']).get('gold',0))*LEVEL_WORK[level]*(.25+.75*ratio)
             if key=='market':
                 market_bonus += .15*LEVEL_OUTPUT[level]*ratio

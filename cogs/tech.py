@@ -65,6 +65,37 @@ class TechCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         await ui.deliver(interaction,embed=ui.locations_embed())
 
+    @algae_grp.command(name='gather',description='Gather trace algae on your deposit at high cost (economy 3)')
+    @i18n.localized
+    async def algae_gather(self,interaction:discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        n=get_nation_by_owner(str(interaction.user.id))
+        if not n:
+            await ui.deliver(interaction,content=i18n.t(i18n.current_language(),'no_nation'));return
+        await ui.show_gather(interaction,n['id'])
+
+    async def edit_deposit(self,interaction,cell_id,add):
+        if not gm_only(interaction):
+            await ui.deliver(interaction,content=i18n.t(i18n.current_language(),'gm_only'));return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            p=await asyncio.to_thread(tech.set_deposit,cell_id,add)
+            text=tech.tr('Dodano złoże w prowincji ', 'Added deposit in province ') if add else tech.tr('Usunięto złoże z prowincji ', 'Removed deposit from province ')
+            text+=f"#{p['azgaar_cell_id']}. "
+            if not add:text+=tech.tr('Farma zostaje, ale wydobycie ustaje. Zapasy graczy pozostają.', 'The farm remains, but extraction stops. Player stockpiles are preserved.')
+            await ui.deliver(interaction,content=text,embed=ui.locations_embed())
+        except ValueError as exc:await ui.deliver(interaction,content=str(exc))
+
+    @algae_grp.command(name='deposit_add',description='[GM] Add an algae deposit by province cell ID')
+    @i18n.localized
+    async def deposit_add(self,interaction:discord.Interaction,cell_id:int):
+        await self.edit_deposit(interaction,cell_id,True)
+
+    @algae_grp.command(name='deposit_remove',description='[GM] Remove an algae deposit by province cell ID')
+    @i18n.localized
+    async def deposit_remove(self,interaction:discord.Interaction,cell_id:int):
+        await self.edit_deposit(interaction,cell_id,False)
+
     @algae_grp.command(name='programs',description='Manage algae applications and monthly supplies')
     @i18n.localized
     async def algae_programs(self,interaction:discord.Interaction):

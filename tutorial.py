@@ -20,11 +20,11 @@ CHAPTERS = [
         '🌾 Najpierw chleb, potem ambicje',
         'Skarbnik proponuje wielki port. Zarządca spichlerzy pyta, czym nakarmisz budowniczych. Najpierw sprawdź, czy państwo utrzyma kolejny miesiąc.',
         'Gospodarka → Zasoby: spójrz na prognozę złota i żywności oraz „Co teraz?”. Jeśli brakuje jedzenia, rozważ farmę, ulepszenie lub dostawy od sąsiada.',
-        'W prowincji można mieć po jednym budynku każdego typu, do poziomu 3. Pracownicy są przydzielani automatycznie. Normalne podatki wystarczą na start; wysokie zwiększają niepokoje i obniżają stabilność, niskie działają odwrotnie. Prognoza dotyczy miesiąca gry.'), en=(
+        'W prowincji można mieć po jednym budynku każdego typu, do poziomu 3. Domyślnie działa automat. W Gospodarka → Pracownicy możesz rezerwować ludzi dla budynków: 0 wyłącza obsadę, puste pole przywraca automat. Ręczne przydziały mogą zagrozić produkcji żywności. Normalne podatki wystarczą na start; wysokie zwiększają niepokoje i obniżają stabilność, niskie działają odwrotnie. Prognoza dotyczy miesiąca gry.'), en=(
         '🌾 Bread before ambition',
         'Your treasurer proposes a grand harbor. The granary keeper asks how you will feed its builders. First, check whether your nation can sustain another month.',
         'Economy → Resources: inspect projected gold, food and “What next?”. If food is short, consider a farm, an upgrade or regular imports.',
-        'A province supports one building of each type, up to level 3. Workers are assigned automatically. Normal taxes are enough to start; high taxes raise unrest and lower stability, while low taxes do the reverse. The forecast covers one game month.')),
+        'A province supports one building of each type, up to level 3. Automatic staffing is the default. In Economy → Workers, reserve workers for buildings: 0 leaves them unstaffed, an empty field restores automatic staffing. Manual assignments may put food production at risk. Normal taxes are enough to start; high taxes raise unrest and lower stability, while low taxes do the reverse. The forecast covers one game month.')),
     dict(key='goals', target='home', pl=(
         '🎯 Wybierz, z czego zasłynie państwo',
         'Rada jest podzielona: pełne spichlerze, nowe warsztaty czy odkrycia uczonych? Jeden cel pomoże wybrać najbliższe inwestycje.',
@@ -65,20 +65,20 @@ CHAPTERS = [
         '🔬 Uczeni proszą o kierunek',
         'Rolnicy marzą o lepszych plonach, admirał o większych ładowniach. Wybierz, nad czym uczeni mają pracować przez najbliższe miesiące.',
         'Technologie → Badania. Obejrzyj trzy rekomendacje lub wszystkie badania, sprawdź efekt i czas, a potem potwierdź projekt. Dalej pracuje automatycznie.',
-        'Jeden projekt naraz. Każde państwo dostaje 1 darmową wiedzę na miesiąc gry; uniwersytety pomagają. Koszty: 3/8/16 wiedzy, minimum 3/4/6 miesięcy. Wstrzymanie zachowuje postęp. Porzucenie nie zwraca zużytych zasobów. Odkrycia podnoszą poziomy i dają konkretne premie.'), en=(
+        'Jeden projekt naraz. Każde państwo dostaje 1 darmową wiedzę na miesiąc gry; uniwersytety pomagają. Koszty: 3/8/16 wiedzy, minimum 3/4/6 miesięcy. Wstrzymanie zachowuje postęp. Porzucenie nie zwraca zużytych zasobów. Odkrycia podnoszą poziomy i dają konkretne premie. Statystyki pokazują orientacyjny odpowiednik roku z historii Ziemi; nie jest to data gry.'), en=(
         '🔬 Scholars need a direction',
         'Farmers dream of better harvests; the admiral wants larger holds. Choose what your scholars will work on over the coming months.',
         'Technology → Research. Browse three recommendations or all projects, inspect effects and time, then confirm a project. It progresses automatically.',
-        'One project at a time. Every nation gets 1 free knowledge per game month; universities help. Costs: 3/8/16 knowledge, minimum 3/4/6 months. Pausing preserves progress. Abandoning does not refund spent resources. Discoveries raise levels and provide concrete bonuses.')),
+        'One project at a time. Every nation gets 1 free knowledge per game month; universities help. Costs: 3/8/16 knowledge, minimum 3/4/6 months. Pausing preserves progress. Abandoning does not refund spent resources. Discoveries raise levels and provide concrete bonuses. Stats show a rough Earth-history year equivalent, separate from the game date.')),
     dict(key='algae', target='technology', pl=(
         '🧪 Zielone złoto wypraw',
         'Kupiec przynosi fiolkę algae. Jej zawartość może odmienić rolnictwo, leczenie żołnierzy, okręty i życie kolonistów. Źródła są nieliczne, więc stała umowa handlowa może być równie cenna jak wyprawa.',
         'Technologie → Stanowiska algae lub /algae locations pokaże ID miejsc i ich właścicieli. Możesz zdobyć prowincję, założyć kolonię albo kupować algae od innego gracza.',
-        'Maksymalnie 5 stałych stanowisk. Farma: gospodarka 6, 400 złota, 60 drewna, 250 pracowników i 8 złota utrzymania. Produkuje bazowo 0,5 algae/miesiąc. Każde badanie algae kosztuje 4 algae i 16 wiedzy oraz trwa minimum 6 miesięcy. Po odkryciu sam włączasz program: 1 algae miesięcznie za silne premie. Brak dostaw zawiesza premie; odkrycia pozostają.'), en=(
+        'GM wskazuje maksymalnie 5 złóż. Tylko na własnym złożu, przy gospodarce 3, /algae gather daje 0,05 algae za 100 złota i 10 drewna raz na miesiąc gry. Farma: gospodarka 6, 400 złota, 60 drewna, 250 pracowników i 8 złota utrzymania. Produkuje bazowo 0,5 algae/miesiąc. Każde badanie algae kosztuje 4 algae i 16 wiedzy oraz trwa minimum 6 miesięcy. Po odkryciu sam włączasz program: 1 algae miesięcznie za silne premie. Brak dostaw zawiesza premie; odkrycia pozostają. Gwardia, jeźdźcy i fregaty algae wymagają odkryć i 3/4/6 algae przy budowie; limit to 1 elitarna na 4 zwykłe jednostki, osobno dla armii i floty.'), en=(
         '🧪 The green gold of expeditions',
         'A merchant brings a vial of algae. It could transform farming, military medicine, ships and colonial life. Sources are scarce, so a reliable trade agreement can rival an expedition.',
         'Technology → Algae deposits or /algae locations lists cell IDs and owners. Acquire a province, found a colony or import algae from another player.',
-        'At most 5 permanent deposits. A farm needs economy 6, 400 gold, 60 wood, 250 workers and 8 gold upkeep. Base output is 0.5 algae/month. Each algae discovery costs 4 algae and 16 knowledge and takes at least 6 months. Enable its program afterward: 1 algae monthly for strong bonuses. Missing supplies suspend bonuses; discoveries remain.')),
+        'The GM places at most 5 deposits. Only on your own deposit, at economy 3, /algae gather yields 0.05 algae for 100 gold and 10 wood once per game month. A farm needs economy 6, 400 gold, 60 wood, 250 workers and 8 gold upkeep. Base output is 0.5 algae/month. Each algae discovery costs 4 algae and 16 knowledge and takes at least 6 months. Enable its program afterward: 1 algae monthly for strong bonuses. Missing supplies suspend bonuses; discoveries remain. Algae guards, riders and frigates require discoveries and 3/4/6 algae on recruitment; the limit is 1 elite per 4 ordinary units, separately for army and navy.')),
     dict(key='expansion', target='territory', pl=(
         '🧭 Na mapie jest jeszcze miejsce',
         'Odkrywcy donoszą o nowym wybrzeżu. Kolonia potrzebuje ludzi i zaopatrzenia, a nie tylko nazwy na mapie.',

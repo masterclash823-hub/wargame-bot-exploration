@@ -250,6 +250,15 @@ CREATE TABLE IF NOT EXISTS research_discoveries (
 CREATE TABLE IF NOT EXISTS algae_sites (
     province_id INTEGER PRIMARY KEY REFERENCES provinces(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS algae_gathering (
+    nation_id INTEGER PRIMARY KEY REFERENCES nations(id) ON DELETE CASCADE,
+    last_month INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS province_labor (
+    province_id INTEGER PRIMARY KEY REFERENCES provinces(id) ON DELETE CASCADE,
+    nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    allocations_json TEXT NOT NULL DEFAULT '{}'
+);
 CREATE TABLE IF NOT EXISTS algae_programs (
     nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
     category TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0,

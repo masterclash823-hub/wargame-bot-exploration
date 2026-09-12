@@ -158,3 +158,30 @@ Testy offline obejmują awarię i wycofanie miesiąca, równoczesne uruchomienia
 zgodność prognozy z rozliczeniem, migrację, limity surowców, koszty ulepszeń,
 umowy, rezerwę i wyłączność statków. PostgreSQL, Discord i Render wymagają
 sprawdzenia integracyjnego przy wdrożeniu; testy używają tymczasowej bazy SQLite.
+
+
+## Ręczne przydziały pracowników
+
+**Gospodarka → Pracownicy**, przycisk w bilansie i `/economy workers [cell_id]`
+otwierają ten sam prywatny panel. Wybierz prowincję, następnie budynek i liczbę
+pracowników. Listy mają strony; dostępne są wszystkie własne aktywne prowincje.
+
+- Liczba to rezerwacja pracowników, nie procent: 200 oznacza 200 ludzi.
+- 0 wyłącza obsadę; puste pole przywraca automat dla budynku.
+- Przycisk „Automat w tej prowincji” usuwa wszystkie jej ręczne przydziały.
+- Ręczne rezerwacje mają pierwszeństwo. Pozostali pracownicy trafiają do
+  budynków automatycznie: najpierw żywność, potem wybrany priorytet gospodarki.
+- Można zarezerwować najwyżej 40% mieszkańców prowincji i nie więcej, niż
+  dany budynek potrzebuje na swoim poziomie. Każdy pracownik pracuje tylko raz.
+- Gdy populacja później spadnie, ręczne rezerwacje są proporcjonalnie
+  zmniejszane. Zapisane liczby pozostają, więc obsada odbuduje się wraz z ludnością.
+- Nieaktywna farma algae nie zabiera pracowników innym budynkom.
+- Zmiana właściciela prowincji na inne państwo przywraca mu automat, zamiast
+  stosować rezerwacje poprzedniego państwa. Przydziały państwa pozostają po
+  przekazaniu całego państwa nowemu graczowi.
+
+Podgląd pokazuje rzeczywistą prognozowaną obsadę i ostrzega o brakach jedzenia
+oraz ograniczeniu przydziałów po spadku populacji. Ręczne odebranie pracowników
+farmie może spowodować głód. Poza zarezerwowanymi budynkami prosty automat
+pozostaje domyślnym zachowaniem. Prognoza i miesięczne rozliczenie używają tej
+samej funkcji obliczeniowej; podgląd wycofuje wszystkie zmiany w bazie.

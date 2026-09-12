@@ -321,6 +321,7 @@ HELP_SECTIONS = {
             ("/resources", "View stockpile, treasury, food status, luxury income, and population."),
             ("/build <cell_id> <key>", "Construct one of each building type per province. Workers are assigned automatically."),
             ("/economy status", "Monthly balance, warnings and optional settings. Also available from the panel."),
+            ("/economy workers [cell_id]", "Reserve workers for buildings; leave a field empty to restore automatic staffing."),
             ("/economy upgrade <cell_id> <building>", "Upgrade a building to level 2 or 3. Output: 170% / 240%."),
             ("/economy posture <unit_id> <mode>", "Reserve 35%, active 100%, expedition 150% upkeep. Mobilization takes one month."),
             ("/economy recurring <trade_id>", "Propose monthly deliveries. The recipient must explicitly accept monthly:True."),
@@ -334,6 +335,7 @@ HELP_SECTIONS = {
             ("/tech research [project]", "Choose a named project. Free knowledge each game month; universities accelerate research."),
             ("/algae locations", "List rare deposits by province ID. Extraction needs a farm and economy 6."),
             ("/algae programs", "Enable researched applications: 1 algae per program per month."),
+            ("/algae gather", "Own deposit + economy 3: 0.05 algae for 100 gold and 10 wood, once per game month."),
             ("Resource mechanics",
              "• **Food**: consumed by population (1/100 pop) + military (1/10 units) per tick. "
              "Surplus → pop growth. Shortage → stability loss. Severe shortage → pop decline.\n"
@@ -416,6 +418,7 @@ GM_HELP_FIELDS = [
     ("/admin map_import", "Import an Azgaar JSON export."),
     ("/admin map_resync", "Re-import an updated Azgaar map."),
     ("/admin map_export_markers", "Generate JS for Azgaar resource markers."),
+    ("/algae deposit_add / deposit_remove <cell_id>", "Place or remove deposits manually. Limit: 5; imports create none."),
     ("/admineco tick [months]", "Manually trigger a resource tick."),
     ("/admineco starter_pack [nation|all]", "Give starting resources to one nation or all nations."),
     ("/admineco grant", "Give resources or gold to a nation (logged)."),
@@ -480,6 +483,7 @@ HELP_SECTIONS_PL = {
             ("/resources", "Zasoby, skarbiec, status żywności i populacja."),
             ("/build <id> <klucz>", "Wybuduj budynek w prowincji."),
             ("/economy status", "Bilans miesiąca, podpowiedzi i opcjonalne ustawienia. Dostępne też w panelu."),
+            ("/economy workers [cell_id]", "Przydziel ludzi do budynków; puste pole przywraca automat."),
             ("/economy upgrade <id> <budynek>", "Ulepsz budynek do poziomu 2 lub 3: 170% / 240% produkcji. Obsada automatyczna."),
             ("/economy posture <id> <tryb>", "Utrzymanie: rezerwa 35%, aktywne 100%, wyprawa 150%. Mobilizacja trwa miesiąc."),
             ("/economy recurring <id>", "Zaproponuj wymianę co miesiąc. Odbiorca musi wyrazić zgodę na miesięczne dostawy."),
@@ -493,6 +497,7 @@ HELP_SECTIONS_PL = {
             ("/tech research [projekt]", "Wybierz nazwane badanie. Darmowa wiedza co miesiąc gry; uniwersytety przyspieszają naukę."),
             ("/algae locations", "Stanowiska algae z ID prowincji. Wydobycie wymaga farmy i gospodarki 6."),
             ("/algae programs", "Włącz zastosowania po badaniach: 1 algae na program miesięcznie."),
+            ("/algae gather", "Własne złoże + gospodarka 3: 0,05 algae za 100 złota i 10 drewna, raz na miesiąc gry."),
             ("Mechaniki zasobów",
              "• **Żywność**: zużywana przez populację (1/100) + wojsko (1/10) na tick.\n"
              "• **Jedwab + Przyprawy**: zużywane automatycznie; nadwyżki sprzedają rynki i porty. Sam zapas nie daje złota.\n"
@@ -564,6 +569,7 @@ HELP_SECTIONS_PL = {
 }
 
 GM_HELP_FIELDS_PL = [
+    ("/algae deposit_add / deposit_remove <cell_id>", "Ręcznie dodaj lub usuń złoże. Limit: 5. Import nie tworzy złóż."),
     ("/nation found <gracz> <nazwa> <historia>", "Utwórz państwo i nadaj je graczowi. Istniejące państwa pozostają bez zmian."),
     ("/nation transfer <naród> <gracz>", "Przekaż państwo po sprawdzeniu przejmowanych zobowiązań. Oczekujące propozycje zostaną anulowane."),
     ("/chronicle configure <kanał> [godzina_utc] [język]", "Włącz codzienny raport do dwóch publicznych akcji. Domyślnie: 18:00 UTC, polski."),

@@ -59,14 +59,23 @@ nazwy, teren i właścicieli wszystkich aktywnych stanowisk. Dostęp nie wymaga
 własnego państwa. Znacznik pojawia się też w `/province info` oraz eksporcie
 markerów do Azgaara.
 
-Po pierwszym uruchomieniu na istniejącej mapie albo po pierwszym imporcie
-wybierane jest `min(5, ceil(liczba aktywnych pól lądowych / 200))` stanowisk,
-minimum jedno. Preferowane są działające wcześniej farmy, potem mokradła
-i pola z gliną. Wybór jest deterministyczny i preferuje niesąsiadujące pola.
-Na mapie bez mokradeł możliwe są inne tereny: o uprawnieniu do wydobycia decyduje
-stanowisko. **Powtórny import, zmiana właściciela i restart nie losują złóż od
-nowa.** Nieaktywne pola znikają z listy; nie tworzymy zastępczych złóż. Dane
-stanowisk należą do tej samej bazy co świat, a nie do pliku na Renderze.
+Złoża ustawia wyłącznie GM przez `/algae deposit_add cell_id` i usuwa przez
+`/algae deposit_remove cell_id`. Nie powstają automatycznie podczas importu
+ani restartu. Limit wynosi **5 złóż**, również z nieaktywnych pól; ich ID
+pozostają na liście, żeby GM mógł zwolnić limit. Dodawanie wymaga aktywnego
+pola lądowego. Dotychczas zapisane złoża są zachowane do ręcznej zmiany przez GM.
+Usunięcie złoża zatrzymuje wydobycie, ale zachowuje budynek oraz zapasy graczy.
+Powtórny import i restart nie odtwarzają usuniętych złóż.
+
+**Śladowe pozyskiwanie**: `/algae gather` i przycisk w Technologiach.
+Wymaga **własnej aktywnej prowincji ze złożem** oraz gospodarki **3**.
+Po potwierdzeniu gracz płaci **100 złota + 10 drewna** za **0,05 algae**.
+Limit: jedna partia na państwo na miesiąc gry, łącznie ze wszystkich złóż.
+Nie wymaga farmy, nie tworzy złoża i nie działa poza złożami.
+To koszt 2000 złota i 200 drewna za 1 algae; wydajność farm pozostaje znacznie
+lepsza. Nieudana próba nie pobiera opłaty ani nie wykorzystuje limitu.
+Prognoza i restart nie odnawiają limitu. Zmiana właściciela państwa również go
+nie odnawia. Pozyskiwanie i farmy mogą działać w tym samym miesiącu.
 
 Farma algae wymaga posiadania stanowiska i gospodarki co najmniej 6.
 Domyślnie kosztuje **400 złota + 60 drewna**, potrzebuje **250 pracowników**
@@ -144,3 +153,41 @@ zatwierdzenia, postęp i wypłaty istniejących projektów nie są przenoszone.
 Po połączeniu PR należy wdrożyć nową wersję na Renderze. Restart synchronizuje
 komendy Discorda. Testy automatyczne używają tymczasowych baz SQLite i atrap
 Discorda; nie wysyłają wiadomości do graczy ani nie zmieniają produkcyjnej bazy.
+
+## Rok technologiczny i jednostki elitarne
+
+`/nation stats` oraz panel badań pokazują orientacyjny odpowiednik roku IRL.
+To umowna skala świata gry, a nie datowanie wynalezienia technologii ani data
+kalendarza. Każda z czterech dziedzin ma osobny szacunek na podstawie poziomu
+i ukończonych badań, a rok państwa to ich średnia zaokrąglona do 25 lat.
+Skala poziomów 0–10: 1400, 1450, 1500, 1550, 1600, 1650, 1700, 1725,
+1750, 1775, 1800. Poziomy ułamkowe interpolujemy. Zwykłe odkrycia ustanawiają
+umowne minima 1550/1650/1700, dalsze badania 1700 + 25 lat za ukończenie
+(do 1800). Algae nie ma własnej historycznej daty. Wskaźnik niczego nie
+odblokowuje i nie zwiększa premii. Stare poziomy działają także bez historii badań.
+
+Nowe jednostki są dostępne w **Wojsko → Nowy projekt** i przez istniejące
+`/blueprint create_unit` / `/blueprint design_ship`. Wymagają poziomu 6
+odpowiedniej dziedziny oraz ukończenia odkrycia `algae_land` albo `algae_naval`.
+
+| Jednostka | Koszt bazowy za sztukę | Utrzymanie aktywne / miesiąc |
+| --- | --- | ---: |
+| Gwardia algae | 350 złota, 20 żelaza, 10 prochu, 3 algae | 18 złota |
+| Jeźdźcy algae | 500 złota, 12 koni, 25 żelaza, 4 algae | 25 złota |
+| Fregata algae | 1800 złota, 300 drewna, 120 żelaza, 30 smoły, 6 algae | 45 złota |
+
+Do okrętu dochodzą koszty wybranych modułów; do partii jednostek lądowych
+1 sukno na 5 jednostek, zaokrąglane w górę. Algae na jednostkę to koszt
+jednorazowy; program miesięczny jest osobną decyzją. Jednostki mają własne
+statystyki, a opłacone programy mogą je dodatkowo wzmacniać.
+
+**Limit rekrutacji: jedna elitarna na cztery zwykłe jednostki**, osobno dla
+armii i floty. Wszystkie elitarne typy i projekty danej kategorii współdzielą
+limit. Liczą się sztuki, a nie liczba grup. Rezerwy też należą do sił państwa.
+Nie można obejść limitu przez zmianę nazwy projektu, równoległe kliknięcia,
+rozwiązanie potrzebnych zwykłych jednostek ani usunięcie używanego projektu.
+Straty wojenne mogą zmienić proporcję: ocalała elita pozostaje, lecz kolejną
+można rekrutować dopiero po uzupełnieniu wsparcia. Limit nie wymaga wysyłania
+zwykłych jednostek do każdej bitwy razem z elitą.
+
+Ręczne przydziały pracowników opisuje [gospodarka](economy-v2.md#ręczne-przydziały-pracowników).

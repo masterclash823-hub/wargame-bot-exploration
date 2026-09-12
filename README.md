@@ -207,10 +207,20 @@ Panel → Technologie oraz `/tech status` prowadzą przez nazwane odkrycia.
 Każde państwo otrzymuje 1 darmową wiedzę na miesiąc gry; uniwersytety przyspieszają
 badania. Jeden projekt naraz, automatyczny postęp, istniejące poziomy zachowane.
 
-`/algae locations` pokazuje do pięciu stałych stanowisk na mapie. Algae wymaga
+`/algae locations` pokazuje do pięciu złóż wskazanych przez GM komendami
+`/algae deposit_add` i `/algae deposit_remove`. Wydajne pozyskiwanie algae wymaga
 wydobycia lub handlu i zasila silne programy gospodarki, armii, marynarki i kolonii.
 `/algae programs` pozwala włączyć programy za 1 algae miesięcznie każdy.
 Megaprojekty mają nazwę „projekty” i komendy `/project`; zapisane projekty pozostają.
 
 [Pełne zasady, premie i migracja](docs/technology-algae.md). Dotychczasowe farmy
 poza stanowiskami są nieaktywne i nie ponoszą kosztów utrzymania.
+
+
+`/algae gather`: tylko **na własnym złożu**, od gospodarki 3, raz na miesiąc
+gry: 0,05 algae za 100 złota i 10 drewna. W panelu wojska są kosztowne elitarne
+gwardie, jeźdźcy i fregaty algae; rekrutacja wymaga 4 zwykłych jednostek na
+każdą elitarną. `/nation stats` pokazuje umowny odpowiednik roku technologicznego.
+
+`/economy workers` i **Gospodarka → Pracownicy** pozwalają opcjonalnie
+rezerwować ludzi w konkretnych budynkach. Domyślnie obsada pozostaje automatyczna.

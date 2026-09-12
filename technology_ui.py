@@ -1,6 +1,7 @@
 """Private, button-driven research, recommendations and algae supply controls."""
 import math
 import json
+import asyncio
 
 import discord
 
@@ -47,6 +48,10 @@ def overview(nid):
     e.description=tech.tr('Wybierz projekt i pozwól uczonym pracować. Każdy miesiąc gry daje państwu 1 darmowy punkt wiedzy. Uniwersytety zwiększają produkcję.','Choose a project and let scholars work. Each game month grants your nation 1 free knowledge point. Universities increase production.')
     e.add_field(name=tech.tr('Dziedziny','Fields'),value='\n'.join(f'{i18n.term(k)}: **{levels.get(k,3):g}/10**' for k in tech.CATEGORIES),inline=True)
     e.add_field(name=tech.tr('Zapasy','Stockpile'),value=f"📚 {resources.get('universal_knowledge',0):g} · 🧪 {resources.get('algae',0):g} algae",inline=True)
+    year,years=tech.historical_year(n,known)
+    e.add_field(name=tech.tr('Orientacyjny rok technologiczny (IRL)','Approximate technology year (IRL)'),
+                value=f'≈ {year}\n'+' · '.join(f'{i18n.term(k)} ≈ {v}' for k,v in years.items())+'\n'+
+                tech.tr('Umowne porównanie; nie zmienia kalendarza ani premii.', 'A rough analogy; does not change the calendar or bonuses.'),inline=False)
     if active:
         p=tech.PROJECTS[active['code']]
         when=tech.tr('Wstrzymane','Paused') if active['paused'] else tech.tr('Szacunkowo jeszcze','Estimated remaining')+f' {estimate(nid,p,active)} '+tech.tr('mies. gry','game months')
@@ -170,15 +175,37 @@ def locations_embed():
                   'LEFT JOIN nations n ON n.id=p.owner_nation_id WHERE p.active=1 ORDER BY p.azgaar_cell_id')
         sites=c.fetchall()
     e=discord.Embed(title='🧪 '+tech.tr('Stanowiska algae','Algae deposits'),color=discord.Color.dark_green())
-    e.description=tech.tr('Stałe stanowiska na mapie — maksymalnie 5. Farma algae wymaga własności prowincji, gospodarki 6, 250 pracowników i inwestycji. Bazowa produkcja: 0,5/miesiąc; poziom 3: 1,2. Zatrudnienie, stabilność i etap kolonii wpływają na wynik.','Permanent map deposits — at most 5. An algae farm requires province ownership, economy 6, 250 workers and investment. Base output: 0.5/month; level 3: 1.2. Staffing, stability and colony stage affect output.')
+    e.description=tech.tr('Złoża wskazuje GM: /algae deposit_add i deposit_remove. Limit: 5. Farma wymaga własnego złoża, gospodarki 6 i 250 pracowników; bazowo 0,5 algae/miesiąc (poziom 3: 1,2). Przy gospodarce 3 możesz na własnym złożu użyć /algae gather: tylko 0,05 algae za 100 złota i 10 drewna, raz na miesiąc gry.',
+                         'Deposits are placed by the GM: /algae deposit_add and deposit_remove. Limit: 5. Farms need your own deposit, economy 6 and 250 workers; base output 0.5 algae/month (level 3: 1.2). With economy 3, use /algae gather on your own deposit: just 0.05 algae for 100 gold and 10 wood, once per game month.')
     for p in sites:
         title=f"#{p['azgaar_cell_id']} · {p['name'] or i18n.term(p['terrain'])}"
         value=(p['owner_name'] or tech.tr('Niczyje','Unclaimed'))+' · '+i18n.term(p['terrain'])
         if 'algae_farm' in json.loads(p['buildings_json']):value+=' · '+tech.tr('farma istnieje','farm exists')
         e.add_field(name=discord.utils.escape_mentions(title)[:256],value=discord.utils.escape_mentions(value)[:1024],inline=False)
-    if not sites:e.add_field(name='—',value=tech.tr('Brak aktywnych stanowisk. GM powinien zaimportować mapę; usunięte pola nie są losowane ponownie.','No active deposits. The GM should import the map; removed cells are not rerolled.'))
+    if not sites:e.add_field(name='—',value=tech.tr('Brak aktywnych złóż. GM wskazuje je przez /algae deposit_add cell_id. Import ani restart nie tworzą złóż.', 'No active deposits. The GM places them with /algae deposit_add cell_id. Importing or restarting creates no deposits.'))
+    with db.cursor() as c:
+        c.execute('SELECT p.azgaar_cell_id FROM algae_sites a JOIN provinces p ON p.id=a.province_id WHERE p.active=0 ORDER BY p.azgaar_cell_id')
+        inactive=[str(p['azgaar_cell_id']) for p in c.fetchall()]
+    if inactive:e.add_field(name=tech.tr('Nieaktywne — zajmują limit','Inactive — count towards the limit'),value=', '.join(inactive),inline=False)
     e.set_footer(text=tech.tr('Algae można też kupować od graczy. Starsze farmy poza stanowiskami są nieaktywne i nie kosztują utrzymania.','Algae can also be traded between players. Older farms outside deposits are dormant and have no upkeep.'))
     return e
+
+
+async def show_gather(interaction,nid):
+    n,_,_=state(nid)
+    if not n or n['owner_id']!=str(interaction.user.id):raise ValueError(i18n.text('This is not your menu.'))
+    e=discord.Embed(title='🧪 '+tech.tr('Śladowe pozyskiwanie algae','Trace algae gathering'),color=discord.Color.dark_green())
+    e.description=tech.tr('Wymaga własnej prowincji ze złożem i gospodarki 3. Płacisz **100 złota + 10 drewna** za **0,05 algae**. Limit: jedna próba na państwo na miesiąc gry. To kosztowna metoda awaryjna; farma przy gospodarce 6 jest znacznie wydajniejsza.',
+                         'Requires your own province with a deposit and economy 3. Pay **100 gold + 10 wood** for **0.05 algae**. Limit: one batch per nation per game month. This is an expensive fallback; a farm at economy 6 is much more efficient.')
+    view=PrivateView(nid,interaction.user.id)
+    async def confirm(i):
+        stock=await asyncio.to_thread(tech.gather,nid,i.user.id)
+        await deliver(i,content=tech.tr(f'Pozyskano 0,05 algae. Zapas: {stock:g}. Kolejna próba w następnym miesiącu gry.',
+                                      f'Gathered 0.05 algae. Stock: {stock:g}. Next batch available next game month.'),edit=True)
+    view.button(tech.tr('Zapłać i pozyskaj','Pay and gather'),confirm,style=discord.ButtonStyle.danger)
+    async def cancel(i):await deliver(i,content=tech.tr('Anulowano.', 'Cancelled.'),edit=True)
+    view.button(tech.tr('Anuluj','Cancel'),cancel)
+    await deliver(interaction,embed=e,view=view)
 
 
 async def show_programs(interaction,nid,*,edit=False):

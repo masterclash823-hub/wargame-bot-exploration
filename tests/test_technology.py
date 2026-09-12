@@ -143,6 +143,8 @@ class AlgaeTests(ResearchFixture,unittest.TestCase):
         from cogs.provinces import _upsert_provinces
         incoming=[dict(cell_id=cid,name='',biome='Wetland',terrain='wetland',resources={},pop=2000,neighbors=[]) for cid in range(100,1101)]
         _upsert_provinces(incoming,resync=True)
+        self.assertEqual(self.rows('SELECT * FROM algae_sites'),[])
+        for cid in range(100,105):tech.set_deposit(cid,True)
         first=self.rows('SELECT * FROM algae_sites ORDER BY province_id')
         self.assertEqual(len(first),5)
         db.init_db();_upsert_provinces(list(reversed(incoming)),resync=True)
