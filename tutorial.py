@@ -29,11 +29,11 @@ CHAPTERS = [
         '🎯 Wybierz, z czego zasłynie państwo',
         'Rada jest podzielona: pełne spichlerze, nowe warsztaty czy odkrycia uczonych? Jeden cel pomoże wybrać najbliższe inwestycje.',
         'Przegląd → Cele państwowe. Wybierz bezpieczne zapasy, rozwój państwa albo postęp naukowy. Możesz też odłożyć tę decyzję — cele są opcjonalne.',
-        'Zapasy: 3 kolejne miesiące bez głodu, żywność na 2 miesiące i stabilność ≥60. Rozwój: 2 nowe budowy lub ulepszenia po wyborze celu. Nauka: badanie i wzrost dziedziny o 0,3. Każdy cel trwa co najmniej 3 miesiące gry, daje 10 prestiżu i rozlicza się automatycznie. Porzucenie nie kosztuje.'), en=(
+        'Zapasy: 3 kolejne miesiące bez głodu, żywność na 2 miesiące i stabilność ≥60. Rozwój: 2 nowe budowy lub ulepszenia po wyborze celu. Nauka: ukończenie projektu badawczego po wybraniu celu. Każdy cel trwa co najmniej 3 miesiące gry, daje 10 prestiżu i rozlicza się automatycznie. Porzucenie nie kosztuje.'), en=(
         '🎯 Decide what your nation will be known for',
         'The council is divided: full granaries, new workshops or scholarly discoveries? One goal can help you choose your next investments.',
         'Overview → National goals. Choose food security, national development or scientific progress. You can also leave this for later: goals are optional.',
-        'Food security: 3 consecutive months without hunger, two months of food and stability ≥60. Development: 2 builds or upgrades after choosing the goal. Science: research and a field increase of 0.3. Every goal takes at least 3 game months and automatically awards 10 prestige. Abandoning is free.')),
+        'Food security: 3 consecutive months without hunger, two months of food and stability ≥60. Development: 2 builds or upgrades after choosing the goal. Science: complete a research project after choosing the goal. Every goal takes at least 3 game months and automatically awards 10 prestige. Abandoning is free.')),
     dict(key='trade', target='economy', pl=(
         '🤝 Nie wszystko trzeba produkować samemu',
         'Twoje magazyny są pełne drewna, a sąsiad potrzebuje go do budowy floty. Być może jego nadwyżka żywności rozwiąże Twój problem.',
@@ -55,21 +55,39 @@ CHAPTERS = [
     dict(key='military', target='military', pl=(
         '⚔️ Rozkaz to więcej niż dobry opis',
         'Dowódca obiecuje utrzymać most. Potrzebuje jednak prawdziwych oddziałów, czasu na mobilizację i rozkazów pasujących do terenu.',
-        'Wojsko i technologia → Siły zbrojne: sprawdź jednostki i utrzymanie. Przed bitwą otwórz Dyplomacja i bitwy → Wyślij plan bitwy i zaznacz oddziały, które naprawdę wysyłasz.',
+        'Wojsko → Siły zbrojne: sprawdź jednostki i utrzymanie. Przed bitwą otwórz Dyplomacja i bitwy → Wyślij plan bitwy i zaznacz oddziały, które naprawdę wysyłasz.',
         'Rezerwa kosztuje 35% utrzymania, aktywna służba 100%, wyprawa 150%. Mobilizacja z rezerwy trwa miesiąc gry. Nazwy oddziałów wpisane w opisie nie przypisują ich do planu. Opisz cel, teren i sposób działania; GM ustala ostateczne miejsce i rozstrzyga bitwę.'), en=(
         '⚔️ An order needs more than a good story',
         'Your commander promises to hold the bridge. They still need real troops, time to mobilize and orders that fit the terrain.',
-        'Military & technology → Armed forces: review units and upkeep. Before battle, open Diplomacy & battles → Submit battle plan and select the units you actually commit.',
+        'Military → Armed forces: review units and upkeep. Before battle, open Diplomacy & battles → Submit battle plan and select the units you actually commit.',
         'Reserves cost 35% upkeep, active duty 100% and expeditions 150%. Mobilizing from reserve takes one game month. Mentioning units in prose does not assign them to a plan. Explain the objective, terrain and approach; the GM sets the final location and resolves the battle.')),
+    dict(key='technology', target='technology', pl=(
+        '🔬 Uczeni proszą o kierunek',
+        'Rolnicy marzą o lepszych plonach, admirał o większych ładowniach. Wybierz, nad czym uczeni mają pracować przez najbliższe miesiące.',
+        'Technologie → Badania. Obejrzyj trzy rekomendacje lub wszystkie badania, sprawdź efekt i czas, a potem potwierdź projekt. Dalej pracuje automatycznie.',
+        'Jeden projekt naraz. Każde państwo dostaje 1 darmową wiedzę na miesiąc gry; uniwersytety pomagają. Koszty: 3/8/16 wiedzy, minimum 3/4/6 miesięcy. Wstrzymanie zachowuje postęp. Porzucenie nie zwraca zużytych zasobów. Odkrycia podnoszą poziomy i dają konkretne premie.'), en=(
+        '🔬 Scholars need a direction',
+        'Farmers dream of better harvests; the admiral wants larger holds. Choose what your scholars will work on over the coming months.',
+        'Technology → Research. Browse three recommendations or all projects, inspect effects and time, then confirm a project. It progresses automatically.',
+        'One project at a time. Every nation gets 1 free knowledge per game month; universities help. Costs: 3/8/16 knowledge, minimum 3/4/6 months. Pausing preserves progress. Abandoning does not refund spent resources. Discoveries raise levels and provide concrete bonuses.')),
+    dict(key='algae', target='technology', pl=(
+        '🧪 Zielone złoto wypraw',
+        'Kupiec przynosi fiolkę algae. Jej zawartość może odmienić rolnictwo, leczenie żołnierzy, okręty i życie kolonistów. Źródła są nieliczne, więc stała umowa handlowa może być równie cenna jak wyprawa.',
+        'Technologie → Stanowiska algae lub /algae locations pokaże ID miejsc i ich właścicieli. Możesz zdobyć prowincję, założyć kolonię albo kupować algae od innego gracza.',
+        'Maksymalnie 5 stałych stanowisk. Farma: gospodarka 6, 400 złota, 60 drewna, 250 pracowników i 8 złota utrzymania. Produkuje bazowo 0,5 algae/miesiąc. Każde badanie algae kosztuje 4 algae i 16 wiedzy oraz trwa minimum 6 miesięcy. Po odkryciu sam włączasz program: 1 algae miesięcznie za silne premie. Brak dostaw zawiesza premie; odkrycia pozostają.'), en=(
+        '🧪 The green gold of expeditions',
+        'A merchant brings a vial of algae. It could transform farming, military medicine, ships and colonial life. Sources are scarce, so a reliable trade agreement can rival an expedition.',
+        'Technology → Algae deposits or /algae locations lists cell IDs and owners. Acquire a province, found a colony or import algae from another player.',
+        'At most 5 permanent deposits. A farm needs economy 6, 400 gold, 60 wood, 250 workers and 8 gold upkeep. Base output is 0.5 algae/month. Each algae discovery costs 4 algae and 16 knowledge and takes at least 6 months. Enable its program afterward: 1 algae monthly for strong bonuses. Missing supplies suspend bonuses; discoveries remain.')),
     dict(key='expansion', target='territory', pl=(
         '🧭 Na mapie jest jeszcze miejsce',
         'Odkrywcy donoszą o nowym wybrzeżu. Kolonia potrzebuje ludzi i zaopatrzenia, a nie tylko nazwy na mapie.',
         'Terytorium → Załóż kolonię: wpisz ID prowincji; jeśli go nie znasz, zapytaj administratora. Potem sprawdzaj „Szczegóły kolonii”, aby zobaczyć brakujące wymagania.',
-        'Nowa kolonia kosztuje 500 złota, wymaga 5 wolnej ładowności i przeniesienia 300 osadników z własnej prowincji. Awans następuje automatycznie po spełnieniu wymagań finansowania, czasu, ludności, technologii i żywności. Od etapu osady można rozszerzać kolonię na sąsiednie pola. Większe pomysły zgłaszaj w Gospodarka → Zaproponuj projekt; megaprojekt wymaga zgody GM.'), en=(
+        'Nowa kolonia kosztuje 500 złota, wymaga 5 wolnej ładowności i przeniesienia 300 osadników z własnej prowincji. Awans następuje automatycznie po spełnieniu wymagań finansowania, czasu, ludności, technologii i żywności. Od etapu osady można rozszerzać kolonię na sąsiednie pola. Większe pomysły zgłaszaj w Gospodarka → Zaproponuj projekt; projekt wymaga zgody GM.'), en=(
         '🧭 There is still room on the map',
         'Explorers report a new coast. A colony needs people and supplies, not just a name on a map.',
         'Territory → Found colony: enter the province ID; ask an administrator if you do not know it. Then check Colony details for any missing requirements.',
-        'A new colony costs 500 gold, requires 5 available cargo capacity and transfers 300 settlers from your own province. It advances automatically when funding, time, population, technology and food requirements are met. From settlement onward, you can expand into neighboring cells. For larger ideas, use Economy → Propose project; megaprojects need GM approval.')),
+        'A new colony costs 500 gold, requires 5 available cargo capacity and transfers 300 settlers from your own province. It advances automatically when funding, time, population, technology and food requirements are met. From settlement onward, you can expand into neighboring cells. For larger ideas, use Economy → Propose project; projects need GM approval.')),
     dict(key='events', target='events', pl=(
         '🎭 Twoje decyzje zostają w historii',
         'Na granicy wybucha spór. Możesz zaufać doradcom albo zaproponować własne rozwiązanie. Państwo będzie pamiętać, jak postąpisz.',

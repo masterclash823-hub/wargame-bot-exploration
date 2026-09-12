@@ -186,7 +186,7 @@ class NationCog(commands.Cog):
             source_filter = ""
             filter_params: tuple = (nation["id"],)
         else:
-            source_filter = "AND source NOT IN ('trade_private','event_private')"
+            source_filter = "AND source NOT IN ('trade_private','event_private','research_private')"
             filter_params = (nation["id"],)
 
         page     = max(1, page)
@@ -312,7 +312,7 @@ class NationCog(commands.Cog):
         embed = discord.Embed(
             title=i18n.text('⚠️ Confirm Nation Deletion'),
             description=(
-                i18n.text('This will permanently delete **{p0}** and release all their provinces.\nMilitary units, blueprints, history, and megaprojects will also be deleted.\n\n**This cannot be undone.**', p0=nation['name'])
+                i18n.text('This will permanently delete **{p0}** and release all their provinces.\nMilitary units, blueprints, history, and projects will also be deleted.\n\n**This cannot be undone.**', p0=nation['name'])
             ),
             color=discord.Color.red(),
         )

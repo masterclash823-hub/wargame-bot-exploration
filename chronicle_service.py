@@ -92,7 +92,7 @@ def render(d):
         labels={
             'building':('Rozwój infrastruktury','Infrastructure development'),
             'colony':('Nowa kolonia','New colony'),'expansion':('Rozrost kolonii','Colonial expansion'),
-            'research':('Postęp naukowy','Scientific progress'),'project':('Ukończony megaprojekt','Megaproject completed'),
+            'research':('Postęp naukowy','Scientific progress'),'project':('Ukończony projekt','Project completed'),
             'event':('Rozstrzygnięte wydarzenie','Event concluded'),'battle':('Rozstrzygnięta bitwa','Battle resolved'),
             'war':('Wypowiedzenie wojny','War declared'),'treaty':('Podpisany traktat','Treaty signed'),
             'breach':('Naruszenie traktatu','Treaty broken'),'goal':('Osiągnięty cel państwowy','National goal achieved'),
@@ -102,7 +102,7 @@ def render(d):
         detail=''
         if kind=='building':detail=f"{i18n.term(p['building'],lang)} · {p['level']}/3 · #{p['cell']}"
         elif kind in ('colony','expansion'):detail=('Prowincja ' if pl else 'Province ')+str(p['cell'])
-        elif kind=='research':detail=i18n.term(p['category'],lang)
+        elif kind=='research':detail=('Uczeni ogłosili przełom. Szczegóły pozostają prywatne.' if pl else 'Scholars report a breakthrough. Details remain private.')
         elif kind=='goal':detail=GOALS[p['code']][0 if pl else 1]+(' · +10 prestiżu' if pl else ' · +10 prestige')
         elif kind in ('treaty','breach'):detail=KINDS[p['kind']][0 if pl else 1]+' · '+other
         elif kind in ('war','guarantee'):detail=other

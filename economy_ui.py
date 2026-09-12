@@ -36,7 +36,13 @@ def dashboard(n,r):
                                          '⚠️ Food shortage: build/upgrade a farm or arrange regular food imports.'))
     if p['arrears']:tips.append(tr('⚠️ Brak złota na rachunki. Zmniejsz armię aktywną lub przenieś ją do rezerwy.',
                                   '⚠️ Bills exceed available gold. Reduce active forces or put units in reserve.'))
-    understaffed=sum(s['staff']<.99 for s in r['staffing'])
+    blocked=sum(s.get('blocked')=='algae_site_or_tech' for s in r['staffing'])
+    if blocked:tips.append(tr('🧪 Nieaktywne farmy algae: potrzebują rzadkiego stanowiska i gospodarki 6. Sprawdź /algae locations.',
+                              '🧪 Dormant algae farms need a rare deposit and economy 6. See /algae locations.'))
+    for program in r.get('algae_programs',[]):
+        if program['enabled'] and not program['funded']:
+            tips.append('🧪 '+i18n.term(program['category'])+': '+tr('brak algae na program w następnym miesiącu.','not enough algae for next month’s program.'))
+    understaffed=sum(s['staff']<.99 and not s.get('blocked') for s in r['staffing'])
     if understaffed:tips.append(tr(f'ℹ️ {understaffed} budynków ma za mało pracowników. Żywność ma pierwszeństwo.',
                                    f'ℹ️ {understaffed} buildings are understaffed. Food has priority.'))
     if not tips:tips.append(tr('✅ Podstawowe potrzeby są zabezpieczone. Możesz rozwijać prowincje.',

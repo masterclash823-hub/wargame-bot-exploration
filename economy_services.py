@@ -34,7 +34,11 @@ def build(nid,cell,key,upgrade=False):
         old=levels.get(key,1) if key in buildings else 0
         if (upgrade and not old) or (not upgrade and old) or old>=3:
             raise ValueError(i18n.text('Building already exists, is missing, or has reached level 3.'))
-        if not _terrain_ok(p['terrain'],b['requires_terrain']) or not _tech_ok(n,b['requires_tech'],key):
+        if key=='algae_farm':
+            c.execute('SELECT province_id FROM algae_sites WHERE province_id=?',(p['id'],))
+            if not c.fetchone():
+                raise ValueError(i18n.text('Algae extraction requires a rare deposit. See /algae locations.'))
+        if (key!='algae_farm' and not _terrain_ok(p['terrain'],b['requires_terrain'])) or not _tech_ok(n,max(6,b['requires_tech']) if key=='algae_farm' else b['requires_tech'],key):
             raise ValueError(i18n.text('Terrain or technology requirements are not met.'))
         multiplier={0:1,1:1.5,2:2}[old]
         cost={k:v*multiplier for k,v in read_json(b['cost_json']).items()}
@@ -183,6 +187,8 @@ def found_colony(nid,cell,name):
         c.execute("SELECT forces_json FROM battle_plans WHERE nation_id=? AND status IN ('unmatched','matched')",(nid,))
         committed={int(f['unit_id']) for p in c.fetchall() for f in read_json(p['forces_json'],[])}
         cargo=sum(read_json(s['stats_json']).get('cargo',0)*s['quantity'] for s in ships if s['id'] not in committed)
+        from technology import bonuses
+        cargo*=1+bonuses(c,nid).get('cargo',0)
         if cargo<5:raise ValueError(i18n.text('Need 5 available cargo capacity to transport settlers.'))
         spend(c,n,{'gold':500})
         move_settlers(c,nid,p['id'])
@@ -216,7 +222,7 @@ def start_megaproject(nid,mpid):
         n=lock_nation(c,nid)
         c.execute('SELECT * FROM megaprojects WHERE id=? AND nation_id=?'+(' FOR UPDATE' if db.USE_POSTGRES else ''),(mpid,nid))
         mp=c.fetchone()
-        if not mp or mp['status']!='approved':raise ValueError(i18n.text('Megaproject must be approved first.'))
+        if not mp or mp['status']!='approved':raise ValueError(i18n.text('Project must be approved first.'))
         spend(c,n,read_json(mp['cost_json']))
         state='building' if mp['duration_months']>0 else 'complete'
         c.execute('UPDATE megaprojects SET status=?,months_spent=0 WHERE id=?',(state,mpid))
@@ -231,10 +237,10 @@ def advance_megaproject(mpid,months):
     from cogs.economy import _apply_mp_effect
     with db.atomic() as c:
         c.execute('SELECT nation_id FROM megaprojects WHERE id=?',(mpid,)); row=c.fetchone()
-        if not row:raise ValueError(i18n.text('Megaproject not found.'))
+        if not row:raise ValueError(i18n.text('Project not found.'))
         lock_nation(c,row['nation_id'])
         c.execute('SELECT * FROM megaprojects WHERE id=?'+(' FOR UPDATE' if db.USE_POSTGRES else ''),(mpid,));mp=c.fetchone()
-        if mp['status']!='building':raise ValueError(i18n.text('Megaproject is not under construction.'))
+        if mp['status']!='building':raise ValueError(i18n.text('Project is not under construction.'))
         spent=min(mp['duration_months'],mp['months_spent']+months)
         state='complete' if spent>=mp['duration_months'] else 'building'
         c.execute('UPDATE megaprojects SET status=?,months_spent=? WHERE id=?',(state,spent,mpid))

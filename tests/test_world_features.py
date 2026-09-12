@@ -262,7 +262,7 @@ class IdentityGoalTests(WorldFixture,unittest.TestCase):
             world.progress_goals(c,1,15,{})
         self.assertEqual(self.profile()['prestige'],0)
         with db.atomic() as c:
-            world.activity(c,'research',1,'real-research',{'category':'land'})
+            world.activity(c,'research',1,'real-research',{'category':'land','completed':True})
             world.progress_goals(c,1,16,{})
         self.assertEqual(self.profile()['prestige'],10)
 
@@ -303,7 +303,7 @@ class WorldUITests(WorldFixture,unittest.IsolatedAsyncioTestCase):
         ship=ShipDesignerView(1,'sloop','Test',2,{})
         with db.cursor() as c:c.execute('UPDATE nations SET treasury=10000,resources_json=? WHERE id=1',('{"universal_knowledge":100}',))
         request=interaction(1)
-        await TechCog.tech_research.callback(NS(bot=NS(get_channel=lambda _:None)),request,app_commands.Choice(name='Land',value='land'),1)
+        await TechCog.tech_research.callback(NS(bot=NS(get_channel=lambda _:None)),request,'army_logistics')
         view=request.response.send_message.call_args.kwargs['view']
         world.transfer_nation(1,10,1,999)
         before=self.balances()

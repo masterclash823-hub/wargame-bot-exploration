@@ -3,6 +3,7 @@ Colonialism and Trade Route commands.
 Colony stages: outpost(50%) -> settlement(75%) -> colony(90%) -> province(100%)
 Trade routes export surplus luxuries using exclusively assigned cargo ships.
 """
+from technology import colony_requirements
 from flags import flag_text, flagged_embed
 import json
 import discord
@@ -40,7 +41,9 @@ def _total_cargo(nation_id):
     with db.cursor() as c:
         c.execute("SELECT u.quantity,b.stats_json FROM military_units u JOIN blueprints b ON u.blueprint_id=b.id WHERE u.nation_id=? AND b.type='ship'", (nation_id,))
         ships = c.fetchall()
-    return sum(json.loads(s["stats_json"]).get("cargo",0)*s["quantity"] for s in ships)
+    from technology import bonuses
+    with db.cursor() as c:bonus=bonuses(c,nation_id).get("cargo",0)
+    return sum(json.loads(s["stats_json"]).get("cargo",0)*s["quantity"] for s in ships)*(1+bonus)
 
 def _route_income(nation_id):
     # Marginal luxury sales unlocked by shipping, never gold for an empty route.
@@ -78,7 +81,7 @@ def tick_colonies(nation_id, months=1):
             updated["months_in_status"] = col["months_in_status"] + months
             new_stage, blocker = colony_advance_readiness(updated, owner)
             if blocker is None:
-                required_months = STAGE_CONFIG[col["status"]]["advance_months"]
+                _,required_months = colony_requirements(nation_id,col["status"])
                 carried_months = max(0, updated["months_in_status"] - required_months)
                 c.execute(
                     "UPDATE colonies SET status=?,months_in_status=?,investment_json='{}' WHERE id=?",
@@ -185,7 +188,7 @@ def invest_in_colony(nation_id: int, cell_id: int, requested_gold: int) -> dict:
         if col["status"] == "province":
             raise ValueError(i18n.text("Already fully integrated."))
         cfg = STAGE_CONFIG[col["status"]]
-        required = cfg["advance_cost"].get("gold", 0)
+        required,required_months = colony_requirements(nation_id,col["status"])
         inv = json.loads(col["investment_json"] or "{}")
         invested = max(0, float(inv.get("gold", 0)))
         remaining = max(0, required - invested)
@@ -203,7 +206,7 @@ def invest_in_colony(nation_id: int, cell_id: int, requested_gold: int) -> dict:
         new_stage, blocker = colony_advance_readiness(updated, owner)
         advanced_to = None
         if blocker is None:
-            carried_months = max(0, col["months_in_status"] - cfg["advance_months"])
+            carried_months = max(0, col["months_in_status"] - required_months)
             c.execute(
                 "UPDATE colonies SET status=?,months_in_status=?,investment_json='{}' WHERE id=?",
                 (new_stage, carried_months, col["id"]),
@@ -221,8 +224,7 @@ def colony_advance_readiness(col, owner) -> tuple[str, str | None]:
     new_stage = COLONY_STAGES[idx + 1]
     cfg = STAGE_CONFIG[col["status"]]
     inv = json.loads(col["investment_json"] or "{}")
-    required_gold = cfg["advance_cost"].get("gold", 0)
-    required_months = cfg["advance_months"]
+    required_gold,required_months = colony_requirements(owner["id"],col["status"])
     if float(inv.get("gold", 0)) < required_gold or col["months_in_status"] < required_months:
         return new_stage, i18n.text(
             "Colony is not ready: {p0:.0f}/{p1}g and {p2}/{p3} months.",
@@ -325,7 +327,8 @@ class ColonialismCog(commands.Cog):
         except ValueError as exc:
             await interaction.response.send_message(str(exc),ephemeral=True);return
         _log(nat["id"],"system",i18n.text("Founded colony '{p0}' (#{p1}) at {p2}. Cost: {p3}g.", p0=name, p1=col_id, p2=prov['name'] or i18n.text('Cell #{p0}', p0=cell_id), p3=gold_cost))
-        embed=discord.Embed(title=i18n.text('🏕️ Colony Founded — {p0}', p0=name),description=i18n.text('Outpost established at **{p0}**.\nProduces **50%** of base resources.\nInvest and wait 6 months to advance to Settlement.', p0=prov['name'] or i18n.text('Cell #{p0}', p0=cell_id)),color=discord.Color.green())
+        required_gold,required_months=colony_requirements(nat['id'],'outpost')
+        embed=discord.Embed(title=i18n.text('🏕️ Colony Founded — {p0}', p0=name),description=i18n.text('Outpost established at **{p0}**.\nProduces **50%** of base resources.\nAdvancement needs {p1} gold and {p2} game months, plus population, food and technology.', p0=prov['name'] or i18n.text('Cell #{p0}', p0=cell_id),p1=required_gold,p2=required_months),color=discord.Color.green())
         embed.add_field(name=i18n.text('Cost'),value=f"{gold_cost}g",inline=True); embed.add_field(name=i18n.text('Status'),value=i18n.text('🏕️ Outpost'),inline=True)
         await interaction.response.send_message(embed=embed)
 
@@ -340,7 +343,7 @@ class ColonialismCog(commands.Cog):
         except ValueError as exc:
             await interaction.response.send_message(f"❌ {exc}",ephemeral=True); return
         col=result["colony"]; applied=result["applied"]; invested=result["invested"]; adv_cost=result["required"]
-        adv_mo=STAGE_CONFIG[col["status"]]["advance_months"]
+        _,adv_mo=colony_requirements(nat["id"],col["status"])
         _log(nat["id"],"player",i18n.text("Invested {p0:.0f}g in colony '{p1}'. Total: {p2:.0f}/{p3}g.", p0=applied, p1=col['name'], p2=invested, p3=adv_cost))
         if result["advanced_to"]:
             new_stage=result["advanced_to"]
@@ -397,7 +400,7 @@ class ColonialismCog(commands.Cog):
         embed=flagged_embed(discord.Embed(title=i18n.text('🗺️ Colonies — {p0} {p1}', p0=flag_text(nat['flag']), p1=nat['name']),color=discord.Color.dark_green()), (nat['flag'], nat['name']))
         for col in cols:
             cfg=STAGE_CONFIG[col["status"]]; inv=json.loads(col["investment_json"])
-            adv_cost=cfg["advance_cost"].get("gold",0); adv_mo=cfg["advance_months"]
+            adv_cost,adv_mo=colony_requirements(col["nation_id"],col["status"])
             pname=col["pname"] or i18n.text('Cell #{p0}', p0=col['azgaar_cell_id'])
             pct_g=min(100,int(inv.get("gold",0)/adv_cost*100)) if adv_cost>0 else 100
             pct_t=min(100,int(col["months_in_status"]/adv_mo*100)) if adv_mo>0 else 100
@@ -416,7 +419,7 @@ class ColonialismCog(commands.Cog):
         if not col: await interaction.response.send_message(i18n.text('No colony here.'),ephemeral=True); return
         with db.cursor() as c: c.execute("SELECT * FROM nations WHERE id=?",(col["nation_id"],)); owner=c.fetchone()
         cfg=STAGE_CONFIG[col["status"]]; inv=json.loads(col["investment_json"])
-        adv_cost=cfg["advance_cost"].get("gold",0); adv_mo=cfg["advance_months"]
+        adv_cost,adv_mo=colony_requirements(col["nation_id"],col["status"])
         base_res=json.loads(prov["base_resources_json"])
         eff_res={k:v*cfg["yield_pct"] for k,v in base_res.items()}
         embed=discord.Embed(title=f"{STAGE_EMOJI.get(col['status'],'🏕️')} {col['name']}",color=discord.Color.dark_green())

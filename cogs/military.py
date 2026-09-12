@@ -583,6 +583,8 @@ class MilitaryCog(commands.Cog):
             json.loads(r["stats_json"] or "{}").get("cargo", 0) * r["quantity"]
             for r in rows if r["btype"] == "ship"
         )
+        from technology import bonuses
+        with db.cursor() as c:total_cargo*=1+bonuses(c,nat['id']).get('cargo',0)
         embed.add_field(
             name=i18n.text('Status'),
             value=(

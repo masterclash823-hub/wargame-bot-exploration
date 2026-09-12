@@ -1,5 +1,5 @@
 """
-Economy cog: resources, buildings, calendar, megaprojects, trades, admineco.
+Economy cog: resources, buildings, calendar, projects, trades, admineco.
 All slash commands use @app_commands.command or group subcommands — no hybrid.
 """
 from flags import flag_text, flagged_embed
@@ -51,7 +51,7 @@ DEFAULT_BUILDINGS = [
     {"key":"port",            "name":"Port",             "tier":1,"cost":{"gold":150,"wood":80},                      "effect":{"gold":10},                  "upkeep":{"gold":2}, "terrain":"", "tech":0.0,"desc":"Trade gold on coastal/water provinces."},
     {"key":"fort",            "name":"Fort",             "tier":1,"cost":{"gold":200,"stone":80,"clay":40},           "effect":{},                           "upkeep":{"gold":5}, "terrain":"",                       "tech":0.0,"desc":"+1 fortification. Requires clay."},
     {"key":"university",      "name":"University",       "tier":3,"cost":{"gold":500,"stone":100,"wood":50,"clay":60},"effect":{"universal_knowledge":1},   "upkeep":{"gold":10},"terrain":"",                       "tech":5.0,"desc":"Universal Knowledge each tick. Requires clay. Tech 5."},
-    {"key":"algae_farm",      "name":"Algae Farm",       "tier":3,"cost":{"gold":400,"wood":60},                      "effect":{"algae":1},                  "upkeep":{"gold":8}, "terrain":"wetland",        "tech":6.0,"desc":"Rare Algae. Requires tech 6."},
+    {"key":"algae_farm",      "name":"Algae Farm",       "tier":3,"cost":{"gold":400,"wood":60},                      "effect":{"algae":0.5},                  "upkeep":{"gold":8}, "terrain":"",        "tech":6.0,"desc":"Rare deposit only: /algae locations. Economy 6, 250 workers; 0.5 algae per month."},
 ]
 BUILDING_TRANSLATIONS_PL = {
     "farm":           ("Farma",           "Produkuje żywność na równinach i trawiastych terenach."),
@@ -71,7 +71,7 @@ BUILDING_TRANSLATIONS_PL = {
     "port":           ("Port",            "Złoto handlowe w prowincjach przybrzeżnych."),
     "fort":           ("Fort",            "+1 fortyfikacja. Wymaga gliny."),
     "university":     ("Uniwersytet",     "Powszechna Wiedza każdy tick. Wymaga gliny. Tech 5."),
-    "algae_farm":     ("Farma Alg",       "Rzadkie Algi. Wymaga tech 6."),
+    "algae_farm":     ("Farma Alg",       "Tylko rzadkie stanowiska: /algae locations. Gospodarka 6, 250 pracowników, 0,5 algae/miesiąc."),
 }
 # ---------------------------------------------------------------------------
 # Pure helper functions (no discord imports needed)
@@ -199,7 +199,7 @@ def _deduct(res, cost):
             res[r] = res.get(r, 0) - a
     return True, ""
 
-def _apply_mp_effect(nid, effect_str, mp_name, mp_id):
+def _apply_mp_effect(nid, effect_str, mp_name, project_id):
     effect = json.loads(effect_str) if isinstance(effect_str, str) else effect_str
     with db.cursor() as c:
         c.execute("SELECT * FROM nations WHERE id=?", (nid,))
@@ -227,7 +227,7 @@ def _apply_mp_effect(nid, effect_str, mp_name, mp_id):
             "UPDATE nations SET resources_json=?,treasury=?,stability=? WHERE id=?",
             (json.dumps(res), treasury, stability, nid)
         )
-    entry = i18n.text("Megaproject '{p0}' completed.", p0=mp_name)
+    entry = i18n.text("Project '{p0}' completed.", p0=mp_name)
     if parts:
         entry += i18n.text(' Granted: {p0}.', p0=', '.join(parts))
     res_tick = effect.get("resources_per_tick", {})
@@ -239,7 +239,7 @@ def _apply_mp_effect(nid, effect_str, mp_name, mp_id):
     _log(nid, "system", entry)
     from world_service import activity
     with db.cursor() as c:
-        activity(c,'project',nid,f"project:{mp_id}")
+        activity(c,'project',nid,f"project:{project_id}")
 
 def _seed_buildings():
     from economy_migration import seed_buildings
@@ -327,11 +327,13 @@ HELP_SECTIONS = {
             ("/economy contract_stop <trade_id>", "Either party can stop monthly deliveries."),
             ("/buildings list", "Browse all building types with costs and effects."),
             ("/buildings province <cell_id>", "List buildings in a specific province."),
-            ("/megaproject propose", "Propose a megaproject for GM approval."),
-            ("/megaproject build <id>", "Pay and start an approved megaproject."),
-            ("/megaproject list", "View your megaprojects."),
-            ("/tech status", "View your nation's tech levels (private)."),
-            ("/tech research <category>", "Spend gold + Universal Knowledge to advance tech."),
+            ("/project propose", "Propose a project for GM approval."),
+            ("/project build <id>", "Pay and start an approved project."),
+            ("/project list", "View your projects."),
+            ("/tech status", "Open private research: recommendations, progress, discoveries and bonuses."),
+            ("/tech research [project]", "Choose a named project. Free knowledge each game month; universities accelerate research."),
+            ("/algae locations", "List rare deposits by province ID. Extraction needs a farm and economy 6."),
+            ("/algae programs", "Enable researched applications: 1 algae per program per month."),
             ("Resource mechanics",
              "• **Food**: consumed by population (1/100 pop) + military (1/10 units) per tick. "
              "Surplus → pop growth. Shortage → stability loss. Severe shortage → pop decline.\n"
@@ -428,8 +430,8 @@ GM_HELP_FIELDS = [
     ("/battle match <plan_a> <plan_b>", "Match two plans into a battle, optional context note."),
     ("/battle resolve <id>", "Get AI modifier and resolve battle. GM can override modifiers."),
     ("/admineco tech_set", "Set a nation's tech level directly."),
-    ("/admineco mp_approve", "Approve a megaproject with effect, cost, duration."),
-    ("/admineco mp_advance", "Advance megaproject construction by N months."),
+    ("/admineco project_approve", "Approve a project with effect, cost, duration."),
+    ("/admineco project_advance", "Advance project construction by N months."),
     ("/admineco building_set", "Edit a building definition live."),
     ("/admineco building_new", "Add a new custom building type."),
     ("/calendar set", "Configure calendar speed, channel, and start date."),
@@ -484,11 +486,13 @@ HELP_SECTIONS_PL = {
             ("/economy contract_stop <id>", "Każda strona może zatrzymać umowę miesięczną."),
             ("/buildings list", "Lista wszystkich typów budynków z kosztami i efektami."),
             ("/buildings province <id>", "Lista budynków w konkretnej prowincji."),
-            ("/megaproject propose", "Zaproponuj megaprojekt do zatwierdzenia przez GM."),
-            ("/megaproject build <id>", "Zapłać i rozpocznij zatwierdzony megaprojekt."),
-            ("/megaproject list", "Lista twoich megaprojektów."),
-            ("/tech status", "Poziomy technologii twojego narodu (prywatne)."),
-            ("/tech research <kategoria>", "Wydaj złoto + Powszechną Wiedzę aby rozwinąć technologię."),
+            ("/project propose", "Zaproponuj projekt do zatwierdzenia przez GM."),
+            ("/project build <id>", "Zapłać i rozpocznij zatwierdzony projekt."),
+            ("/project list", "Lista twoich projektów."),
+            ("/tech status", "Prywatny panel badań: rekomendacje, postęp, odkrycia i premie."),
+            ("/tech research [projekt]", "Wybierz nazwane badanie. Darmowa wiedza co miesiąc gry; uniwersytety przyspieszają naukę."),
+            ("/algae locations", "Stanowiska algae z ID prowincji. Wydobycie wymaga farmy i gospodarki 6."),
+            ("/algae programs", "Włącz zastosowania po badaniach: 1 algae na program miesięcznie."),
             ("Mechaniki zasobów",
              "• **Żywność**: zużywana przez populację (1/100) + wojsko (1/10) na tick.\n"
              "• **Jedwab + Przyprawy**: zużywane automatycznie; nadwyżki sprzedają rynki i porty. Sam zapas nie daje złota.\n"
@@ -575,8 +579,8 @@ GM_HELP_FIELDS_PL = [
     ("/admineco grant", "Dodaj zasoby lub złoto do narodu (logowane)."),
     ("/admineco starter_pack [naród|all]", "Daj zestaw startowy jednemu lub wszystkim narodom."),
     ("/admineco tech_set", "Ustaw poziom technologii narodu bezpośrednio."),
-    ("/admineco mp_approve", "Zatwierdź megaprojekt z efektami, kosztem i czasem budowy."),
-    ("/admineco mp_advance", "Przyspiesz budowę megaprojektu o N miesięcy."),
+    ("/admineco project_approve", "Zatwierdź projekt z efektami, kosztem i czasem budowy."),
+    ("/admineco project_advance", "Przyspiesz budowę projektu o N miesięcy."),
     ("/admineco building_set", "Edytuj definicję budynku na żywo."),
     ("/admineco building_new", "Dodaj nowy typ budynku."),
     ("/admineco relation_set", "Ustaw relację dyplomatyczną między narodami bezpośrednio."),
@@ -717,7 +721,7 @@ class EconomyCog(commands.Cog):
 
     # ---- Command groups -------------------------------------------------
     buildings_grp = app_commands.Group(name="buildings",    description="Building commands / Budynki")
-    mp_grp        = app_commands.Group(name="megaproject",  description="Megaproject commands")
+    mp_grp        = app_commands.Group(name="project",  description="Project commands")
     trade_grp     = app_commands.Group(name="trade",        description="Trade commands / Handel")
     calendar_grp  = app_commands.Group(name="calendar",     description="Calendar commands / Kalendarz")
     admineco_grp  = app_commands.Group(name="admineco",     description="GM economy admin")
@@ -853,7 +857,7 @@ class EconomyCog(commands.Cog):
     # MEGAPROJECT GROUP
     # ======================================================================
 
-    @mp_grp.command(name="propose", description="Propose a megaproject / Zaproponuj megaprojekt")
+    @mp_grp.command(name="propose", description="Propose a project / Zaproponuj projekt")
     @app_commands.describe(name="Project name", effect="Desired effect", gold_budget="Gold budget")
     @i18n.localized
     async def mp_propose(self, interaction: discord.Interaction,
@@ -869,55 +873,55 @@ class EconomyCog(commands.Cog):
                 " VALUES(?,?,?,?,?)",
                 (n["id"], name, effect, json.dumps({"gold": gold_budget}), "proposed")
             )
-            mp_id = c.lastrowid
+            project_id = c.lastrowid
         _log(n["id"], "player",
-             i18n.text("Proposed megaproject '{p0}' (#{p1}): {p2}. Budget: {p3}g.", p0=name, p1=mp_id, p2=effect, p3=gold_budget))
+             i18n.text("Proposed project '{p0}' (#{p1}): {p2}. Budget: {p3}g.", p0=name, p1=project_id, p2=effect, p3=gold_budget))
         embed = discord.Embed(
-            title=i18n.text('Megaproject Proposed'),
+            title=i18n.text('Project Proposed'),
             description=(
-                i18n.text('**{p0}** (ID: {p1})\n{p2}\nBudget: {p3:,} gold\n\nAwaiting GM approval.', p0=name, p1=mp_id, p2=effect, p3=gold_budget)
+                i18n.text('**{p0}** (ID: {p1})\n{p2}\nBudget: {p3:,} gold\n\nAwaiting GM approval.', p0=name, p1=project_id, p2=effect, p3=gold_budget)
             ),
             color=discord.Color.orange(),
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @mp_grp.command(name="build", description="Start building an approved megaproject / Rozpocznij budowe")
-    @app_commands.describe(mp_id="Megaproject ID")
+    @mp_grp.command(name="build", description="Start building an approved project / Rozpocznij budowe")
+    @app_commands.describe(project_id="Project ID")
     @i18n.localized
-    async def mp_build(self, interaction: discord.Interaction, mp_id: int):
+    async def mp_build(self, interaction: discord.Interaction, project_id: int):
         lang = _lang(interaction)
         nat  = _nation_owner(str(interaction.user.id))
         if not nat:
             await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
             return
         with db.cursor() as c:
-            c.execute("SELECT * FROM megaprojects WHERE id=? AND nation_id=?", (mp_id, nat["id"]))
+            c.execute("SELECT * FROM megaprojects WHERE id=? AND nation_id=?", (project_id, nat["id"]))
             mp = c.fetchone()
         if not mp:
-            await interaction.response.send_message(i18n.text('Megaproject #{p0} not found.', p0=mp_id), ephemeral=True)
+            await interaction.response.send_message(i18n.text('Project #{p0} not found.', p0=project_id), ephemeral=True)
             return
         if mp["status"] != "approved":
             await interaction.response.send_message(
-                i18n.text('Megaproject #{p0} is **{p1}** — only approved projects can be started.', p0=mp_id, p1=i18n.term(mp['status'])),
+                i18n.text('Project #{p0} is **{p1}** — only approved projects can be started.', p0=project_id, p1=i18n.term(mp['status'])),
                 ephemeral=True)
             return
         from economy_services import start_megaproject
         try:
-            new_status=start_megaproject(nat['id'],mp_id)
+            new_status=start_megaproject(nat['id'],project_id)
         except ValueError as exc:
             await interaction.response.send_message(str(exc),ephemeral=True);return
         if new_status == "complete":
-            _log(nat["id"], "system", i18n.text("Megaproject '{p0}' completed instantly.", p0=mp['name']))
+            _log(nat["id"], "system", i18n.text("Project '{p0}' completed instantly.", p0=mp['name']))
             await interaction.response.send_message(
                 i18n.text('✅ **{p0}** built and completed! Effects applied.', p0=mp['name']), ephemeral=False)
         else:
             _log(nat["id"], "player",
-                 i18n.text("Started construction of megaproject '{p0}' ({p1} months). Cost paid.", p0=mp['name'], p1=mp['duration_months']))
+                 i18n.text("Started construction of project '{p0}' ({p1} months). Cost paid.", p0=mp['name'], p1=mp['duration_months']))
             await interaction.response.send_message(
                 i18n.text('🔨 **{p0}** construction started! Estimated completion: **{p1}** in-game month(s).', p0=mp['name'], p1=mp['duration_months']),
                 ephemeral=False)
 
-    @mp_grp.command(name="list", description="List your megaprojects / Lista megaprojektow")
+    @mp_grp.command(name="list", description="List your projects / Lista projektow")
     @i18n.localized
     async def mp_list(self, interaction: discord.Interaction):
         lang  = _lang(interaction)
@@ -943,7 +947,7 @@ class EconomyCog(commands.Cog):
             rows = c.fetchall()
 
         if not rows:
-            await interaction.response.send_message(i18n.text('No megaprojects found.'), ephemeral=True)
+            await interaction.response.send_message(i18n.text('No projects found.'), ephemeral=True)
             return
 
         EMOJI = {"proposed": "🟡", "approved": "🟢", "building": "🔨", "complete": "✅"}
@@ -988,10 +992,10 @@ class EconomyCog(commands.Cog):
 
         desc = "\n\n".join(lines)
         if truncated_count > 0:
-            desc += i18n.text('\n\n*... and {p0} more megaprojects.*', p0=truncated_count)
+            desc += i18n.text('\n\n*... and {p0} more projects.*', p0=truncated_count)
 
         embed = discord.Embed(
-            title=i18n.text('Megaprojects') + (i18n.text(' — All Nations') if is_gm else ""),
+            title=i18n.text('Projects') + (i18n.text(' — All Nations') if is_gm else ""),
             description=desc,
             color=discord.Color.purple(),
         )
@@ -1405,9 +1409,9 @@ class EconomyCog(commands.Cog):
             ephemeral=True,
         )
 
-    @admineco_grp.command(name="mp_approve", description="[GM] Approve megaproject / [GM] Zatwierdz megaprojekt")
+    @admineco_grp.command(name="project_approve", description="[GM] Approve project / [GM] Zatwierdz projekt")
     @app_commands.describe(
-        mp_id="Megaproject ID",
+        project_id="Project ID",
         final_effect="Effect description (public)",
         effect_json='Effects JSON e.g. {"resources_once":{"gold":500},"stability":5}',
         cost_json='Final cost e.g. {"gold":1000,"wood":200} — use {} for free',
@@ -1416,13 +1420,19 @@ class EconomyCog(commands.Cog):
     )
     @i18n.localized
     async def mp_approve(self, interaction: discord.Interaction,
-                         mp_id: int, final_effect: str, effect_json: str,
+                         project_id: int, final_effect: str, effect_json: str,
                          cost_json: str = "{}", duration_months: int = 0, gm_notes: str = ""):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
         try:
             parsed_effect = i18n.game_json(effect_json)
+            recurring=parsed_effect.get('resources_per_tick',parsed_effect) if isinstance(parsed_effect,dict) else {}
+            algae=recurring.get('algae',0) if isinstance(recurring,dict) else 0
+            if isinstance(algae,dict):algae=algae.get('amount',algae.get('value',0))
+            if isinstance(algae,(int,float)) and algae>0:
+                from technology import tr
+                raise ValueError(tr('Stałe wydobycie algae jest dostępne tylko przez farmy na rzadkich stanowiskach.','Recurring algae extraction is only available through farms at rare deposits.'))
             effect_json = json.dumps(parsed_effect)
         except (ValueError, TypeError) as e:
             await interaction.response.send_message(i18n.text('❌ Invalid effect_json: {p0}\nExample: {{"resources_once":{{"gold":500}},"stability":5}}', p0=e), ephemeral=True)
@@ -1436,10 +1446,10 @@ class EconomyCog(commands.Cog):
             await interaction.response.send_message(i18n.text('❌ Invalid cost_json: {p0}\nUse {{}} for free, or {{"gold":100}} etc.', p0=e), ephemeral=True)
             return
         with db.cursor() as c:
-            c.execute("SELECT * FROM megaprojects WHERE id=?", (mp_id,))
+            c.execute("SELECT * FROM megaprojects WHERE id=?", (project_id,))
             mp = c.fetchone()
         if not mp:
-            await interaction.response.send_message(i18n.text('Megaproject #{p0} not found.', p0=mp_id), ephemeral=True)
+            await interaction.response.send_message(i18n.text('Project #{p0} not found.', p0=project_id), ephemeral=True)
             return
         with db.cursor() as c:
             c.execute("SELECT * FROM nations WHERE id=?", (mp["nation_id"],))
@@ -1462,25 +1472,25 @@ class EconomyCog(commands.Cog):
                 "UPDATE megaprojects SET status=?,proposed_effect=?,effect_json=?,"
                 "cost_json=?,duration_months=?,gm_notes=? WHERE id=?",
                 (new_status, final_effect, json.dumps(parsed_effect),
-                 json.dumps(cost), duration_months, gm_notes, mp_id)
+                 json.dumps(cost), duration_months, gm_notes, project_id)
             )
         _log(mp["nation_id"], "gm",
-             i18n.text("Megaproject '{p0}' approved by GM. Effect: {p1}. Cost: {p2}. Duration: {p3} month(s). Player must run /megaproject build {p4} to start.", p0=mp['name'], p1=final_effect, p2=json.dumps(cost), p3=duration_months, p4=mp_id))
+             i18n.text("Project '{p0}' approved by GM. Effect: {p1}. Cost: {p2}. Duration: {p3} month(s). Player must run /project build {p4} to start.", p0=mp['name'], p1=final_effect, p2=json.dumps(cost), p3=duration_months, p4=project_id))
         await interaction.response.send_message(
-            i18n.text('✅ **{p0}** approved.\nEffect: {p1}\nCost: {p2}\nDuration: {p3} month(s)\n\nThe player can now run `/megaproject build {p4}` to pay and start construction.', p0=mp['name'], p1=final_effect, p2=', '.join((f'{v} {i18n.term(k)}' for k, v in cost.items())) or i18n.term('free'), p3=duration_months, p4=mp_id),
+            i18n.text('✅ **{p0}** approved.\nEffect: {p1}\nCost: {p2}\nDuration: {p3} month(s)\n\nThe player can now run `/project build {p4}` to pay and start construction.', p0=mp['name'], p1=final_effect, p2=', '.join((f'{v} {i18n.term(k)}' for k, v in cost.items())) or i18n.term('free'), p3=duration_months, p4=project_id),
             ephemeral=True,
         )
 
-    @admineco_grp.command(name="mp_advance", description="[GM] Advance megaproject / [GM] Przyspiesz budowe")
-    @app_commands.describe(mp_id="Megaproject ID", months="Months to advance")
+    @admineco_grp.command(name="project_advance", description="[GM] Advance project / [GM] Przyspiesz budowe")
+    @app_commands.describe(project_id="Project ID", months="Months to advance")
     @i18n.localized
-    async def mp_advance(self, interaction: discord.Interaction, mp_id: int, months: int):
+    async def mp_advance(self, interaction: discord.Interaction, project_id: int, months: int):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
         from economy_services import advance_megaproject
         try:
-            state=advance_megaproject(mp_id,months)
+            state=advance_megaproject(project_id,months)
             await interaction.response.send_message(i18n.term(state),ephemeral=True)
         except ValueError as exc:
             await interaction.response.send_message(str(exc),ephemeral=True)

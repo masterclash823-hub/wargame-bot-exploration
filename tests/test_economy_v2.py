@@ -52,7 +52,8 @@ class EconomyTests(DatabaseFixture,unittest.TestCase):
         with db.cursor() as c:
             c.execute('UPDATE provinces SET population=500,buildings_json=? WHERE id=?',('["farm","university"]',self.pid))
         r=forecast(1)
-        self.assertEqual(r['resources'].get('universal_knowledge',0),0)
+        self.assertEqual(r['resources'].get('universal_knowledge',0),1)  # Free national research; university is unstaffed.
+        self.assertEqual(r['production'].get('universal_knowledge',0),0)
         self.assertEqual(r['staffing'][0]['building'],'farm')
         self.assertEqual(r['staffing'][0]['staff'],1)
 

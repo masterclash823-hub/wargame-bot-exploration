@@ -235,6 +235,28 @@ CREATE TABLE IF NOT EXISTS tech (
     PRIMARY KEY (nation_id, category)
 );
 
+CREATE TABLE IF NOT EXISTS research_projects (
+    nation_id INTEGER PRIMARY KEY REFERENCES nations(id) ON DELETE CASCADE,
+    code TEXT NOT NULL, token TEXT NOT NULL, knowledge REAL NOT NULL DEFAULT 0,
+    months INTEGER NOT NULL DEFAULT 0, paused INTEGER NOT NULL DEFAULT 0,
+    last_month INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS research_discoveries (
+    nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    code TEXT NOT NULL, completions INTEGER NOT NULL DEFAULT 1,
+    completed_month INTEGER NOT NULL, notified INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(nation_id,code)
+);
+CREATE TABLE IF NOT EXISTS algae_sites (
+    province_id INTEGER PRIMARY KEY REFERENCES provinces(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS algae_programs (
+    nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    category TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0,
+    funded INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(nation_id,category)
+);
+
 CREATE TABLE IF NOT EXISTS economy_policy (
     nation_id INTEGER PRIMARY KEY REFERENCES nations(id) ON DELETE CASCADE,
     tax TEXT NOT NULL DEFAULT 'normal', priority TEXT NOT NULL DEFAULT 'balanced',
@@ -564,4 +586,7 @@ def init_db() -> None:
             conn.commit()
         finally:
             conn.close()
+    from technology import seed_algae_sites
+    with atomic() as cur:
+        seed_algae_sites(cur)
     print(f"[DB] init_db complete ({'PostgreSQL/Supabase' if USE_POSTGRES else 'SQLite'})", flush=True)

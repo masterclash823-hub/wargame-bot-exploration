@@ -3,7 +3,7 @@
 ## Pierwsza rada państwa — przewodnik gracza
 
 `/tutorial` oraz **Panel → Ustawienia → Poradnik** otwierają ten sam przewodnik
-z dziewięcioma krótkimi rozdziałami: start, gospodarka, cele, wymiany, traktaty,
+z jedenastoma krótkimi rozdziałami: start, gospodarka, cele, wymiany, traktaty, badania, algae,
 wojsko, ekspansja, eventy i codzienna gra. Każdy rozdział zawiera scenkę,
 propozycję następnego ruchu oraz przycisk otwierający właściwą kategorię panelu.
 Można czytać kolejno albo wybierać temat z listy. Gracz bez państwa otrzymuje
@@ -123,7 +123,7 @@ PostgreSQL database on the hosted bot, not a disposable test SQLite file).
 
 The [historical economy review](docs/economy-review.md) describes issues in the
 previous implementation. The [economy update](docs/economy-v2.md) replaces monthly
-settlement with one transaction, protects megaproject rewards, limits production
+settlement with one transaction, protects project rewards, limits production
 by available inputs and preserves scheduler backlog. Current regression tests
 include `tests/test_economy_v2.py`; no live PostgreSQL or Discord tests were run.
 ## Battle resolution
@@ -200,3 +200,17 @@ working end-to-end with the English/Polish localization system. Everything later
 ## What's next
 Step 2 will add the nations/provinces/economy tables to `db.py` and the first real
 gameplay commands (`/nation found`, `/nation stats`).
+
+## Badania i algae
+
+Panel → Technologie oraz `/tech status` prowadzą przez nazwane odkrycia.
+Każde państwo otrzymuje 1 darmową wiedzę na miesiąc gry; uniwersytety przyspieszają
+badania. Jeden projekt naraz, automatyczny postęp, istniejące poziomy zachowane.
+
+`/algae locations` pokazuje do pięciu stałych stanowisk na mapie. Algae wymaga
+wydobycia lub handlu i zasila silne programy gospodarki, armii, marynarki i kolonii.
+`/algae programs` pozwala włączyć programy za 1 algae miesięcznie każdy.
+Megaprojekty mają nazwę „projekty” i komendy `/project`; zapisane projekty pozostają.
+
+[Pełne zasady, premie i migracja](docs/technology-algae.md). Dotychczasowe farmy
+poza stanowiskami są nieaktywne i nie ponoszą kosztów utrzymania.

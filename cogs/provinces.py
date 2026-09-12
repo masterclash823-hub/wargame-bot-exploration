@@ -228,7 +228,7 @@ def _upsert_provinces(province_list: list[dict], resync: bool) -> dict:
     inserted = updated = deactivated = 0
     incoming = {p["cell_id"] for p in province_list}
 
-    with db.cursor() as cur:
+    with db.atomic() as cur:
         if resync:
             cur.execute("SELECT azgaar_cell_id FROM provinces WHERE active=1")
             existing = {r["azgaar_cell_id"] for r in cur.fetchall()}
@@ -276,6 +276,8 @@ def _upsert_provinces(province_list: list[dict], resync: bool) -> dict:
                 "INSERT INTO province_neighbors(cell_id,neighbor_cell_id) VALUES(?,?)",
                 (cell_id, neighbor_id),
             )
+        from technology import seed_algae_sites
+        seed_algae_sites(cur)
 
     return {
         "inserted": inserted,
@@ -399,7 +401,7 @@ class ProvincesCog(commands.Cog):
         # Pull all active provinces that have resources
         with db.cursor() as cur:
             cur.execute(
-                "SELECT azgaar_cell_id, base_resources_json FROM provinces WHERE active=1"
+                "SELECT id, azgaar_cell_id, base_resources_json FROM provinces WHERE active=1"
             )
             rows = cur.fetchall()
 
@@ -417,9 +419,14 @@ class ProvincesCog(commands.Cog):
         # the markers layer is toggled off and on.
         marker_entries = []
         marker_id = 1
+        with db.cursor() as c:
+            c.execute('SELECT province_id FROM algae_sites')
+            algae_ids={r['province_id'] for r in c.fetchall()}
         for row in rows:
             cid = row["azgaar_cell_id"]
             resources = json.loads(row["base_resources_json"])
+            resources.pop('algae',None)
+            if row['id'] in algae_ids:resources['algae']=1  # Marker, not automatic production.
             for resource, amount in resources.items():
                 if resource == "food":
                     continue  # food comes from buildings, not shown as map markers
@@ -637,6 +644,9 @@ class ProvincesCog(commands.Cog):
         embed.add_field(name=i18n.text('Population'),     value=f"{row['population']:,}",  inline=True)
         embed.add_field(name=i18n.text('Fortification'),  value=str(row["fortification_level"]), inline=True)
         embed.add_field(name=i18n.text('Base Resources'), value=res_str,                   inline=False)
+        with db.cursor() as c:
+            c.execute('SELECT province_id FROM algae_sites WHERE province_id=?',(row['id'],))
+            if c.fetchone():embed.add_field(name='🧪 Algae',value=i18n.text('Rare algae deposit. Extraction needs an Algae Farm and economy 6.'),inline=False)
         flagged_embed(embed, (row['nation_flag'], row['nation_name']))
         await interaction.response.send_message(embed=embed)
 

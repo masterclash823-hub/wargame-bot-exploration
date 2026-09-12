@@ -23,8 +23,9 @@ single category selector changes the action buttons below it.
 | Category | Main actions |
 | --- | --- |
 | Overview | nation stats, resources, calendar, refresh |
-| Economy | construct a building, building catalogue, province yield, trades, megaprojects |
-| Military & technology | forces, blueprints, recruit/build, move, create blueprint, research |
+| Economy | construct a building, building catalogue, province yield, trades, projects |
+| Military | forces, blueprints, recruit/build, move, create blueprint |
+| Technology | named research, recommendations, discoveries, algae deposits and monthly programs |
 | Territory | provinces, province details, colonies, trade routes |
 | Diplomacy & battles | relations, war, peace, alliance, battle plan, battle reports |
 | Events | available events and continue an event |
@@ -51,4 +52,3 @@ single category selector changes the action buttons below it.
 - Component views validate the Discord user ID on every click.
 - Existing callbacks re-check nation ownership, resources, diplomacy state and
   other game rules before changing data.
-
