@@ -105,6 +105,13 @@ def _build_nation_context(nat) -> str:
 
     from world_service import memories
     remembered=json.dumps(memories(nat['id']),ensure_ascii=False)
+    from labor_regimes import state as labor_state
+    with db.cursor() as c:
+        labor=labor_state(c,nat['id'])
+        c.execute("SELECT m.proposer_person,m.recipient_person,a.name AS proposer,b.name AS recipient FROM dynastic_marriages m "
+                  "JOIN treaties t ON t.id=m.treaty_id JOIN nations a ON a.id=m.proposer_id JOIN nations b ON b.id=m.recipient_id "
+                  "WHERE m.status='active' AND t.status='active' AND (m.proposer_id=? OR m.recipient_id=?)",(nat['id'],nat['id']))
+        marriages=json.dumps(c.fetchall(),ensure_ascii=False)
     return f"""Nation: {nat['name']}
 Government: {nat['government_type']}
 Stability: {nat['stability']:.0f}/100
@@ -113,6 +120,9 @@ Population: {nat['population']:,}
 Tech levels: {tech_str}
 Resources (non-zero): {res_str or 'none'}
 Diplomatic relations: {rel_str}
+Labor policy: {labor['mode']}; emancipation transition remaining: {labor['transition_months']} months.
+Active dynastic bonds (all participants are adult fictional characters): {marriages}
+Use these institutions for relevant social or diplomatic dilemmas, without inventing people as tradable resources or new mechanical effects.
 Current in-game date: {mname}, Year {year}
 
 Recent history:

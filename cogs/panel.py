@@ -15,6 +15,7 @@ from utils import get_nation_by_owner, gm_only
 
 
 PL = {
+    'labor':'Polityka pracy',
     'workers':'Pracownicy', 'algae_production':'Wydobycie algae',
     'goals':'Cele państwowe', 'memories':'Pamięć decyzji', 'treaties':'Traktaty i propozycje',
     'new_treaty':'Nowy traktat', 'calls':'Wezwania do obrony',
@@ -46,6 +47,7 @@ PL = {
 
 def tr(lang: str, key: str) -> str:
     en = {
+        'labor':'Labor policy',
         'workers':'Workers', 'algae_production':'Algae production',
         'goals':'National goals', 'memories':'Decision memory', 'treaties':'Treaties & proposals',
         'new_treaty':'New treaty', 'calls':'Defense calls',
@@ -218,7 +220,7 @@ SECTIONS = [
 ACTIONS = {
     "home": [("stats","📊"),("resources","📦"),("calendar","📅"),("goals","🎯"),("refresh","🔄")],
     "economy": [("resources","💰"),("build","🏗️"),("buildings","📚"),("yield","🌾"),("trades","🔁"),("new_trade","➕"),
-                ("projects","🏛️"),("new_project","📝"),("start_project","▶️"),("contracts","📆"),("workers","👥")],
+                ("projects","🏛️"),("new_project","📝"),("start_project","▶️"),("contracts","📆"),("workers","👥"),("labor","⚖️")],
     "technology": [("research","🔬"),("algae_locations","🧪"),("algae_programs","⚙️"),("algae_production","🧫")],
     "military": [("forces","🛡️"),("blueprints","📐"),("recruit","➕"),("move","➡️"),
                  ("new_blueprint","🧰"),("posture","⏳")],
@@ -278,6 +280,8 @@ class PlayerPanel(OwnedView):
             events = cur.fetchone()["n"]
             cur.execute("SELECT COUNT(*) AS n FROM treaties WHERE status='proposed' AND recipient_id=?",(nation['id'],))
             proposals=cur.fetchone()['n']
+            cur.execute("SELECT COUNT(*) AS n FROM dynastic_marriages WHERE status='proposed' AND recipient_id=?",(nation['id'],))
+            marriages=cur.fetchone()['n']
             cur.execute("SELECT COUNT(*) AS n FROM guarantee_calls g JOIN treaties t ON t.id=g.treaty_id WHERE t.proposer_id=? AND g.status='pending'",(nation['id'],))
             calls=cur.fetchone()['n']
         embed.description = f"{flag_text(nation['flag'])} **{nation['name']}**\n{tr(self.lang, 'private')}"
@@ -285,10 +289,10 @@ class PlayerPanel(OwnedView):
         embed.add_field(name="💰 " + ("Skarbiec" if self.lang == "pl" else "Treasury"), value=f"{nation['treasury']:,.0f}")
         embed.add_field(name="⚖️ " + ("Stabilność" if self.lang == "pl" else "Stability"), value=f"{nation['stability']:.0f}/100")
         embed.add_field(name="🗺️/⚔️/🔁/🎭", value=f"{provinces} / {forces} / {trades} / {events}")
-        if proposals or calls:
+        if proposals or calls or marriages:
             embed.add_field(name='📬 '+tr(self.lang,'diplomacy'),
-                value=(f'{proposals} propozycji traktatów · {calls} wezwań do obrony. Otwórz kategorię Dyplomacja.' if self.lang=='pl' else
-                       f'{proposals} treaty proposals · {calls} defense calls. Open Diplomacy.'),inline=False)
+                value=(f'{proposals} propozycji traktatów · {marriages} propozycji mariaży · {calls} wezwań do obrony. Otwórz Traktaty i propozycje w Dyplomacji.' if self.lang=='pl' else
+                       f'{proposals} treaty proposals · {marriages} marriage proposals · {calls} defense calls. Open Treaties & proposals in Diplomacy.'),inline=False)
         shown = sorted(resources.items(), key=lambda x: -float(x[1]))[:6]
         embed.add_field(name="📦 " + tr(self.lang, "resources"),
                         value=" · ".join(f"{i18n.term(k, self.lang)} {v:g}" for k,v in shown) or "—", inline=False)
@@ -326,6 +330,7 @@ class PlayerPanel(OwnedView):
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
+            'labor':('EconomyControlCog','labor',[]),
             'workers':('EconomyControlCog','workers',[]), 'algae_production':('TechCog','algae_production',[]),
             'goals':('WorldCog','status',[]), 'memories':('WorldCog','memory',[]),
             'treaties':('TreatiesCog','list_treaties',[]), 'calls':('TreatiesCog','calls',[]),

@@ -97,10 +97,14 @@ def render(d):
             'war':('Wypowiedzenie wojny','War declared'),'treaty':('Podpisany traktat','Treaty signed'),
             'breach':('Naruszenie traktatu','Treaty broken'),'goal':('Osiągnięty cel państwowy','National goal achieved'),
             'guarantee':('Dotrzymana gwarancja','Guarantee honored'),
+            'marriage':('Mariaż dynastyczny','Dynastic marriage'),
+            'labor_reform':('Reforma pracy','Labor reform'),
         }
         title=labels[kind][0 if pl else 1]
         detail=''
-        if kind=='building':detail=f"{i18n.term(p['building'],lang)} · {p['level']}/3 · #{p['cell']}"
+        if kind=='marriage':detail=('Więź dynastyczna wzmacnia sojusz z ' if pl else 'A dynastic bond strengthens the alliance with ')+other+'.'
+        elif kind=='labor_reform':detail=(('Wprowadzono niewolnictwo.' if pl else 'Slavery was introduced.') if p.get('mode')=='slavery' else ('Zniesiono niewolnictwo.' if pl else 'Slavery was abolished.'))
+        elif kind=='building':detail=f"{i18n.term(p['building'],lang)} · {p['level']}/3 · #{p['cell']}"
         elif kind in ('colony','expansion'):detail=('Prowincja ' if pl else 'Province ')+str(p['cell'])
         elif kind=='research':detail=('Uczeni ogłosili przełom. Szczegóły pozostają prywatne.' if pl else 'Scholars report a breakthrough. Details remain private.')
         elif kind=='goal':detail=GOALS[p['code']][0 if pl else 1]+(' · +10 prestiżu' if pl else ' · +10 prestige')

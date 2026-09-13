@@ -335,6 +335,21 @@ CREATE TABLE IF NOT EXISTS treaties (
     broken_by INTEGER REFERENCES nations(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS dynastic_marriages (
+    id SERIAL PRIMARY KEY, treaty_id INTEGER NOT NULL REFERENCES treaties(id) ON DELETE CASCADE,
+    proposer_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    recipient_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    proposer_owner TEXT NOT NULL, recipient_owner TEXT NOT NULL,
+    proposer_person TEXT NOT NULL, recipient_person TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'proposed', created_month INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_marriage_per_alliance ON dynastic_marriages(treaty_id)
+    WHERE status IN ('proposed','active');
+CREATE TABLE IF NOT EXISTS labor_regimes (
+    nation_id INTEGER PRIMARY KEY REFERENCES nations(id) ON DELETE CASCADE,
+    mode TEXT NOT NULL DEFAULT 'free', transition_months INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS guarantee_calls (
     id SERIAL PRIMARY KEY, treaty_id INTEGER NOT NULL REFERENCES treaties(id) ON DELETE CASCADE,
     attacker_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,

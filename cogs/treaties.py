@@ -36,12 +36,18 @@ def treaty_embed(t):
         'guarantee':tr('Autor gwarantuje bezpieczeństwo odbiorcy. Po ataku musi odpowiedzieć na wezwanie przed kolejnym miesiącem.','The proposer guarantees the recipient. After an attack, answer the call before the next game month.'),
     }
     e.add_field(name=tr('Zasady','Rules'),value=details[t['kind']],inline=False)
+    from dynasty import current
+    with db.cursor() as c: marriage=current(c,t['id'])
+    if marriage:
+        from dynasty_ui import description
+        e.add_field(name=tr('Mariaż dynastyczny','Dynastic marriage'),value=description(t,marriage),inline=False)
     for start in range(0,len(terms['note']),1000):
         e.add_field(name=tr('Opis do oceny stron i GM','Note for the parties and GM'),value=terms['note'][start:start+1000],inline=False)
     if t['status']=='draft':e.add_field(name=tr('Przed wysłaniem','Before sending'),value=tr(
         'Sprawdź warunki. Przyciskiem poniżej możesz dodać raty, opis i widoczność. Odbiorca zobaczy propozycję dopiero po kliknięciu „Wyślij propozycję”.',
         'Review the terms. The button below lets you add installments, a note and visibility. The recipient only sees the proposal after you click “Send proposal”.'),inline=False)
-    e.set_footer(text=tr('Zerwanie: −10 reputacji. Uzgodnione raty i zaległości pozostają do zapłaty.','Breaking: −10 reputation. Agreed installments and arrears remain payable.'))
+    e.set_footer(text=tr('Zerwanie: −20 reputacji i −5 stabilności z aktywnym mariażem; inaczej −10 reputacji. Raty i zaległości pozostają.',
+                        'Breaking: −20 reputation and −5 stability with an active marriage; otherwise −10 reputation. Installments and arrears remain.'))
     return e
 
 
@@ -56,6 +62,17 @@ class TreatyView(i18n.LocalizedView):
         self.edit_terms.disabled=t['status'] not in ('draft','proposed') or str(viewer)!=t['a_owner']
         self.submit.label=tr('Wyślij propozycję','Send proposal')
         self.submit.disabled=t['status']!='draft' or str(viewer)!=t['a_owner']
+        self.marriage.label=tr('Mariaż dynastyczny','Dynastic marriage')
+        self.marriage.disabled=t['kind']!='alliance' or t['status']!='active' or str(viewer) not in (t['a_owner'],t['b_owner'])
+        from dynasty import current
+        with db.cursor() as c:m=current(c,t['id'])
+        if m and m['status']=='active':self.end.label=tr('Zerwij (−20 rep., −5 stab.)','Break (−20 rep., −5 stab.)')
+
+    @discord.ui.button(label='Marriage',row=2)
+    @i18n.localized
+    async def marriage(self,interaction,button):
+        from dynasty_ui import show
+        await show(interaction,self.t['id'])
 
     @i18n.localized
     async def interaction_check(self,interaction):
@@ -76,7 +93,7 @@ class TreatyView(i18n.LocalizedView):
     @discord.ui.button(label='End',style=discord.ButtonStyle.danger)
     @i18n.localized
     async def end(self,interaction,button):
-        try:service.end(self.t['id'],interaction.user.id,self.t['status'])
+        try:service.end(self.t['id'],interaction.user.id,self.t['status'],self.t['version'])
         except ValueError as exc:await interaction.response.send_message(str(exc),ephemeral=True);return
         await self.update(interaction)
 
@@ -157,7 +174,7 @@ class TreatyListView(i18n.LocalizedView):
         super().__init__(timeout=600);self.viewer,self.page=viewer,page
         self.previous.disabled=page<=1;self.next_page.disabled=not has_next
         self.choose.options=[discord.SelectOption(label=f"#{r['id']} {service.KINDS[r['kind']][0 if i18n.current_language()=='pl' else 1]}"[:100],value=str(r['id']),
-                                                 description=(r['a_name']+' / '+r['b_name']+' · '+i18n.term(r['status']))[:100]) for r in rows]
+                                                 description=(('💍 ' if r.get('marriage_status')=='proposed' else '')+r['a_name']+' / '+r['b_name']+' · '+i18n.term(r['status']))[:100]) for r in rows]
         self.choose.placeholder=tr('Wybierz traktat','Choose a treaty')
 
     @i18n.localized
@@ -180,6 +197,12 @@ class TreatyListView(i18n.LocalizedView):
 
 class TreatiesCog(commands.Cog):
     treaty=app_commands.Group(name='treaty',description='Diplomatic treaties / Traktaty dyplomatyczne')
+
+    @treaty.command(name='marriage',description='Arrange a dynastic marriage in an active alliance / Mariaż w sojuszu')
+    @i18n.localized
+    async def marriage(self,interaction:discord.Interaction,treaty_id:int):
+        from dynasty_ui import show
+        await show(interaction,treaty_id)
 
     @treaty.command(name='propose',description='Propose a treaty with clear terms / Zaproponuj traktat')
     @i18n.localized
@@ -212,8 +235,8 @@ class TreatiesCog(commands.Cog):
         n=get_nation_by_owner(str(interaction.user.id))
         if not n:await interaction.response.send_message(i18n.t(i18n.current_language(),'no_nation'),ephemeral=True);return
         with db.cursor() as c:
-            c.execute('SELECT t.*,a.name AS a_name,b.name AS b_name FROM treaties t JOIN nations a ON a.id=t.proposer_id '
-                      "JOIN nations b ON b.id=t.recipient_id WHERE proposer_id=? OR (recipient_id=? AND submitted_month IS NOT NULL) ORDER BY CASE WHEN status IN ('draft','proposed') THEN 0 WHEN status='active' THEN 1 ELSE 2 END,id DESC LIMIT 21 OFFSET ?",
+            c.execute("SELECT t.*,a.name AS a_name,b.name AS b_name,(SELECT m.status FROM dynastic_marriages m WHERE m.treaty_id=t.id AND m.status IN ('proposed','active')) AS marriage_status FROM treaties t JOIN nations a ON a.id=t.proposer_id "
+                      "JOIN nations b ON b.id=t.recipient_id WHERE proposer_id=? OR (recipient_id=? AND submitted_month IS NOT NULL) ORDER BY CASE WHEN EXISTS (SELECT 1 FROM dynastic_marriages m WHERE m.treaty_id=t.id AND m.status='proposed') OR status IN ('draft','proposed') THEN 0 WHEN status='active' THEN 1 ELSE 2 END,id DESC LIMIT 21 OFFSET ?",
                       (n['id'],n['id'],(page-1)*20));rows=c.fetchall()
         await interaction.response.send_message(tr('Wybierz traktat. Strona ','Choose a treaty. Page ')+str(page) if rows else tr('Brak traktatów na tej stronie.','No treaties on this page.'),
                                                 view=TreatyListView(interaction.user.id,rows[:20],page,len(rows)>20) if rows else None,ephemeral=True)

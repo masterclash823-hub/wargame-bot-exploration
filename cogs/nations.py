@@ -139,6 +139,9 @@ class NationCog(commands.Cog):
         embed.add_field(name=i18n.text('Population'),  value=f"{total_population:,}",           inline=True)
         
         from world_service import profile, tr
+        from labor_regimes import state as labor_state,label as labor_label
+        with db.cursor() as cur: labor=labor_state(cur,nation['id'])
+        embed.add_field(name=tr('Polityka pracy','Labor policy'),value=labor_label(labor['mode']))
         from technology import historical_year, discoveries
         with db.cursor() as cur:year,_=historical_year(nation,discoveries(cur,nation['id']))
         embed.add_field(name=tr('Orientacyjny rok technologiczny (IRL)', 'Approximate technology year (IRL)'),
