@@ -15,16 +15,17 @@ from utils import get_nation_by_owner, gm_only
 
 
 PL = {
+    'workers':'Pracownicy', 'algae_production':'Wydobycie algae',
     'goals':'Cele państwowe', 'memories':'Pamięć decyzji', 'treaties':'Traktaty i propozycje',
     'new_treaty':'Nowy traktat', 'calls':'Wezwania do obrony',
     'posture':'Rezerwa i mobilizacja', 'settlers':'Wyślij osadników', 'contracts':'Umowy miesięczne',
     "panel": "Panel gracza", "open": "Otwórz panel gracza", "home": "Przegląd",
-    "economy": "Gospodarka", "military": "Wojsko i technologia", "territory": "Terytorium",
+    "economy": "Gospodarka", "military": "Wojsko", "technology":"Technologie", "algae_locations":"Stanowiska algae", "algae_programs":"Programy algae", "territory": "Terytorium",
     "diplomacy": "Dyplomacja i bitwy", "events": "Wydarzenia", "settings": "Ustawienia",
     "choose": "Wybierz kategorię", "refresh": "Odśwież", "stats": "Statystyki państwa",
     "resources": "Zasoby", "calendar": "Kalendarz", "found": "Załóż państwo",
     "build": "Zbuduj budynek", "buildings": "Katalog budynków", "yield": "Produkcja prowincji",
-    "trades": "Wymiany", "new_trade": "Nowa wymiana", "projects": "Megaprojekty",
+    "trades": "Wymiany", "new_trade": "Nowa wymiana", "projects": "Projekty",
     "new_project": "Zaproponuj projekt", "start_project": "Rozpocznij projekt",
     "forces": "Siły zbrojne", "blueprints": "Projekty jednostek", "recruit": "Zbuduj jednostki",
     "move": "Przemieść jednostkę", "new_blueprint": "Nowy projekt", "research": "Badania",
@@ -45,15 +46,16 @@ PL = {
 
 def tr(lang: str, key: str) -> str:
     en = {
+        'workers':'Workers', 'algae_production':'Algae production',
         'goals':'National goals', 'memories':'Decision memory', 'treaties':'Treaties & proposals',
         'new_treaty':'New treaty', 'calls':'Defense calls',
         'posture':'Reserves & mobilization', 'settlers':'Send settlers', 'contracts':'Monthly contracts',
         "panel":"Player panel","open":"Open player panel","home":"Overview","economy":"Economy",
-        "military":"Military & technology","territory":"Territory","diplomacy":"Diplomacy & battles",
+        "military":"Military", "technology":"Technology", "algae_locations":"Algae deposits", "algae_programs":"Algae programs","territory":"Territory","diplomacy":"Diplomacy & battles",
         "events":"Events","settings":"Settings","choose":"Choose a category","refresh":"Refresh",
         "stats":"Nation stats","resources":"Resources","calendar":"Calendar","found":"Found a nation",
         "build":"Construct building","buildings":"Building catalogue","yield":"Province yield",
-        "trades":"Trades","new_trade":"New trade","projects":"Megaprojects","new_project":"Propose project",
+        "trades":"Trades","new_trade":"New trade","projects":"Projects","new_project":"Propose project",
         "start_project":"Start project","forces":"Armed forces","blueprints":"Unit blueprints",
         "recruit":"Build units","move":"Move unit","new_blueprint":"New blueprint","research":"Research",
         "tech":"Technology levels","provinces":"Province list","province":"Province details",
@@ -210,15 +212,16 @@ class TradeActions(OwnedView):
 SECTIONS = [
     ("home", "🏠", "home"), ("economy", "💰", "economy"), ("military", "⚔️", "military"),
     ("territory", "🗺️", "territory"), ("diplomacy", "🤝", "diplomacy"),
-    ("events", "🎭", "events"), ("settings", "⚙️", "settings"),
+    ("technology", "🔬", "technology"), ("events", "🎭", "events"), ("settings", "⚙️", "settings"),
 ]
 
 ACTIONS = {
     "home": [("stats","📊"),("resources","📦"),("calendar","📅"),("goals","🎯"),("refresh","🔄")],
     "economy": [("resources","💰"),("build","🏗️"),("buildings","📚"),("yield","🌾"),("trades","🔁"),("new_trade","➕"),
-                ("projects","🏛️"),("new_project","📝"),("start_project","▶️"),("contracts","📆")],
+                ("projects","🏛️"),("new_project","📝"),("start_project","▶️"),("contracts","📆"),("workers","👥")],
+    "technology": [("research","🔬"),("algae_locations","🧪"),("algae_programs","⚙️"),("algae_production","🧫")],
     "military": [("forces","🛡️"),("blueprints","📐"),("recruit","➕"),("move","➡️"),
-                 ("new_blueprint","🧰"),("tech","🔬"),("research","🧪"),("posture","⏳")],
+                 ("new_blueprint","🧰"),("posture","⏳")],
     "territory": [("provinces","🗺️"),("province","🔎"),("colonies","🏝️"),("colony_view","🔎"),
                   ("colony_found","🚩"),("colony_develop","📈"),("colony_expand","🧭"),("routes","🚢"),("settlers","👥")],
     "diplomacy": [("relations","📜"),("war","⚔️"),("peace","🕊️"),("alliance","🤝"),
@@ -317,18 +320,20 @@ class PlayerPanel(OwnedView):
             view = HelpView(is_gm=gm_only(interaction), current="general", lang=self.lang)
             await reply(interaction, embed=view._embed(), view=view); return
         if action == "tutorial":
-            await reply(interaction, content=("Użyj kategorii powyżej, wybierz działanie i wskaż obiekt z listy. Formularz pojawi się tylko dla nazw, liczb lub rozkazów." if self.lang == "pl" else "Choose a category, select an action, then pick an item from the list. A form appears only for names, numbers or orders.")); return
+            from tutorial import show_tutorial
+            await show_tutorial(self.bot,interaction); return
         if not nation:
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
+            'workers':('EconomyControlCog','workers',[]), 'algae_production':('TechCog','algae_production',[]),
             'goals':('WorldCog','status',[]), 'memories':('WorldCog','memory',[]),
             'treaties':('TreatiesCog','list_treaties',[]), 'calls':('TreatiesCog','calls',[]),
             "stats":("NationCog","stats",[""]), "resources":("EconomyCog","resources",[]),
             "calendar":("EconomyCog","calendar_status",[]), "buildings":("EconomyCog","buildings_list",[]),
             "yield":("ProvincesCog","province_yield",[""]), "projects":("EconomyCog","mp_list",[]),
             "forces":("MilitaryCog","mil_list",[""]), "blueprints":("MilitaryCog","bp_list",[]),
-            "tech":("TechCog","tech_status",[""]), "provinces":("ProvincesCog","province_list",[nation["name"],1]),
+            "tech":("TechCog","tech_status",[""]), "algae_locations":("TechCog","algae_locations",[]), "algae_programs":("TechCog","algae_programs",[]), "provinces":("ProvincesCog","province_list",[nation["name"],1]),
             "colonies":("ColonialismCog","colony_list",[""]), "routes":("ColonialismCog","traderoute_list",[]),
             "relations":("CombatCog","diplo_status",[]), "event_list":("EventsCog","event_list",[""]),
         }
@@ -486,7 +491,10 @@ class PlayerPanel(OwnedView):
         await self.rows(i,"SELECT u.id,u.quantity,b.name FROM military_units u LEFT JOIN blueprints b ON b.id=u.blueprint_id WHERE u.nation_id=? ORDER BY u.id",(n['id'],),lambda r:discord.SelectOption(label=f"#{r['id']} {r['name'] or 'Unit'} ×{r['quantity']}"[:100],value=str(r['id'])),unit)
 
     async def choose_blueprint_type(self,i):
-        opts=[discord.SelectOption(label="Milicja / Militia",value="unit:militia"),discord.SelectOption(label="Pikinierzy / Pikemen",value="unit:pikemen"),discord.SelectOption(label="Muszkieterzy / Musketeers",value="unit:musketeers"),discord.SelectOption(label="Dragoni / Dragoons",value="unit:dragoons"),discord.SelectOption(label="Armata / Field cannon",value="unit:field_cannon"),discord.SelectOption(label="Slup / Sloop",value="ship:sloop"),discord.SelectOption(label="Fregata / Frigate",value="ship:frigate"),discord.SelectOption(label="Galeon / Galleon",value="ship:galleon"),discord.SelectOption(label="Okręt liniowy / Ship of the line",value="ship:ship_of_the_line")]
+        from cogs.military import HULLS,LAND_UNITS
+        opts=[discord.SelectOption(label=i18n.text(data['name'],lang=self.lang),value=f'{kind}:{key}',
+                                  description=(f"Tech {data['requires_tech']:g} · {data['cost'].get('gold',0)}g · {data['cost'].get('algae',0)} algae"))
+              for kind,catalog in (('unit',LAND_UNITS),('ship',HULLS)) for key,data in catalog.items()]
         async def done(i2,value):
             kind,key=value.split(":",1)
             async def submit(i3,name):
@@ -496,11 +504,7 @@ class PlayerPanel(OwnedView):
         await reply(i,view=ChoiceView(self.owner_id,self.lang,opts,done))
 
     async def choose_research(self,i):
-        opts=[discord.SelectOption(label=i18n.term(x,self.lang).title(),value=x) for x in ('naval','land','economy','colonial')]
-        async def done(i2,category):
-            async def submit(i3,steps): await invoke(self.cog("TechCog"),"tech_research",i3,app_commands.Choice(name=category,value=category),int(steps))
-            await i2.response.send_modal(FieldsModal(tr(self.lang,"research"),[{"label":"Liczba kroków / Steps","default":"1"}],submit))
-        await reply(i,view=ChoiceView(self.owner_id,self.lang,opts,done))
+        await invoke(self.cog("TechCog"),"tech_research",i,"")
 
     async def colonies(self,i,handler):
         n=get_nation_by_owner(str(self.owner_id))
@@ -572,10 +576,10 @@ class PlayerPanel(OwnedView):
         await self.rows(i,"SELECT id,status,COALESCE(NULLIF(gm_final_text,''),ai_draft_text) AS text FROM events WHERE nation_id=? AND status IN ('posted','active') ORDER BY id DESC",(n['id'],),lambda r:discord.SelectOption(label=f"Event #{r['id']}",value=str(r['id']),description=(r['text'] or r['status'])[:100]),done)
 
 
-async def send_panel(bot, interaction):
+async def send_panel(bot, interaction, *, section="home"):
     if not active_guild(interaction.guild_id):
         await reply(interaction, content=i18n.text("⛔ Bot not activated on this server. The GM must run `/activate <auth_key>` first.", lang=language(interaction))); return
-    lang=language(interaction); view=PlayerPanel(bot,interaction.user.id,lang)
+    lang=language(interaction); view=PlayerPanel(bot,interaction.user.id,lang,section=section)
     await reply(interaction,embed=view.embed(),view=view)
 
 

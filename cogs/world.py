@@ -35,7 +35,7 @@ def goal_state(nid):
     if g:
         names=GOALS[g['code']];progress=json.loads(g['progress_json'])
         e.add_field(name=names[0 if i18n.current_language()=='pl' else 1],value=names[2 if i18n.current_language()=='pl' else 3],inline=False)
-        count=progress.get('count',0);target={'food_security':3,'development':2,'scholarship':.3}[g['code']]
+        count=progress.get('count',0);target={'food_security':3,'development':2,'scholarship':1}[g['code']]
         e.add_field(name=tr('Postęp','Progress'),value=f"{count:g}/{target:g} · "+tr('miesiące: ','months: ')+f"{progress.get('months',0)}/3")
         e.add_field(name=i18n.text('Status'),value=i18n.term(g['status']))
     return e,g

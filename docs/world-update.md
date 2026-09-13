@@ -32,7 +32,7 @@ osadzeń oraz odczytu historii wiadomości.
 Raport pokazuje do dwóch działań z poprzednich 24 rzeczywistych godzin:
 wypowiedzenie wojny, rozstrzygnięcie bitwy, podpisanie lub zerwanie publicznego
 traktatu, dotrzymanie gwarancji, ukończenie celu, zakończenie publicznego eventu,
-rozrost kolonii, założenie kolonii, ukończenie megaprojektu, badania lub budowę.
+rozrost kolonii, założenie kolonii, ukończenie projektu, badania lub budowę.
 Kolejność na tej liście określa wagę wydarzeń. Druga pozycja preferuje inne
 państwo, a następnie inny rodzaj działania. Przy remisie wygrywa nowszy wpis.
 Przy braku aktywności raport informuje o tym; nie dopisuje fikcyjnych działań.
@@ -110,7 +110,7 @@ i wskazane prowincje. Pełen opis pozostaje widoczny przed akceptacją.
 Zmiana warunków unieważnia wcześniejszy przycisk akceptacji. Przy akceptacji bot
 ponownie sprawdza właścicieli, fundusze i prowincje. Błąd cofa całe rozliczenie.
 Przekazana prowincja zachowuje budynki, populację, kolonię i związane z nią
-megaprojekty. Oddziały strony oddającej wracają do nieprzydzielonej puli;
+projekty. Oddziały strony oddającej wracają do nieprzydzielonej puli;
 utracona stolica przestaje być stolicą. Szlak bez własnego portu jest zamykany,
 a przypisany okręt zwalniany. Sumy populacji obu państw są przeliczane.
 
@@ -147,7 +147,7 @@ Można wybrać jeden naraz, bez kosztu, albo porzucić go bez kary.
 | --- | --- |
 | Bezpieczne zapasy | 3 kolejne miesiące bez głodu, z zapasem żywności na co najmniej 2 miesiące i stabilnością co najmniej 60 |
 | Rozwój państwa | 2 budowy lub ulepszenia budynków wykonane po wyborze celu |
-| Postęp naukowy | Badania wykonane po wyborze celu oraz wzrost dowolnej dziedziny o co najmniej 0,3 od poziomu początkowego |
+| Postęp naukowy | Ukończenie projektu badawczego po wybraniu celu (aktualizacja technologii) |
 
 Każdy cel trwa co najmniej trzy miesiące gry, nie ma terminu końcowego i daje
 **10 prestiżu**. Postęp i nagroda rozliczają się automatycznie. Cel żywnościowy

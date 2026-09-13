@@ -24,7 +24,7 @@ pierwszeństwo; przy jego braku odpowiedzi komend uwzględniają język Discorda
 
 ## Zakres
 
-- Pomoc gracza i GM, poradnik, narody, prowincje, gospodarka i megaprojekty.
+- Pomoc gracza i GM, poradnik, narody, prowincje, gospodarka i projekty.
 - Oferty wymiany i ich błędy, wojsko, projektowanie okrętów, badania, bitwy,
   dyplomacja, kolonie i szlaki; przyciski oraz formularze komend.
 - Nazwy zasobów, terenów, statusów, kadłubów i modułów w prezentowanych danych.
@@ -43,7 +43,7 @@ itd. Złoto oferty wpisuje się w osobnym polu.
 Budynki można wybrać z polskich podpowiedzi lub wpisać np. `farma` i `kopalnia`.
 Efekty wydarzenia mogą mieć postać
 `{"stabilność":5,"skarbiec":100,"zasoby":{"żywność":50}}`.
-W megaprojektach dostępne są też klucze `zasoby jednorazowo`, `zasoby co miesiąc`
+W projektach dostępne są też klucze `zasoby jednorazowo`, `zasoby co miesiąc`
 i `złoto co miesiąc`. Nazwy narodów, projekty nazwane przez graczy, rozkazy,
 notatki GM oraz już zapisane opowieści i historyczne wpisy nie są automatycznie
 przepisywane ani tłumaczone przez AI.

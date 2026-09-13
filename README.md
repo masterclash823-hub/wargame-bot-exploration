@@ -1,5 +1,15 @@
 # Wargame Bot
 
+## Pierwsza rada państwa — przewodnik gracza
+
+`/tutorial` oraz **Panel → Ustawienia → Poradnik** otwierają ten sam przewodnik
+z jedenastoma krótkimi rozdziałami: start, gospodarka, cele, wymiany, traktaty, badania, algae,
+wojsko, ekspansja, eventy i codzienna gra. Każdy rozdział zawiera scenkę,
+propozycję następnego ruchu oraz przycisk otwierający właściwą kategorię panelu.
+Można czytać kolejno albo wybierać temat z listy. Gracz bez państwa otrzymuje
+instrukcję kontaktu z GM. Przewodnik jest prywatny, działa po polsku i angielsku,
+a jego przyciski nie wykonują za gracza zakupów ani decyzji.
+
 ## Kronika, traktaty i cele państwowe
 
 Panel pozwala wybrać opcjonalny cel za prestiż, przeglądać pamięć decyzji oraz
@@ -113,7 +123,7 @@ PostgreSQL database on the hosted bot, not a disposable test SQLite file).
 
 The [historical economy review](docs/economy-review.md) describes issues in the
 previous implementation. The [economy update](docs/economy-v2.md) replaces monthly
-settlement with one transaction, protects megaproject rewards, limits production
+settlement with one transaction, protects project rewards, limits production
 by available inputs and preserves scheduler backlog. Current regression tests
 include `tests/test_economy_v2.py`; no live PostgreSQL or Discord tests were run.
 ## Battle resolution
@@ -190,3 +200,31 @@ working end-to-end with the English/Polish localization system. Everything later
 ## What's next
 Step 2 will add the nations/provinces/economy tables to `db.py` and the first real
 gameplay commands (`/nation found`, `/nation stats`).
+
+## Badania i algae
+
+Panel → Technologie oraz `/tech status` prowadzą przez nazwane odkrycia.
+Każde państwo otrzymuje 1 darmową wiedzę na miesiąc gry; uniwersytety przyspieszają
+badania. Jeden projekt naraz, automatyczny postęp, istniejące poziomy zachowane.
+
+`/algae locations` pokazuje do pięciu złóż wskazanych przez GM komendami
+`/algae deposit_add` i `/algae deposit_remove`. Algae z wydobycia lub handlu zasila silne programy gospodarki, armii, marynarki i kolonii.
+`/algae programs` pozwala włączyć programy za 1 algae miesięcznie każdy.
+Megaprojekty mają nazwę „projekty” i komendy `/project`; zapisane projekty pozostają.
+
+[Pełne zasady, premie i migracja](docs/technology-algae.md). Dotychczasowe farmy
+poza stanowiskami są nieaktywne i nie ponoszą kosztów utrzymania.
+
+
+`/algae production` i **Technologie → Wydobycie algae** obsługują budowę farm
+na własnych złożach i pokazują prognozę. Farma poziomu 1 jest dostępna od
+gospodarki 3. Automatyczna bazowa produkcja co miesiąc gry: gospodarka 3 → 0,05;
+4 → 0,1; 5 → 0,2; 6+ → 0,5 algae. Od gospodarki 6 można ulepszyć budynek:
+poziom 2 → 0,85; poziom 3 → 1,2. Obsada, stabilność i etap kolonii wpływają na wynik.
+
+W panelu wojska są kosztowne elitarne
+gwardie, jeźdźcy i fregaty algae; rekrutacja wymaga 4 zwykłych jednostek na
+każdą elitarną. `/nation stats` pokazuje umowny odpowiednik roku technologicznego.
+
+`/economy workers` i **Gospodarka → Pracownicy** pozwalają opcjonalnie
+rezerwować ludzi w konkretnych budynkach. Domyślnie obsada pozostaje automatyczna.

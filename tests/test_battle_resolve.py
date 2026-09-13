@@ -82,7 +82,7 @@ class BattleResolveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
              patch.object(resolution.random, "uniform", return_value=1):
             await CombatCog.battle_resolve.callback(CombatCog(bot), inter, bid, "55")
         self.assertEqual(modifier.call_args.kwargs['lang'], 'pl')
-        self.assertEqual(narrative.call_args.kwargs['lang'], 'pl')
+        self.assertEqual(narrate.call_args.kwargs['lang'], 'pl')
         self.assertEqual(self.quantities(1), [8, 7])
         self.assertEqual(self.quantities(2), [9, 7])
         with db.cursor() as c:

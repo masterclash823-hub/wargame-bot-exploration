@@ -14,12 +14,12 @@ usterek gospodarki ani nie zmienia stawek produkcji**.
 | Priorytet | Ustalenie | Skutek | Podstawa |
 |---|---|---|---|
 | Wysoki | Tick składa się z wielu osobnych transakcji i odczytuje salda na początku. | Awaria może przesunąć kalendarz bez rozliczenia wszystkich narodów. Tick może nadpisać równoległą wymianę lub finał eventu, korzystając ze starego salda. | Analiza `_run_tick`, `_cfg_set`, `_apply_mp_effect`. Ryzyko współbieżności, nie odtworzenie na produkcji. |
-| Wysoki | Ukończenie megaprojektu ponownie wczytuje stan sprzed produkcji miesiąca. | Produkcja z bieżącego ticka znika. Przykład: 20 drewna produkcji + 10 jednorazowo daje 10, nie 30. | Odtworzone w izolowanej bazie z translacją składni SQL PostgreSQL na SQLite. |
+| Wysoki | Ukończenie projektu ponownie wczytuje stan sprzed produkcji miesiąca. | Produkcja z bieżącego ticka znika. Przykład: 20 drewna produkcji + 10 jednorazowo daje 10, nie 30. | Odtworzone w izolowanej bazie z translacją składni SQL PostgreSQL na SQLite. |
 | Wysoki | `compute_trade_route_income` oczekuje `income_per_tick`, którego nie tworzy `db.py`. Dodawanie/listowanie tras oczekuje też `from_cell`, `to_cell`, `ship_id` zamiast schematu `from_cell_id`, `to_cell_id`. | Świeża baza nie obsłuży tych tras. Wyjątek przy naliczaniu dochodu pomija również `tick_colonies`, bo oba wywołania są w jednym `try`. Produkcyjna baza mogła mieć ręczne zmiany — tego nie potwierdzono. | Porównanie SQL ze schematem; test wykazał brak `income_per_tick`. `traderoute_add` dodatkowo odwołuje się do nieistniejącego lokalnie `_nation_owner`, zamiast `_nat_owner`. |
 | Wysoki | Konsumpcja surowca przez budynek jest zwykłym ujemnym przyrostem, bez kontroli dostępności. | Odlewnia produkuje 6 prochu mimo braku żelaza i zapisuje `iron=-2`. | Odtworzone. |
 | Średni | `_seed_buildings` nadpisuje definicje bazowych budynków przy każdym uruchomieniu modułu. | Edycja GM przez `building_set` nie przetrwa restartu dla tych kluczy. Dochód rynku zmieniony na 999 wraca do 15. | Odtworzone z translacją samych placeholderów. |
 | Średni | Zbiorcze nadrabianie kalendarza ogranicza się do 3 miesięcy, po czym zapisuje bieżący czas. | Po np. 10 miesiącach przerwy pozostałe 7 miesięcy zaległości i ułamkowa część miesiąca zostają pominięte. | Analiza `calendar_loop`: `min(months, 3)` oraz `last_tick_ts = now`. |
-| Średni | Fallback płaskich efektów megaprojektu traktuje `gold_once`, `stability`, `resources_once` jako zasoby miesięczne. | Powstają fikcyjne klucze magazynu, np. `gold_once=100`, `stability=5`, zamiast poprawnego rozróżnienia efektów jednorazowych i cyklicznych. | Odtworzone dla ukończonego megaprojektu. |
+| Średni | Fallback płaskich efektów projektu traktuje `gold_once`, `stability`, `resources_once` jako zasoby miesięczne. | Powstają fikcyjne klucze magazynu, np. `gold_once=100`, `stability=5`, zamiast poprawnego rozróżnienia efektów jednorazowych i cyklicznych. | Odtworzone dla ukończonego projektu. |
 | Średni | Populacja narodu jest zapisywana z sumy sprzed wzrostu/głodu w prowincjach. | Statystyki narodu są opóźnione o tick: naród 1000, prowincja 990. | Odtworzone po głodzie. |
 | Średni | W części SQL pozostają `%s` i `NOW()` bez obsługi SQLite. | `_seed_buildings` nie pozwala uruchomić modułu ekonomii na SQLite; kolejne ścieżki też zawodzą. | Odtworzone: `OperationalError: near "%": syntax error`. Render z PostgreSQL nie ma tego konkretnego problemu. |
 
@@ -66,5 +66,5 @@ Nie jest to test integracyjny PostgreSQL. Nie należy uruchamiać pełnego bota
 z produkcyjnymi sekretami do odtwarzania tych scenariuszy.
 
 Rekomendowana kolejność napraw gospodarki: transakcyjny/idempotentny tick,
-zgodność schematu szlaków, kończenie megaprojektów, surowce wejściowe budynków,
+zgodność schematu szlaków, kończenie projektów, surowce wejściowe budynków,
 kalendarz i migracje definicji. Dopiero potem strojenie balansu.

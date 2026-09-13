@@ -3,6 +3,7 @@ from discord import Locale, app_commands
 import i18n
 
 PARAMETERS = {
+    'orders_file':'plik_rozkazów', 'plan_id':'id_planu',
     'player':'gracz', 'hour_utc':'godzina_utc', 'language':'język',
     'kind':'rodzaj', 'duration':'czas_trwania', 'give_cells':'oddawane_prowincje',
     'receive_cells':'otrzymywane_prowincje', 'note':'opis', 'treaty_id':'id_traktatu', 'payer':'płatnik',
@@ -19,7 +20,7 @@ PARAMETERS = {
     'gm_note':'uwaga_gm','gm_notes':'uwagi_gm','gold_amount':'ilość_złota','gold_budget':'budżet_złota',
     'government':'ustrój','history':'historia','hours_per_month':'godziny_na_miesiąc','hull':'kadłub',
     'ids':'identyfikatory','key':'klucz','lang':'język','level':'poziom','location':'miejsce','final_location':'ostateczne_miejsce',
-    'months':'miesiące','mp_id':'id_megaprojektu','name':'nazwa','nation':'naród','orders':'rozkazy',
+    'months':'miesiące','project_id':'id_projektu','project':'projekt','name':'nazwa','nation':'naród','orders':'rozkazy',
     'page':'strona','private_note':'uwaga_prywatna','public_note':'uwaga_publiczna',
     'quantity':'liczba','reason':'powód','receive_gold':'otrzymywane_złoto',
     'receive_resources':'otrzymywane_zasoby','requires_terrain':'wymagany_teren','resource':'zasób',

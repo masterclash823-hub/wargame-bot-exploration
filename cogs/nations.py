@@ -139,6 +139,11 @@ class NationCog(commands.Cog):
         embed.add_field(name=i18n.text('Population'),  value=f"{total_population:,}",           inline=True)
         
         from world_service import profile, tr
+        from technology import historical_year, discoveries
+        with db.cursor() as cur:year,_=historical_year(nation,discoveries(cur,nation['id']))
+        embed.add_field(name=tr('Orientacyjny rok technologiczny (IRL)', 'Approximate technology year (IRL)'),
+                        value=tr(f'Około {year} r. — umowne porównanie z historią Ziemi, niezależne od daty gry.',
+                                 f'Circa {year} — a rough Earth-history analogy, independent of the game date.'),inline=False)
         with db.cursor() as cur: identity = profile(cur, nation['id'])
         embed.add_field(name=tr('Prestiż', 'Prestige'), value=str(identity['prestige']))
         embed.add_field(name=tr('Reputacja dyplomatyczna', 'Diplomatic reputation'), value=f"{identity['reputation']}/100")
@@ -186,7 +191,7 @@ class NationCog(commands.Cog):
             source_filter = ""
             filter_params: tuple = (nation["id"],)
         else:
-            source_filter = "AND source NOT IN ('trade_private','event_private')"
+            source_filter = "AND source NOT IN ('trade_private','event_private','research_private')"
             filter_params = (nation["id"],)
 
         page     = max(1, page)
@@ -312,7 +317,7 @@ class NationCog(commands.Cog):
         embed = discord.Embed(
             title=i18n.text('⚠️ Confirm Nation Deletion'),
             description=(
-                i18n.text('This will permanently delete **{p0}** and release all their provinces.\nMilitary units, blueprints, history, and megaprojects will also be deleted.\n\n**This cannot be undone.**', p0=nation['name'])
+                i18n.text('This will permanently delete **{p0}** and release all their provinces.\nMilitary units, blueprints, history, and projects will also be deleted.\n\n**This cannot be undone.**', p0=nation['name'])
             ),
             color=discord.Color.red(),
         )

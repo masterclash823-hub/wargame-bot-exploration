@@ -31,3 +31,24 @@ def seed_buildings(defaults):
         c.execute("INSERT INTO building_defs(key,name,cost_json,effect_json,upkeep_json,description) VALUES('granary','Granary',?,?,?,?) ON CONFLICT(key) DO NOTHING",
                   ('{"gold":100,"wood":40}','{}','{"gold":1}','Reduces food spoilage; 50 workers.'))
         c.execute("INSERT INTO economy_meta(key,value) VALUES('buildings_v2','1') ON CONFLICT(key) DO NOTHING")
+        c.execute("SELECT value FROM economy_meta WHERE key='algae_buildings_v1'")
+        if not c.fetchone():
+            c.execute("SELECT * FROM building_defs WHERE key='algae_farm'");old=c.fetchone()
+            if old:
+                if json.loads(old['effect_json'])=={'algae':1}:
+                    c.execute("UPDATE building_defs SET effect_json=? WHERE key='algae_farm'",('{"algae":0.5}',))
+                if old['description']=='Rare Algae. Requires tech 6.':
+                    c.execute("UPDATE building_defs SET description=? WHERE key='algae_farm'",('Rare deposit only: /algae locations. Economy 6, 250 workers; 0.5 algae per month.',))
+                if old['requires_terrain']=='wetland':
+                    c.execute("UPDATE building_defs SET requires_terrain='' WHERE key='algae_farm'")
+            c.execute("INSERT INTO economy_meta(key,value) VALUES('algae_buildings_v1','1') ON CONFLICT(key) DO NOTHING")
+        c.execute("SELECT value FROM economy_meta WHERE key='algae_automatic_v2'")
+        if not c.fetchone():
+            c.execute("SELECT * FROM building_defs WHERE key='algae_farm'");old=c.fetchone()
+            if old:
+                if old['requires_tech']==6:
+                    c.execute("UPDATE building_defs SET requires_tech=3 WHERE key='algae_farm'")
+                if old['description'] in ('Rare Algae. Requires tech 6.', 'Rare deposit only: /algae locations. Economy 6, 250 workers; 0.5 algae per month.'):
+                    desc=next(b['desc'] for b in defaults if b['key']=='algae_farm')
+                    c.execute("UPDATE building_defs SET description=? WHERE key='algae_farm'",(desc,))
+            c.execute("INSERT INTO economy_meta(key,value) VALUES('algae_automatic_v2','1') ON CONFLICT(key) DO NOTHING")

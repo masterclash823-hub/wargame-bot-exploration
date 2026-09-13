@@ -46,7 +46,7 @@ def reward(c,nid,prestige=0,reputation=0):
 # This whitelist deliberately excludes private plans, resources and arbitrary prose.
 ACTIVITY_FIELDS={
     'building':{'building','level','cell'}, 'colony':{'cell'}, 'expansion':{'cell'},
-    'research':{'category'}, 'project':set(), 'event':set(),
+    'research':{'category','completed'}, 'project':set(), 'event':set(),
     'battle':{'winner'}, 'war':set(), 'treaty':{'kind'}, 'breach':{'kind'},
     'goal':{'code'}, 'guarantee':set(),
 }
@@ -138,7 +138,7 @@ def transfer_nation(nid,new_owner,expected_owner,gm_id):
 GOALS={
     'food_security':('Bezpieczne zapasy','Food security','Przez 3 kolejne miesiące: brak głodu, zapas na 2 miesiące i stabilność ≥60.','For 3 consecutive months: no hunger, two months of food and stability ≥60.'),
     'development':('Rozwój państwa','National development','Wybuduj lub ulepsz 2 budynki. Cel trwa co najmniej 3 miesiące.','Build or upgrade 2 buildings. The goal takes at least 3 months.'),
-    'scholarship':('Postęp naukowy','Scientific progress','Zbadaj technologię i podnieś dowolną dziedzinę o 0,3. Co najmniej 3 miesiące.','Research technology and raise any field by 0.3. At least 3 months.'),
+    'scholarship':('Postęp naukowy','Scientific progress','Ukończ projekt badawczy po wybraniu celu. Co najmniej 3 miesiące.','Complete a research project after choosing the goal. At least 3 months.'),
 }
 
 
@@ -166,8 +166,9 @@ def progress_goals(c,nid,month,report):
     goal=c.fetchone()
     if not goal:return
     progress=read_json(goal['progress_json']);elapsed=month-goal['start_month']
-    c.execute('SELECT kind FROM world_activity WHERE nation_id=? AND id>?',(nid,goal['activity_after']))
-    actions=[r['kind'] for r in c.fetchall()]
+    c.execute('SELECT kind,payload_json FROM world_activity WHERE nation_id=? AND id>?',(nid,goal['activity_after']))
+    entries=c.fetchall()
+    actions=[r['kind'] for r in entries]
     if goal['code']=='food_security':
         qualifies=(report['food_needed']>0 and not report['food_shortage'] and report['food_months']>=2 and report['stability']>=60)
         progress['count']=progress.get('count',0)+1 if qualifies else 0
@@ -175,10 +176,8 @@ def progress_goals(c,nid,month,report):
     elif goal['code']=='development':
         progress['count']=actions.count('building');complete=progress['count']>=2
     else:
-        c.execute('SELECT tech_json FROM nations WHERE id=?',(nid,));tech=read_json(c.fetchone()['tech_json'])
-        base=read_json(goal['baseline_json'])
-        progress['count']=round(max((tech.get(k,0)-v for k,v in base.items()),default=0),3)
-        complete=progress['count']>=.3 and 'research' in actions
+        progress['count']=sum(r['kind']=='research' and read_json(r['payload_json']).get('completed') is True for r in entries)
+        complete=progress['count']>=1
     complete=complete and elapsed>=3
     progress['months']=elapsed
     c.execute('UPDATE nation_goals SET progress_json=?,last_month=?,status=?,completed_month=? WHERE id=?',

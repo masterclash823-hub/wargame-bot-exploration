@@ -27,6 +27,11 @@ def read_json(value, default=None):
     return value
 
 
+def building_level(key,levels,economy):
+    level=min(3,max(1,int(levels.get(key,1))))
+    return 1 if key=='algae_farm' and economy<6 else level
+
+
 def lock_nation(c, nid):
     c.execute('SELECT * FROM nations WHERE id=?' + (' FOR UPDATE' if db.USE_POSTGRES else ''), (nid,))
     nation = c.fetchone()
@@ -47,13 +52,16 @@ def save_policy(c, nid, p):
               (nid, *(p[k] for k in keys)))
 
 
-def set_policy(nid, key, value):
+def set_policy(nid, key, value, uid=None):
     choices = {'tax': TAX, 'priority': ('balanced','food','industry','trade','science'),
                'luxury': ('auto','stockpile','consume','sell')}
     if key not in choices or value not in choices[key]:
         raise ValueError('Invalid economy policy')
     with db.atomic() as c:
-        lock_nation(c, nid)
+        from world_service import world_lock,owned
+        world_lock(c)
+        if uid is not None:owned(c,nid,uid)
+        else:lock_nation(c, nid)
         p = policy(c, nid)
         p[key] = value
         save_policy(c, nid, p)
@@ -61,6 +69,8 @@ def set_policy(nid, key, value):
 
 def military_cost(c, nid):
     from cogs.military import HULLS, LAND_UNITS
+    from technology import bonuses
+    effects=bonuses(c,nid)
     c.execute('SELECT u.*,b.type AS btype,b.hull,m.mode FROM military_units u LEFT JOIN blueprints b '
               'ON u.blueprint_id=b.id LEFT JOIN military_posture m ON m.unit_id=u.id WHERE u.nation_id=?', (nid,))
     units = c.fetchall()
@@ -68,15 +78,20 @@ def military_cost(c, nid):
     for u in units:
         catalog = HULLS if u['btype'] == 'ship' else LAND_UNITS
         base = catalog.get(u['hull'], {}).get('peace_upkeep', 5 if u['btype']=='ship' else 2)
-        total += base * u['quantity'] * {'reserve':.35, 'deployed':1.5}.get(u['mode'], 1)
+        discount=effects.get('naval_upkeep' if u['btype']=='ship' else 'land_upkeep',0)
+        total += base * u['quantity'] * {'reserve':.35, 'deployed':1.5}.get(u['mode'], 1) * (1+discount)
     return total, units
 
 
 def snapshot(c, nid):
     c.execute('SELECT * FROM nations WHERE id=?', (nid,))
     n = c.fetchone()
-    c.execute('SELECT p.*,d.levels_json,c.status AS colony_status FROM provinces p '
+    from technology import bonuses
+    n=dict(n, research_bonuses=bonuses(c,nid))
+    c.execute('SELECT p.*,d.levels_json,c.status AS colony_status,a.province_id AS algae_site,l.allocations_json FROM provinces p '
               'LEFT JOIN province_development d ON d.province_id=p.id LEFT JOIN colonies c ON c.province_id=p.id '
+              'LEFT JOIN algae_sites a ON a.province_id=p.id '
+              'LEFT JOIN province_labor l ON l.province_id=p.id AND l.nation_id=p.owner_nation_id '
               'WHERE p.owner_nation_id=? AND p.active=1 ORDER BY p.id', (nid,))
     provinces = c.fetchall()
     c.execute('SELECT * FROM building_defs ORDER BY key')
@@ -95,12 +110,15 @@ def snapshot(c, nid):
         if any('port' in read_json(by_cell.get(route[k], {}).get('buildings_json'), [])
                for k in ('from_cell_id','to_cell_id')):
             capacity += max(0, read_json(route['stats_json']).get('cargo', 0)) * route['quantity']
+    capacity *= 1+n['research_bonuses'].get('cargo',0)
     return n, provinces, definitions, policy(c,nid), cost, units, capacity
 
 
 def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), cargo=0):
     """Pure one-month forecast. Shared unchanged by dashboard and settlement."""
     p = dict(prefs)
+    effects=nation.get('research_bonuses',{})
+    economy_level=read_json(nation['tech_json']).get('economy',3)
     res = {k:max(0,float(v)) for k,v in read_json(nation['resources_json']).items() if isinstance(v,(float,int))}
     start_gold = float(nation['treasury'])
     stability = min(100, max(0, float(nation['stability'])))
@@ -119,6 +137,15 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
         col = {'outpost':.5,'settlement':.75,'colony':.9}.get(prov.get('colony_status'), 1)
         levels = read_json(prov.get('levels_json'))
         buildings = list(dict.fromkeys(read_json(prov['buildings_json'], [])))
+        blocked_algae=not prov.get('algae_site') or economy_level<3
+        manual={k:min(max(0,v),WORKERS.get(k,200)*LEVEL_WORK[building_level(k,levels,economy_level)])
+                for k,v in read_json(prov.get('allocations_json')).items()
+                if k in buildings and k in definitions and isinstance(v,(int,float)) and math.isfinite(v)
+                and not (k=='algae_farm' and blocked_algae)}
+        requested=sum(manual.values())
+        scale=min(1,workforce/requested) if requested else 1
+        assigned={k:v*scale for k,v in manual.items()}
+        workforce=max(0,workforce-sum(assigned.values()))
         def rank(key):
             if key in FOOD: return 0  # Feeding people is automatic, including industrial/science presets.
             preferred = {'science':{'university'}, 'trade':TRADE, 'industry':set(WORKERS)-FOOD-TRADE-{'university'}}.get(p['priority'], set())
@@ -127,12 +154,18 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
         for key in sorted(buildings, key=lambda k:(rank(k),k)):
             bd = definitions.get(key)
             if not bd: continue
-            level = min(3,max(1,int(levels.get(key,1))))
+            if key=='algae_farm' and blocked_algae:
+                staffing.append(dict(cell=prov['azgaar_cell_id'],building=key,level=building_level(key,levels,economy_level),staff=0,workers=0,need=250*LEVEL_WORK[building_level(key,levels,economy_level)],blocked='algae_site_or_tech'))
+                continue  # Dormant legacy farms have no workers or upkeep.
+            level = building_level(key,levels,economy_level)
             need = WORKERS.get(key,200)*LEVEL_WORK[level]
-            ratio = min(1,workforce/need) if need else 1.
-            workforce = max(0,workforce-need*ratio)
+            workers=assigned[key] if key in assigned else min(need,workforce)
+            ratio=workers/need if need else 1.
+            if key not in assigned:workforce=max(0,workforce-workers)
             amount = LEVEL_OUTPUT[level]*ratio*stab*col
-            staffing.append(dict(cell=prov['azgaar_cell_id'],building=key,level=level,staff=round(ratio,3)))
+            staffing.append(dict(cell=prov['azgaar_cell_id'],building=key,level=level,staff=round(ratio,3),
+                                 workers=round(workers,2),need=need,manual=key in manual,
+                                 requested=manual.get(key),scaled=key in manual and scale<1))
             building_upkeep += max(0, read_json(bd['upkeep_json']).get('gold',0))*LEVEL_WORK[level]*(.25+.75*ratio)
             if key=='market':
                 market_bonus += .15*LEVEL_OUTPUT[level]*ratio
@@ -140,21 +173,31 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
             if key=='port':
                 port_staff.append(ratio)
             if key=='granary': granaries += ratio*LEVEL_OUTPUT[level]
-            effects={k:v for k,v in read_json(bd['effect_json']).items() if isinstance(v,(int,float)) and math.isfinite(v)}
-            jobs.append((key,effects,amount))
-        taxes += pop/1000*TAX[p['tax']]*stab*col*(1+market_bonus)*max(.5,1-p['unrest']/200)
+            outputs={k:v for k,v in read_json(bd['effect_json']).items() if isinstance(v,(int,float)) and math.isfinite(v)}
+            from technology import algae_yield
+            if outputs.get('algae',0)>0:
+                if key=='algae_farm':outputs['algae']=min(algae_yield(economy_level),outputs['algae'])
+                else:outputs.pop('algae')
+            for resource,value in list(outputs.items()):
+                if value<=0 or resource=='algae':continue
+                bonus=effects.get('knowledge',0) if resource=='universal_knowledge' else effects.get('production',0)
+                if key=='farm' and resource=='food':bonus+=effects.get('farm_food',0)
+                outputs[resource]=value*(1+bonus)
+            jobs.append((key,outputs,amount))
+        taxes += pop/1000*TAX[p['tax']]*stab*col*(1+market_bonus)*max(.5,1-p['unrest']/200)*(1+effects.get('taxes',0))
         for k,v in read_json(prov['base_resources_json']).items():
+            if k=='algae':continue  # A deposit needs a staffed extractor.
             if isinstance(v,(int,float)):
                 if k=='gold':output_gold+=max(0,v)*stab*col
                 else:production[k] = production.get(k,0)+max(0,v)*stab*col
     # Extractors first; downstream producers can use this month's raw materials.
-    for key,effects,amount in sorted(jobs,key=lambda j: any(v<0 for v in j[1].values() if isinstance(v,(int,float)))):
+    for key,outputs,amount in sorted(jobs,key=lambda j: any(v<0 for v in j[1].values() if isinstance(v,(int,float)))):
         ratio = 1.
-        for k,v in effects.items():
+        for k,v in outputs.items():
             if v < 0:
                 available = start_gold + taxes + output_gold if k=='gold' else res.get(k,0)+production.get(k,0)
                 ratio = min(ratio,max(0,available/(-v*amount))) if amount else 0
-        for k,v in effects.items():
+        for k,v in outputs.items():
             delta = v*amount*ratio
             if k=='gold': output_gold += delta
             else: production[k] = production.get(k,0)+delta
@@ -191,7 +234,7 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
     if luxury_used and use: stability += min(1,luxury_used/(use*2))
     if p['tax']=='high': stability -= p['unrest']/100
     elif p['tax']=='low': stability += .25
-    spoilage = max(0,res['food']-food_need*3)*(.02-.015*min(1,granaries))
+    spoilage = max(0,res['food']-food_need*3)*(.02-.015*min(1,granaries))*(1+effects.get('spoilage',0))
     res['food'] -= spoilage
     for prov in provinces:
         populations[prov['id']] = max(0,int(prov['population']*(1+growth)))
@@ -255,6 +298,7 @@ def _megaprojects(c,nid):
         for key,value in per.items():
             if isinstance(value,dict): value=value.get('amount',value.get('value',0))
             if isinstance(value,(float,int)) and math.isfinite(value):
+                if key=='algae' and value>0:continue  # Recurring extraction is confined to the rare sites.
                 if key=='gold':resource_gold+=value
                 else:res[key]=max(0,res.get(key,0)+value)
         gold=effect.get('gold_per_tick',effect.get('gold',0))
@@ -298,6 +342,8 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
         reports={}
         for n in nations:
             nid=n['id']
+            from technology import fund_programs,tick_research
+            programs=fund_programs(c,nid)
             with i18n.using_language(i18n.get_user_language(n['owner_id'])):
                 _megaprojects(c,nid)
             data=snapshot(c,nid)
@@ -309,6 +355,11 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
             c.execute('UPDATE nations SET resources_json=?,treasury=?,stability=?,population=? WHERE id=?',
                       (json.dumps(result['resources']),result['treasury'],result['stability'],result['population'],nid))
             save_policy(c,nid,result['policy'])
+            with i18n.using_language(i18n.get_user_language(n['owner_id'])):
+                completed,resources=tick_research(c,nid,target)
+            result['resources']=resources
+            result['research_completed']=completed
+            result['algae_programs']=programs
             for pid,pop in result['populations'].items(): c.execute('UPDATE provinces SET population=? WHERE id=?',(pop,pid))
             if result['policy']['unpaid_months']>=3:
                 from battle_resolution import allocate_losses

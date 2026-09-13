@@ -122,6 +122,8 @@ def force_snapshot(plan, nation):
     """Human/AI-readable snapshot of the exact unit groups committed in a plan."""
     rows = []
     with db.cursor() as c:
+        from technology import bonuses
+        effects=bonuses(c,nation['id'])
         for unit_id, requested in _entries(plan["forces_json"]):
             c.execute("SELECT u.*,b.name AS blueprint_name,b.type AS blueprint_type,b.hull,b.stats_json,"
                       "p.name AS province_name,p.azgaar_cell_id FROM military_units u "
@@ -139,13 +141,15 @@ def force_snapshot(plan, nation):
                          "type": unit["blueprint_type"] or unit["unit_type"] or "unit",
                          "hull": unit["hull"] or "", "committed": min(requested, int(unit["quantity"])),
                          "owned": int(unit["quantity"]), "stats": stats,
+                         "research_bonuses":{k:v for k,v in effects.items() if k.startswith('naval_' if unit['blueprint_type']=='ship' else 'land_') and k.endswith(('attack','defense'))},
                          "stationed_at": unit["province_name"] or unit["azgaar_cell_id"] or "unassigned"})
     return rows
 
 
 def _power(c, plan, nation):
     tech = json.loads(nation["tech_json"] or "{}")
-    tech_mod = 1 + float(tech.get("land", 3.0)) / 20.0
+    from technology import bonuses
+    effects=bonuses(c,nation['id'])
     attack = defense = 0.0
     committed = []
     lock = " FOR UPDATE OF u" if db.USE_POSTGRES else ""
@@ -165,13 +169,15 @@ def _power(c, plan, nation):
             stats = json.loads(unit["stats_json"] or "{}")
         except (TypeError, ValueError):
             stats = {}
-        attack += float(stats.get("attack", 0)) * qty
-        defense += float(stats.get("hp", 100) if unit["btype"] == "ship" else stats.get("defense", 0)) * qty * (0.1 if unit["btype"] == "ship" else 1)
+        category='naval' if unit['btype']=='ship' else 'land'
+        tech_mod=1+float(tech.get(category,3))/20
+        attack += float(stats.get("attack", 0)) * qty * tech_mod * (1+effects.get(category+'_attack',0))
+        defense += float(stats.get("hp", 100) if unit["btype"] == "ship" else stats.get("defense", 0)) * qty * (0.1 if unit["btype"] == "ship" else 1) * tech_mod * (1+effects.get(category+'_defense',0))
         committed.append((unit["id"], qty, int(unit["quantity"])))
     from economy_engine import policy
     arrears=policy(c,nation['id'])['unpaid_months']
     morale=max(.5,1-.1*arrears)
-    return attack * tech_mod * morale, defense * tech_mod * morale, committed
+    return attack * morale, defense * morale, committed
 
 
 def _fort_bonus(c, location):
@@ -280,6 +286,14 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
         _, def_power, def_units = _power(c, plan_b, nat_b)
         fort = _fort_bonus(c, final_location)
         result = _combat(atk_power, def_power, atk_mod, def_mod, fort)
+        from technology import bonuses
+        result['research_bonuses']={}
+        for side,n,committed in (('attacker',nat_a,atk_units),('defender',nat_b,def_units)):
+            ids={u[0] for u in committed}
+            c.execute('SELECT u.id,b.type FROM military_units u LEFT JOIN blueprints b ON b.id=u.blueprint_id WHERE u.nation_id=?',(n['id'],))
+            categories={'naval' if u['type']=='ship' else 'land' for u in c.fetchall() if u['id'] in ids}
+            stat='_attack' if side=='attacker' else '_defense'
+            result['research_bonuses'][side]={k+stat:v for k in categories if (v:=bonuses(c,n['id']).get(k+stat,0))}
         result["battlefield"] = battlefield
         result["casualties_applied"] = bool(apply_casualties)
         result["attacker_losses"] = _casualties(c, atk_units, result["atk_casualties_pct"],

@@ -38,7 +38,7 @@ print("[BOOT] bot object created", flush=True)
 
 @i18n.localized
 async def global_guild_check(interaction: discord.Interaction) -> bool:
-    if interaction.command and interaction.command.name in ("help", "language", "translate", "activate", "panel"):
+    if interaction.command and interaction.command.name in ("help", "language", "translate", "activate", "panel", "tutorial"):
         return True
     if not interaction.guild:
         return False
@@ -207,155 +207,8 @@ async def help_cmd(interaction: discord.Interaction):
 @tree.command(name="tutorial", description="Quick start guide / Krótki przewodnik dla nowych graczy")
 @i18n.localized
 async def tutorial_cmd(interaction: discord.Interaction):
-    class TutorialView(i18n.LocalizedView):
-        def __init__(self, author_id: int):
-            super().__init__(timeout=180)
-            self.author_id = author_id
-            self.section = "buildings"
-            self.message: discord.InteractionMessage | None = None
-            self._refresh()
-
-        @i18n.localized
-        async def interaction_check(self, inter: discord.Interaction) -> bool:
-            if inter.user.id != self.author_id:
-                # Fetch language dynamically for the user trying to click
-                clicker_lang = i18n.get_user_language(inter.user.id) if hasattr(i18n, "get_user_language") else "en"
-                msg = "To nie jest Twój przewodnik." if clicker_lang == "pl" else i18n.text('This is not your tutorial.')
-                await inter.response.send_message(msg, ephemeral=True)
-                return False
-            return True
-
-        async def on_timeout(self):
-            for child in self.children:
-                child.disabled = True
-            if self.message:
-                try:
-                    await self.message.edit(view=self)
-                except Exception:
-                    pass
-
-        def _refresh(self):
-            for item in self.children:
-                if hasattr(item, "custom_id"):
-                    item.style = (
-                        discord.ButtonStyle.primary
-                        if item.custom_id == self.section
-                        else discord.ButtonStyle.secondary
-                    )
-
-        def _embed(self, user_id: int) -> discord.Embed:
-            # DYNAMICALLY fetch the language for the target user every time the embed is generated
-            lang = i18n.get_user_language(user_id) if hasattr(i18n, "get_user_language") else "en"
-
-            footer_text = "Użyj przycisków poniżej, aby zmienić sekcję" if lang == "pl" else i18n.text('Use the buttons below to switch sections')
-
-            if self.section == "buildings":
-                if lang == "pl":
-                    title = "🏗️ Przewodnik: Budynki"
-                    desc = (
-                        "**Rozbudowa Twojego Narodu:**\n"
-                        "• Otwórz Panel → Gospodarka → Buduj; wybierz prowincję i budynek.\n"
-                        "• W prowincji mieści się po jednym budynku każdego typu, z ulepszeniami do poziomu 3.\n"
-                        "• Bot automatycznie przydziela pracowników; żywność ma pierwszeństwo.\n"
-                        "• Zasoby w panelu pokazują prognozę bilansu i podpowiadają, co poprawić."
-                    )
-                else:
-                    title = "🏗️ Guide: Buildings"
-                    desc = (
-                        "**Developing Your Nation:**\n"
-                        "• Open Panel → Economy → Build; choose a province and building.\n"
-                        "• Each province supports one of each building type, upgraded to level 3.\n"
-                        "• Workers are assigned automatically, with food first.\n"
-                        "• Resources in the panel shows the projected balance and practical tips."
-                    )
-                color = discord.Color.green()
-
-            elif self.section == "food":
-                if lang == "pl":
-                    title = "🌾 Przewodnik: Żywność i Gospodarka"
-                    desc = (
-                        "**Zarządzanie Żywnością:**\n"
-                        "• Żywność jest pobierana co miesiąc, aby utrzymać populację oraz wojsko.\n"
-                        "• Pierwszy miesiąc niedoboru ostrzega; od drugiego spada stabilność, a długi ciężki głód zmniejsza populację.\n"
-                        "• Buduj farmy i nadzoruj biomy rolnicze, by utrzymać nadwyżkę produkcyjną.\n"
-                        "• Nadwyżki żywności możesz handlować lub gromadzić w magazynach."
-                    )
-                else:
-                    title = "🌾 Guide: Food & Economy"
-                    desc = (
-                        "**Managing Food Supplies:**\n"
-                        "• Food is consumed automatically each month by population and military units.\n"
-                        "• The first shortage warns you; the second reduces stability. Prolonged severe hunger reduces population.\n"
-                        "• Expand farms and utilize fertile biomes to maintain a surplus.\n"
-                        "• Excess food can be stored in stockpiles or traded to other nations."
-                    )
-                color = discord.Color.gold()
-
-            else:  # megaprojects
-                if lang == "pl":
-                    title = "🏛️ Przewodnik: Megaprojekty"
-                    desc = (
-                        "**Wielkie Inwestycje Państwowe:**\n"
-                        "• Megaprojekty to unikalne, wielkoskalowe struktury dające potężne bonusy.\n"
-                        "• Przełomowe budowy wymagają akceptacji Gamemastera (GM).\n"
-                        "• Wymagają znacznych nakładów surowców i wielu miesięcy budowy.\n"
-                        "• Sprawdzaj postęp swoich projektów za pomocą komendy `/mp list`."
-                    )
-                else:
-                    title = "🏛️ Guide: Megaprojects"
-                    desc = (
-                        "**Large-Scale National Works:**\n"
-                        "• Megaprojects are massive, unique structures providing faction-wide buffs.\n"
-                        "• New proposals require Gamemaster (GM) approval before construction starts.\n"
-                        "• They require heavy investment and take multiple months to complete.\n"
-                        "• Monitor construction status anytime using `/mp list`."
-                    )
-                color = discord.Color.purple()
-
-            return discord.Embed(
-                title=title,
-                description=desc,
-                color=color,
-            ).set_footer(text=footer_text)
-
-        @discord.ui.button(
-            label="🏗️ Buildings / Budynki",
-            style=discord.ButtonStyle.primary,
-            custom_id="buildings"
-        )
-        @i18n.localized
-        async def btn_buildings(self, inter: discord.Interaction, btn: discord.ui.Button):
-            self.section = "buildings"
-            self._refresh()
-            await inter.response.edit_message(embed=self._embed(inter.user.id), view=self)
-
-        @discord.ui.button(
-            label="🌾 Food / Żywność",
-            style=discord.ButtonStyle.secondary,
-            custom_id="food"
-        )
-        @i18n.localized
-        async def btn_food(self, inter: discord.Interaction, btn: discord.ui.Button):
-            self.section = "food"
-            self._refresh()
-            await inter.response.edit_message(embed=self._embed(inter.user.id), view=self)
-
-        @discord.ui.button(
-            label="🏛️ Megaprojects / Megaprojekty",
-            style=discord.ButtonStyle.secondary,
-            custom_id="mega"
-        )
-        @i18n.localized
-        async def btn_mega(self, inter: discord.Interaction, btn: discord.ui.Button):
-            self.section = "mega"
-            self._refresh()
-            await inter.response.edit_message(embed=self._embed(inter.user.id), view=self)
-
-    view = TutorialView(author_id=interaction.user.id)
-    await interaction.response.send_message(
-        embed=view._embed(interaction.user.id), view=view, ephemeral=True
-    )
-    view.message = await interaction.original_response()
+    from tutorial import show_tutorial
+    await show_tutorial(bot, interaction)
 
 if __name__ == "__main__":
     print("[BOOT] Starting keep_alive...", flush=True)

@@ -16,6 +16,7 @@ Upkeep: peace rate per unit, 3x in wartime.
 """
 from flags import flag_text, flagged_embed
 import json
+import asyncio
 from copy import deepcopy
 import discord
 from discord import app_commands
@@ -28,6 +29,10 @@ from utils import gm_only
 # Data tables
 # ---------------------------------------------------------------------------
 HULLS = {
+    "algae_frigate": {"name":"Algae Frigate", "slots":5,"hp":450,"speed":5,"cargo":4,
+        "cost":{"gold":1800,"wood":300,"iron":120,"tar":30,"algae":6},
+        "requires_tech":6.0,"requires_discovery":"algae_naval","elite":True,"peace_upkeep":45.0,
+        "desc":"Elite living hull; needs naval algae research and 4 ordinary ships per elite ship."},
     "sloop":            {"name":"Sloop",            "slots":2,"hp":100,"speed":5,"cargo":2, "cost":{"gold":150,"wood":80,"tar":10},              "requires_tech":0.0,"peace_upkeep":3.0,  "desc":"Fast scout/raider. 2 slots."},
     "frigate":          {"name":"Frigate",          "slots":4,"hp":250,"speed":4,"cargo":4, "cost":{"gold":300,"wood":150,"tar":20,"iron":20},   "requires_tech":2.0,"peace_upkeep":6.0,  "desc":"Versatile warship. 4 slots."},
     "galleon":          {"name":"Galleon",          "slots":6,"hp":400,"speed":3,"cargo":10,"cost":{"gold":500,"wood":250,"tar":40,"iron":30},   "requires_tech":3.0,"peace_upkeep":10.0, "desc":"Trade+war vessel. 6 slots."},
@@ -44,6 +49,12 @@ MODULES = {
 }
 
 LAND_UNITS = {
+    "algae_guard": {"name":"Algae Guard","attack":32,"defense":28,"hp":130,"speed":2,
+        "cost":{"gold":350,"iron":20,"gunpowder":10,"algae":3},"requires_tech":6.0,
+        "requires_discovery":"algae_land","elite":True,"peace_upkeep":18.0,"desc":"Elite defensive infantry; needs military algae research and 4 ordinary land units per elite."},
+    "algae_riders": {"name":"Algae Riders","attack":44,"defense":24,"hp":140,"speed":5,
+        "cost":{"gold":500,"horses":12,"iron":25,"algae":4},"requires_tech":6.0,
+        "requires_discovery":"algae_land","elite":True,"peace_upkeep":25.0,"desc":"Elite mobile troops; needs military algae research and 4 ordinary land units per elite."},
     "militia":        {"name":"Militia",        "attack":5, "defense":4, "hp":50,"speed":2,"cost":{"gold":10},                          "requires_tech":0.0,"peace_upkeep":1.0,"desc":"Cheap defence only."},
     "pikemen":        {"name":"Pikemen",        "attack":10,"defense":8, "hp":70,"speed":2,"cost":{"gold":20,"iron":3},                 "requires_tech":1.0,"peace_upkeep":2.0,"desc":"Anti-cavalry, reliable."},
     "musketeers":     {"name":"Musketeers",     "attack":18,"defense":6, "hp":65,"speed":2,"cost":{"gold":30,"iron":5,"gunpowder":3},   "requires_tech":2.0,"peace_upkeep":3.0,"desc":"Core ranged infantry."},
@@ -207,11 +218,13 @@ class ShipDesignerView(i18n.LocalizedView):
 
     @i18n.localized
     async def _save(self, interaction: discord.Interaction):
-        from world_service import owned, tr
+        from world_service import owned, world_lock, tr
+        from military_service import validate_discovery
         stats = _ship_stats(self.hull_key, self.selected)
         try:
             with db.atomic() as c:
-                owned(c, self.nation_id, interaction.user.id)
+                world_lock(c);n=owned(c, self.nation_id, interaction.user.id)
+                validate_discovery(c,n,HULLS[self.hull_key],'naval')
                 if self.saved: raise ValueError(tr('Projekt został już zapisany.', 'The blueprint is already saved.'))
                 bp_id = db.insert_returning_id(
                     "INSERT INTO blueprints(nation_id,type,name,hull,components_json,stats_json) VALUES(?,?,?,?,?,?)",
@@ -338,6 +351,10 @@ class MilitaryCog(commands.Cog):
                 val = (
                     i18n.text('ATK:{p0} DEF:{p1} HP:{p2} SPD:{p3}\nCost per unit: {p4}\nUpkeep: {p5:.0f}g/unit (active) / {p6:.0f}g (expedition)', p0=stats.get('attack', 0), p1=stats.get('defense', 0), p2=stats.get('hp', 0), p3=stats.get('speed', 0), p4=cost_str, p5=udata.get('peace_upkeep', 2), p6=udata.get('peace_upkeep', 2) * WAR_MULT)
                 )
+            if (hull if r['type']=='ship' else udata).get('elite'):
+                from technology import tr
+                val+='\n'+tr('Elita: 1 na 4 zwykłe jednostki tego rodzaju (armia/flota). Algae płacisz przy budowie; program miesięczny jest osobny.',
+                              'Elite: 1 per 4 ordinary units of the same kind (army/navy). Algae is paid on recruitment; the monthly program is separate.')
             embed.add_field(
                 name=f"[{r['id']}] {'⚓' if r['type']=='ship' else '⚔️'} {r['name']}",
                 value=val, inline=False,
@@ -347,6 +364,7 @@ class MilitaryCog(commands.Cog):
     @bp_grp.command(name="design_ship", description="Design a ship blueprint with button UI")
     @app_commands.describe(name="Blueprint name", hull="Hull type")
     @app_commands.choices(hull=[
+        app_commands.Choice(name="Algae Frigate / Fregata algae (elite, tech 6, 6 algae)", value="algae_frigate"),
         app_commands.Choice(name="Sloop (2 slots, fast scout, tech 0)",            value="sloop"),
         app_commands.Choice(name="Frigate (4 slots, versatile, tech 2)",           value="frigate"),
         app_commands.Choice(name="Galleon (6 slots, trade+war, tech 3)",           value="galleon"),
@@ -360,6 +378,11 @@ class MilitaryCog(commands.Cog):
         if not nat:
             await interaction.response.send_message(i18n.t(lang,"no_nation"), ephemeral=True); return
         hull_data = HULLS[hull.value]
+        from military_service import validate_discovery
+        try:
+            with db.cursor() as c:validate_discovery(c,nat,hull_data,'naval')
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
         if _tech_naval(nat) < hull_data["requires_tech"]:
             await interaction.response.send_message(
                 i18n.text('**{p0}** requires Naval tech ≥ {p1:.0f}.', p0=i18n.text(hull_data['name']), p1=hull_data['requires_tech']),
@@ -373,6 +396,8 @@ class MilitaryCog(commands.Cog):
     @bp_grp.command(name="create_unit", description="Create a land unit blueprint")
     @app_commands.describe(name="Blueprint name", unit_type="Unit type")
     @app_commands.choices(unit_type=[
+        app_commands.Choice(name="Algae Guard / Gwardia algae (elite, tech 6, 3 algae)",value="algae_guard"),
+        app_commands.Choice(name="Algae Riders / Jeźdźcy algae (elite, tech 6, 4 algae)",value="algae_riders"),
         app_commands.Choice(name="Militia / Milicja (tech 0) — ATK:5 DEF:4 HP:50 | 10g",          value="militia"),
         app_commands.Choice(name="Pikemen / Pikinierzy (tech 1) — ATK:10 DEF:8 HP:70 | 20g+żelazo", value="pikemen"),
         app_commands.Choice(name="Musketeers / Muszkieterzy (tech 2) — ATK:18 DEF:6 | 30g+proch",  value="musketeers"),
@@ -390,22 +415,32 @@ class MilitaryCog(commands.Cog):
             await interaction.response.send_message(i18n.t(lang,"no_nation"), ephemeral=True); return
         ukey  = unit_type.value
         udata = LAND_UNITS[ukey]
+        from military_service import validate_discovery
+        try:
+            with db.cursor() as c:validate_discovery(c,nat,udata,'land')
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
         if _tech_land(nat) < udata["requires_tech"]:
             await interaction.response.send_message(
                 i18n.text('**{p0}** requires Land tech ≥ {p1:.0f}.', p0=i18n.text(udata['name']), p1=udata['requires_tech']),
                 ephemeral=True); return
         stats = _unit_stats(ukey)
-        with db.cursor() as c:
-            c.execute(
+        from world_service import world_lock,owned
+        try:
+            with db.atomic() as c:
+                world_lock(c);current=owned(c,nat['id'],interaction.user.id)
+                validate_discovery(c,current,udata,'land')
+                bp_id=db.insert_returning_id(
                 "INSERT INTO blueprints(nation_id,type,name,hull,components_json,stats_json)"
                 " VALUES(?,?,?,?,?,?)",
                 (nat["id"],"unit",name,ukey,"[]",json.dumps(stats))
-            )
-            bp_id = c.lastrowid
+                )
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
         _log(nat["id"],"player",
              i18n.text("Created unit blueprint '{p0}' (#{p1}): {p2} ATK:{p3} DEF:{p4} HP:{p5}.", p0=name, p1=bp_id, p2=i18n.text(udata['name']), p3=stats['attack'], p4=stats['defense'], p5=stats['hp']))
         embed = discord.Embed(title=i18n.text('⚔️ Blueprint Created — {p0}', p0=name), color=discord.Color.dark_red())
-        pl = hasattr(interaction, 'locale') and interaction.locale and 'pl' in str(interaction.locale)
+        pl = lang=='pl'
         embed.add_field(
             name="Typ" if pl else i18n.text('Type'),
             value=i18n.t("pl", f"unit_{ukey}") if pl else udata["name"],
@@ -441,14 +476,13 @@ class MilitaryCog(commands.Cog):
         nat  = _nat_owner(str(interaction.user.id))
         if not nat:
             await interaction.response.send_message(i18n.t(lang,"no_nation"), ephemeral=True); return
-        with db.cursor() as c:
-            c.execute("SELECT * FROM blueprints WHERE id=? AND nation_id=?", (blueprint_id,nat["id"]))
-            bp = c.fetchone()
-        if not bp:
-            await interaction.response.send_message(i18n.text('Blueprint #{p0} not found.', p0=blueprint_id), ephemeral=True); return
-        with db.cursor() as c:
-            c.execute("DELETE FROM blueprints WHERE id=?", (blueprint_id,))
-        await interaction.response.send_message(i18n.text('🗑️ Blueprint **{p0}** deleted.', p0=bp['name']), ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        from military_service import delete_blueprint
+        try:
+            bp=await asyncio.to_thread(delete_blueprint,nat['id'],interaction.user.id,blueprint_id)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True);return
+        await interaction.followup.send(i18n.text('🗑️ Blueprint **{p0}** deleted.', p0=bp['name']), ephemeral=True)
 
     # ============================================================ MILITARY
 
@@ -465,64 +499,14 @@ class MilitaryCog(commands.Cog):
         nat  = _nat_owner(str(interaction.user.id))
         if not nat:
             await interaction.response.send_message(i18n.t(lang,"no_nation"), ephemeral=True); return
-        with db.cursor() as c:
-            c.execute("SELECT * FROM blueprints WHERE id=? AND nation_id=?", (blueprint_id,nat["id"]))
-            bp = c.fetchone()
-        if not bp:
-            await interaction.response.send_message(i18n.text('Blueprint #{p0} not found.', p0=blueprint_id), ephemeral=True); return
-
-        prov = None
-        if cell_id and cell_id != 0:
-            with db.cursor() as c:
-                c.execute("SELECT * FROM provinces WHERE azgaar_cell_id=? AND active=1", (cell_id,))
-                prov = c.fetchone()
-            if not prov:
-                await interaction.response.send_message(i18n.text('Province {p0} not found.', p0=cell_id), ephemeral=True); return
-
-        quantity = max(1, quantity)
-        if bp["type"] == "ship":
-            hull_data    = HULLS.get(bp["hull"], {})
-            base_cost    = dict(hull_data.get("cost", {}))
-            for m in json.loads(bp["components_json"]):
-                for r,a in MODULES.get(m,{}).get("cost",{}).items():
-                    base_cost[r] = base_cost.get(r,0) + a
-            peace_upkeep = hull_data.get("peace_upkeep", 5.0)
-        else:
-            udata        = LAND_UNITS.get(bp["hull"], {})
-            base_cost    = dict(udata.get("cost", {}))
-            peace_upkeep = udata.get("peace_upkeep", 2.0)
-            # Cloth consumption: 1 cloth per 5 land units (rounded up)
-            cloth_needed = max(1, (quantity + 4) // 5)
-            base_cost["cloth"] = base_cost.get("cloth", 0) + cloth_needed
-
-        total_cost = {r: a * quantity for r, a in base_cost.items()}
-        gold_cost  = total_cost.pop("gold", 0)
-
-        if nat["treasury"] < gold_cost:
-            await interaction.response.send_message(
-                i18n.text('Not enough gold. Need **{p0:,}g**, have **{p1:,.0f}g**.', p0=gold_cost, p1=nat['treasury']),
-                ephemeral=True); return
-
-        res = json.loads(nat["resources_json"])
-        for r, a in total_cost.items():
-            if res.get(r, 0) < a:
-                await interaction.response.send_message(
-                    i18n.text('Not enough **{p0}**. Need {p1}, have {p2:.0f}.', p0=r, p1=a, p2=res.get(r, 0)), ephemeral=True); return
-        for r, a in total_cost.items():
-            res[r] = res.get(r, 0) - a
-
-        prov_id = prov["id"] if prov else None
-        from economy_engine import lock_nation
-        from economy_services import spend
+        await interaction.response.defer(ephemeral=True)
+        from military_service import recruit
         try:
-            with db.atomic() as c:
-                current=lock_nation(c,nat['id'])
-                spend(c,current,dict(total_cost,gold=gold_cost))
-                unit_id=db.insert_returning_id(
-                    "INSERT INTO military_units(nation_id,blueprint_id,unit_type,quantity,province_id) VALUES(?,?,?,?,?)",
-                    (nat['id'],blueprint_id,bp['hull'],quantity,prov_id))
+            result=await asyncio.to_thread(recruit,nat['id'],interaction.user.id,blueprint_id,quantity,cell_id)
         except ValueError as exc:
-            await interaction.response.send_message(str(exc),ephemeral=True);return
+            await interaction.followup.send(str(exc),ephemeral=True);return
+        bp=result['blueprint'];prov=result['province'];unit_id=result['id']
+        peace_upkeep=result['upkeep'];total_cost=dict(result['cost']);gold_cost=total_cost.pop('gold',0)
 
         loc_str = (prov["name"] or i18n.text('Cell #{p0}', p0=cell_id)) if prov else i18n.text('floating (unassigned)')
         _log(nat["id"],"system",
@@ -540,7 +524,7 @@ class MilitaryCog(commands.Cog):
         embed.add_field(name=i18n.text('Active upkeep'), value=i18n.text('{p0:.0f}g/tick', p0=peace_upkeep * quantity),  inline=True)
         embed.add_field(name=i18n.text('Expedition upkeep'),   value=i18n.text('{p0:.0f}g/tick', p0=peace_upkeep * quantity * WAR_MULT), inline=True)
         embed.set_footer(text=i18n.text('Unit group ID: {p0} — use /military move {p1} <cell> to assign', p0=unit_id, p1=unit_id))
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed,ephemeral=True)
 
     @mil_grp.command(name="list", description="View your forces (private) / Twoje wojsko")
     @app_commands.describe(nation="Nation name — GM only")
@@ -583,6 +567,8 @@ class MilitaryCog(commands.Cog):
             json.loads(r["stats_json"] or "{}").get("cargo", 0) * r["quantity"]
             for r in rows if r["btype"] == "ship"
         )
+        from technology import bonuses
+        with db.cursor() as c:total_cargo*=1+bonuses(c,nat['id']).get('cargo',0)
         embed.add_field(
             name=i18n.text('Status'),
             value=(
@@ -668,47 +654,15 @@ class MilitaryCog(commands.Cog):
         nat  = _nat_owner(str(interaction.user.id))
         if not nat:
             await interaction.response.send_message(i18n.t(lang,"no_nation"), ephemeral=True); return
-        with db.cursor() as c:
-            c.execute(
-                "SELECT u.*,b.name as bname FROM military_units u "
-                "LEFT JOIN blueprints b ON u.blueprint_id=b.id "
-                "WHERE u.id=? AND u.nation_id=?",
-                (unit_id, nat["id"])
-            )
-            unit = c.fetchone()
-        if not unit:
-            await interaction.response.send_message(i18n.text('Unit group #{p0} not found.', p0=unit_id), ephemeral=True); return
-
-        # Block if committed to a pending (unmatched or matched) battle plan
-        with db.cursor() as c:
-            c.execute(
-                "SELECT p.id FROM battle_plans p "
-                "WHERE p.nation_id=? AND p.status IN ('unmatched','matched') "
-                "AND p.forces_json LIKE ?",
-                (nat["id"], f'%"unit_id": {unit_id}%')
-            )
-            committed = c.fetchone()
-        if not committed:
-            # Also check without space after colon
-            with db.cursor() as c:
-                c.execute(
-                    "SELECT p.id FROM battle_plans p "
-                    "WHERE p.nation_id=? AND p.status IN ('unmatched','matched') "
-                    "AND p.forces_json LIKE ?",
-                    (nat["id"], f'%"unit_id":{unit_id}%')
-                )
-                committed = c.fetchone()
-        if committed:
-            await interaction.response.send_message(
-                i18n.text('❌ Unit group #{p0} is committed to battle plan #{p1} which is still pending resolution. Wait for the battle to resolve first.', p0=unit_id, p1=committed['id']),
-                ephemeral=True)
-            return
-
-        with db.cursor() as c:
-            c.execute("DELETE FROM military_units WHERE id=?", (unit_id,))
+        await interaction.response.defer(ephemeral=True)
+        from military_service import disband
+        try:
+            unit=await asyncio.to_thread(disband,nat['id'],interaction.user.id,unit_id)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True);return
         _log(nat["id"],"player",
              i18n.text('Disbanded group #{p0}: {p1}× {p2}.', p0=unit_id, p1=unit['quantity'], p2=unit['bname'] or i18n.term('unknown')))
-        await interaction.response.send_message(
+        await interaction.followup.send(
             i18n.text('🗑️ Disbanded **{p0}× {p1}**.', p0=unit['quantity'], p1=unit['bname'] or i18n.term('unknown')), ephemeral=True)
 
 
