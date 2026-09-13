@@ -67,23 +67,50 @@ pola lądowego. Dotychczas zapisane złoża są zachowane do ręcznej zmiany prz
 Usunięcie złoża zatrzymuje wydobycie, ale zachowuje budynek oraz zapasy graczy.
 Powtórny import i restart nie odtwarzają usuniętych złóż.
 
-**Śladowe pozyskiwanie**: `/algae gather` i przycisk w Technologiach.
-Wymaga **własnej aktywnej prowincji ze złożem** oraz gospodarki **3**.
-Po potwierdzeniu gracz płaci **100 złota + 10 drewna** za **0,05 algae**.
-Limit: jedna partia na państwo na miesiąc gry, łącznie ze wszystkich złóż.
-Nie wymaga farmy, nie tworzy złoża i nie działa poza złożami.
-To koszt 2000 złota i 200 drewna za 1 algae; wydajność farm pozostaje znacznie
-lepsza. Nieudana próba nie pobiera opłaty ani nie wykorzystuje limitu.
-Prognoza i restart nie odnawiają limitu. Zmiana właściciela państwa również go
-nie odnawia. Pozyskiwanie i farmy mogą działać w tym samym miesiącu.
+## Automatyczne wydobycie od gospodarki 3
 
-Farma algae wymaga posiadania stanowiska i gospodarki co najmniej 6.
-Domyślnie kosztuje **400 złota + 60 drewna**, potrzebuje **250 pracowników**
-i **8 złota miesięcznego utrzymania** przy pełnej obsadzie. W prowincji można
-mieć jeden taki budynek. Produkcja przed stabilnością, zatrudnieniem i etapem
-kolonii: poziom 1 — **0,5**, poziom 2 — **0,85**, poziom 3 — **1,2 algae/miesiąc**.
-Premie przemysłowe nie mnożą algae. Samo posiadanie stanowiska nie daje surowca.
-Dostępne pozostają wymiany jednorazowe i istniejące kontrakty miesięczne.
+**Technologie → Wydobycie algae** i `/algae production` pokazują prognozę,
+własne złoża oraz przyciski budowy i ulepszania farm. Gracz raz buduje farmę,
+a potem surowiec trafia do magazynu przy każdym miesięcznym rozliczeniu.
+Ręczne zbieranie `/algae gather` zostało zastąpione tym mechanizmem.
+
+Farma poziomu 1 wymaga własnego aktywnego złoża i **gospodarki 3**.
+Domyślny koszt pozostaje **400 złota + 60 drewna**, potrzeba **250 pracowników**,
+a utrzymanie przy pełnej obsadzie to **8 złota miesięcznie**.
+
+| Technologia gospodarcza | Bazowa produkcja farmy poziomu 1 / miesiąc |
+| --- | ---: |
+| poniżej 3 | 0 — farma nieaktywna |
+| od 3 do poniżej 4 | 0,05 algae |
+| od 4 do poniżej 5 | 0,1 algae |
+| od 5 do poniżej 6 | 0,2 algae |
+| 6 i więcej | 0,5 algae |
+
+Są to **poziomy technologii gospodarczej**, nie poziomy budynku. Poziomy
+ułamkowe nie przyspieszają produkcji przed przekroczeniem następnego progu.
+Próg osiągnięty po zakończeniu badania działa od kolejnego rozliczenia produkcji.
+
+Ulepszenia do poziomów budynku 2 i 3 wymagają gospodarki **6**. Ich dotychczasowa
+bazowa produkcja pozostaje: **0,85 i 1,2 algae miesięcznie**. Koszty ulepszeń,
+pracownicy i utrzymanie pozostają takie jak dla innych budynków. Jeśli GM
+obniży technologię poniżej 6, ulepszona farma tymczasowo działa jak poziom 1;
+zapisane ulepszenia wracają do działania po odzyskaniu gospodarki 6.
+
+Rzeczywistą produkcję mnożą obsada, stabilność i etap kolonii. Ręczne przydziały
+pracowników działają również dla farm algae. Premie przemysłowe nie zwiększają
+algae. Samo złoże bez farmy nie produkuje surowca; bez własnego złoża nie można
+ani zbudować farmy, ani prowadzić śladowego wydobycia.
+
+Nie ma dodatkowego kliknięcia ani opłaty za pojedynczą partię, ani limitu
+jednej partii na państwo. Każda własna obsadzona farma na złożu produkuje
+raz na miesiąc gry. Prognoza nie zapisuje produkcji; restart nie daje
+bonusowej wypłaty. Dotychczasowe zapasy, w tym pozyskane wcześniej ręcznie,
+pozostają. Stara tabela limitów ręcznego zbierania nie jest już używana.
+
+Migracja obniża stary domyślny wymóg farm z 6 do 3. Zachowuje własne ceny,
+ustawienia GM oraz zapisane budynki. Starsze farmy na złożach zaczynają działać
+od gospodarki 3 bez potrzeby ponownego budowania. Niestandardowy wyższy wymóg
+budowy ustawiony przez GM pozostaje jego ustawieniem.
 
 ## Cztery programy algae
 
@@ -136,7 +163,7 @@ Nowe odkrycia zaczynają się od pustego katalogu osiągnięć. Nowe tabele doda
 `db.init_db`; nie potrzeba ręcznego SQL ani nowych zmiennych środowiskowych.
 
 **Zmiana dla istniejącego wydobycia:** farmy poza wybranymi stanowiskami lub
-bez gospodarki 6 pozostają w prowincjach, ale nie produkują i nie pobierają
+bez gospodarki 3 pozostają w prowincjach, ale nie produkują i nie pobierają
 pracowników ani utrzymania. Domyślna produkcja starych farm zmienia się z 1 na
 0,5; własne ceny i inne ustawienia GM są zachowane. Dodatnia produkcja algae
 z bazowych zasobów, innych budynków i cyklicznych efektów projektów jest

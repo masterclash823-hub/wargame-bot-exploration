@@ -65,14 +65,14 @@ class TechCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         await ui.deliver(interaction,embed=ui.locations_embed())
 
-    @algae_grp.command(name='gather',description='Gather trace algae on your deposit at high cost (economy 3)')
+    @algae_grp.command(name='production',description='View automatic algae production and build or upgrade farms')
     @i18n.localized
-    async def algae_gather(self,interaction:discord.Interaction):
+    async def algae_production(self,interaction:discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         n=get_nation_by_owner(str(interaction.user.id))
         if not n:
             await ui.deliver(interaction,content=i18n.t(i18n.current_language(),'no_nation'));return
-        await ui.show_gather(interaction,n['id'])
+        await ui.show_production(interaction,n['id'])
 
     async def edit_deposit(self,interaction,cell_id,add):
         if not gm_only(interaction):

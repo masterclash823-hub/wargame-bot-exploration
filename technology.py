@@ -11,9 +11,15 @@ TECH_MAX = 10.0
 BASE_KNOWLEDGE = 1
 MAX_ALGAE_SITES = 5
 ALGAE_YIELD = .5
-GATHER_YIELD = .05
-GATHER_COST = {'gold': 100, 'wood': 10}
-GATHER_TECH = 3
+
+
+def algae_yield(economy):
+    """Base monthly output of a level-one farm, before staffing/world factors."""
+    if economy<3:return 0.
+    if economy<4:return .05
+    if economy<5:return .1
+    if economy<6:return .2
+    return ALGAE_YIELD
 
 
 def tr(pl, en):
@@ -111,29 +117,6 @@ def set_deposit(cell, add):
             if not exists:raise ValueError(tr('Ta prowincja nie ma złoża.', 'This province has no deposit.'))
             c.execute('DELETE FROM algae_sites WHERE province_id=?', (p['id'],))
         return p
-
-
-def gather(nid, uid):
-    """Expensive trace extraction, at most one batch per nation per game month."""
-    from world_service import world_lock, owned, month_index
-    from economy_services import spend
-    with db.atomic() as c:
-        world_lock(c);n=owned(c,nid,uid);month=month_index(c)
-        if json.loads(n['tech_json']).get('economy',3)<GATHER_TECH:
-            raise ValueError(tr('Śladowe pozyskiwanie wymaga gospodarki 3.', 'Trace gathering requires economy 3.'))
-        c.execute("SELECT p.id FROM provinces p JOIN algae_sites a ON a.province_id=p.id WHERE p.owner_nation_id=? AND p.active=1 AND p.terrain NOT IN ('water','ocean','sea') LIMIT 1", (nid,))
-        if not c.fetchone():raise ValueError(tr('Potrzebujesz własnej prowincji ze złożem algae. Sprawdź /algae locations.', 'You need your own province with an algae deposit. See /algae locations.'))
-        c.execute('SELECT last_month FROM algae_gathering WHERE nation_id=?', (nid,));last=c.fetchone()
-        if last and last['last_month']>=month:
-            raise ValueError(tr('Limit wykorzystany. Kolejna próba w następnym miesiącu gry.', 'Batch already gathered. Try again next game month.'))
-        spend(c,n,GATHER_COST)
-        c.execute('SELECT resources_json FROM nations WHERE id=?',(nid,))
-        res=json.loads(c.fetchone()['resources_json'])
-        res['algae']=round(res.get('algae',0)+GATHER_YIELD,6)
-        c.execute('UPDATE nations SET resources_json=? WHERE id=?',(json.dumps(res),nid))
-        c.execute('INSERT INTO algae_gathering(nation_id,last_month) VALUES(?,?) '
-                  'ON CONFLICT(nation_id) DO UPDATE SET last_month=excluded.last_month',(nid,month))
-        return res['algae']
 
 
 # A game-design analogy, not the historical dates of individual inventions.

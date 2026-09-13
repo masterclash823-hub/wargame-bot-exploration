@@ -175,8 +175,8 @@ def locations_embed():
                   'LEFT JOIN nations n ON n.id=p.owner_nation_id WHERE p.active=1 ORDER BY p.azgaar_cell_id')
         sites=c.fetchall()
     e=discord.Embed(title='🧪 '+tech.tr('Stanowiska algae','Algae deposits'),color=discord.Color.dark_green())
-    e.description=tech.tr('Złoża wskazuje GM: /algae deposit_add i deposit_remove. Limit: 5. Farma wymaga własnego złoża, gospodarki 6 i 250 pracowników; bazowo 0,5 algae/miesiąc (poziom 3: 1,2). Przy gospodarce 3 możesz na własnym złożu użyć /algae gather: tylko 0,05 algae za 100 złota i 10 drewna, raz na miesiąc gry.',
-                         'Deposits are placed by the GM: /algae deposit_add and deposit_remove. Limit: 5. Farms need your own deposit, economy 6 and 250 workers; base output 0.5 algae/month (level 3: 1.2). With economy 3, use /algae gather on your own deposit: just 0.05 algae for 100 gold and 10 wood, once per game month.')
+    e.description=tech.tr('Złoża wskazuje GM: /algae deposit_add i deposit_remove. Limit: 5. Farma poziomu 1 wymaga własnego złoża, gospodarki 3 i 250 pracowników. Produkuje automatycznie: gospodarka 3 → 0,05; 4 → 0,1; 5 → 0,2; 6+ → 0,5 algae/miesiąc. Przy gospodarce 6 można ulepszyć farmę: poziom 2 → 0,85, poziom 3 → 1,2. To wartości bazowe przed obsadą, stabilnością i etapem kolonii.',
+                         'The GM places deposits: /algae deposit_add and deposit_remove. Limit: 5. A level-one farm needs your own deposit, economy 3 and 250 workers. Automatic output: economy 3 → 0.05; 4 → 0.1; 5 → 0.2; 6+ → 0.5 algae/month. At economy 6, upgrade the farm: level 2 → 0.85, level 3 → 1.2. These are base values before staffing, stability and colony-stage factors.')
     for p in sites:
         title=f"#{p['azgaar_cell_id']} · {p['name'] or i18n.term(p['terrain'])}"
         value=(p['owner_name'] or tech.tr('Niczyje','Unclaimed'))+' · '+i18n.term(p['terrain'])
@@ -191,21 +191,59 @@ def locations_embed():
     return e
 
 
-async def show_gather(interaction,nid):
+async def show_production(interaction,nid,*,edit=False,notice=None):
+    from economy_engine import forecast,read_json,building_level,LEVEL_OUTPUT
+    from economy_services import build
     n,_,_=state(nid)
     if not n or n['owner_id']!=str(interaction.user.id):raise ValueError(i18n.text('This is not your menu.'))
-    e=discord.Embed(title='🧪 '+tech.tr('Śladowe pozyskiwanie algae','Trace algae gathering'),color=discord.Color.dark_green())
-    e.description=tech.tr('Wymaga własnej prowincji ze złożem i gospodarki 3. Płacisz **100 złota + 10 drewna** za **0,05 algae**. Limit: jedna próba na państwo na miesiąc gry. To kosztowna metoda awaryjna; farma przy gospodarce 6 jest znacznie wydajniejsza.',
-                         'Requires your own province with a deposit and economy 3. Pay **100 gold + 10 wood** for **0.05 algae**. Limit: one batch per nation per game month. This is an expensive fallback; a farm at economy 6 is much more efficient.')
+    if not response_done(interaction):await interaction.response.defer(ephemeral=True)
+    with db.cursor() as c:
+        c.execute('SELECT p.*,d.levels_json FROM provinces p JOIN algae_sites a ON a.province_id=p.id '
+                  'LEFT JOIN province_development d ON d.province_id=p.id WHERE p.owner_nation_id=? AND p.active=1 ORDER BY p.azgaar_cell_id',(nid,))
+        sites=c.fetchall()
+        c.execute("SELECT * FROM building_defs WHERE key='algae_farm'");definition=c.fetchone()
+    result=await asyncio.to_thread(forecast,nid)
+    n,_,_=state(nid)
+    if not n or n['owner_id']!=str(interaction.user.id):raise ValueError(i18n.text('This is not your menu.'))
+    economy=read_json(n['tech_json']).get('economy',3)
+    e=flagged_embed(discord.Embed(title='🧪 '+tech.tr('Wydobycie algae','Algae production'),color=discord.Color.dark_green()),(n['flag'],n['name']))
+    e.description=tech.tr('Zbuduj farmę na własnym złożu. Od następnego rozliczenia produkuje co miesiąc automatycznie. Poziom 1: gospodarka 3 → 0,05; 4 → 0,1; 5 → 0,2; 6+ → 0,5 algae/miesiąc. Ulepszenia do poziomu 2 (0,85) i 3 (1,2) wymagają gospodarki 6. Obsada, stabilność i etap kolonii wpływają na wynik.',
+                         'Build a farm on your own deposit. It produces automatically every month from the next settlement. Level one: economy 3 → 0.05; 4 → 0.1; 5 → 0.2; 6+ → 0.5 algae/month. Upgrades to level 2 (0.85) and 3 (1.2) require economy 6. Staffing, stability and colony stage affect the result.')
+    e.add_field(name=tech.tr('Gospodarka / zapas algae','Economy / algae stock'),value=f"{economy:g} / {read_json(n['resources_json']).get('algae',0):g}")
+    e.add_field(name=tech.tr('Prognoza wydobycia / miesiąc','Extraction forecast / month'),value=f"{result['production'].get('algae',0):.3f}")
+    if definition:
+        e.add_field(name=tech.tr('Budowa poziomu 1','Build level one'),value=i18n.resource_list(read_json(definition['cost_json']))+'\n'+tech.tr('Bazowe utrzymanie przy pełnej obsadzie: ','Base upkeep when fully staffed: ')+i18n.resource_list(read_json(definition['upkeep_json'])),inline=False)
     view=PrivateView(nid,interaction.user.id)
-    async def confirm(i):
-        stock=await asyncio.to_thread(tech.gather,nid,i.user.id)
-        await deliver(i,content=tech.tr(f'Pozyskano 0,05 algae. Zapas: {stock:g}. Kolejna próba w następnym miesiącu gry.',
-                                      f'Gathered 0.05 algae. Stock: {stock:g}. Next batch available next game month.'),edit=True)
-    view.button(tech.tr('Zapłać i pozyskaj','Pay and gather'),confirm,style=discord.ButtonStyle.danger)
-    async def cancel(i):await deliver(i,content=tech.tr('Anulowano.', 'Cancelled.'),edit=True)
-    view.button(tech.tr('Anuluj','Cancel'),cancel)
-    await deliver(interaction,embed=e,view=view)
+    for p in sites:
+        exists='algae_farm' in read_json(p['buildings_json'],[])
+        levels=read_json(p['levels_json']);stored=levels.get('algae_farm',1) if exists else 0
+        active=building_level('algae_farm',levels,economy) if exists else 0
+        info=tech.tr('Brak farmy.','No farm.') if not exists else tech.tr('Poziom budynku: ','Building level: ')+str(stored)
+        if exists and active!=stored:info+=' · '+tech.tr('działa jako poziom 1 do gospodarki 6','operates at level one until economy 6')
+        e.add_field(name=f"#{p['azgaar_cell_id']} · {p['name']}"[:256],value=info,inline=False)
+        if stored>=3 or not definition:continue
+        cost={k:v*({0:1,1:1.5,2:2}[stored]) for k,v in read_json(definition['cost_json']).items()}
+        required=max(6 if exists else 3,definition['requires_tech'])
+        async def inspect(i,cell=p['azgaar_cell_id'],upgrade=exists,price=cost):
+            confirm=PrivateView(nid,i.user.id)
+            async def pay(j):
+                level,paid=await asyncio.to_thread(build,nid,cell,'algae_farm',upgrade,uid=j.user.id)
+                await show_production(j,nid,edit=True,notice=tech.tr('Farma ma poziom ','Farm level is now ')+str(level)+'. '+i18n.resource_list(paid))
+            async def cancel(j):await show_production(j,nid,edit=True)
+            confirm.button(tech.tr('Potwierdź budowę','Confirm construction'),pay,style=discord.ButtonStyle.success)
+            confirm.button(tech.tr('Anuluj','Cancel'),cancel)
+            preview=discord.Embed(description=tech.tr('Prowincja ','Province ')+f'#{cell} · '+i18n.resource_list(price))
+            await deliver(i,embed=preview,view=confirm,edit=True)
+        label=tech.tr('Ulepsz','Upgrade') if exists else tech.tr('Zbuduj farmę','Build farm')
+        view.button(f"{label} #{p['azgaar_cell_id']}",inspect,disabled=economy<required)
+    if not sites:e.add_field(name='—',value=tech.tr('Nie masz aktywnego złoża. Sprawdź /algae locations lub kup algae od graczy.', 'You have no active deposit. See /algae locations or trade for algae.'))
+    async def workers(i):
+        from labor_ui import show as show_workers
+        await show_workers(i,nid,edit=True)
+    async def refresh(i):await show_production(i,nid,edit=True)
+    view.button(tech.tr('Pracownicy','Workers'),workers)
+    view.button(tech.tr('Odśwież','Refresh'),refresh)
+    await deliver(interaction,content=notice,embed=e,view=view,edit=edit)
 
 
 async def show_programs(interaction,nid,*,edit=False):

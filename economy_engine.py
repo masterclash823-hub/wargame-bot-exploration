@@ -27,6 +27,11 @@ def read_json(value, default=None):
     return value
 
 
+def building_level(key,levels,economy):
+    level=min(3,max(1,int(levels.get(key,1))))
+    return 1 if key=='algae_farm' and economy<6 else level
+
+
 def lock_nation(c, nid):
     c.execute('SELECT * FROM nations WHERE id=?' + (' FOR UPDATE' if db.USE_POSTGRES else ''), (nid,))
     nation = c.fetchone()
@@ -113,6 +118,7 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
     """Pure one-month forecast. Shared unchanged by dashboard and settlement."""
     p = dict(prefs)
     effects=nation.get('research_bonuses',{})
+    economy_level=read_json(nation['tech_json']).get('economy',3)
     res = {k:max(0,float(v)) for k,v in read_json(nation['resources_json']).items() if isinstance(v,(float,int))}
     start_gold = float(nation['treasury'])
     stability = min(100, max(0, float(nation['stability'])))
@@ -131,8 +137,8 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
         col = {'outpost':.5,'settlement':.75,'colony':.9}.get(prov.get('colony_status'), 1)
         levels = read_json(prov.get('levels_json'))
         buildings = list(dict.fromkeys(read_json(prov['buildings_json'], [])))
-        blocked_algae=not prov.get('algae_site') or read_json(nation['tech_json']).get('economy',3)<6
-        manual={k:min(max(0,v),WORKERS.get(k,200)*LEVEL_WORK[min(3,max(1,int(levels.get(k,1))))])
+        blocked_algae=not prov.get('algae_site') or economy_level<3
+        manual={k:min(max(0,v),WORKERS.get(k,200)*LEVEL_WORK[building_level(k,levels,economy_level)])
                 for k,v in read_json(prov.get('allocations_json')).items()
                 if k in buildings and k in definitions and isinstance(v,(int,float)) and math.isfinite(v)
                 and not (k=='algae_farm' and blocked_algae)}
@@ -149,9 +155,9 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
             bd = definitions.get(key)
             if not bd: continue
             if key=='algae_farm' and blocked_algae:
-                staffing.append(dict(cell=prov['azgaar_cell_id'],building=key,level=levels.get(key,1),staff=0,workers=0,need=250*LEVEL_WORK[min(3,max(1,int(levels.get(key,1))))],blocked='algae_site_or_tech'))
+                staffing.append(dict(cell=prov['azgaar_cell_id'],building=key,level=building_level(key,levels,economy_level),staff=0,workers=0,need=250*LEVEL_WORK[building_level(key,levels,economy_level)],blocked='algae_site_or_tech'))
                 continue  # Dormant legacy farms have no workers or upkeep.
-            level = min(3,max(1,int(levels.get(key,1))))
+            level = building_level(key,levels,economy_level)
             need = WORKERS.get(key,200)*LEVEL_WORK[level]
             workers=assigned[key] if key in assigned else min(need,workforce)
             ratio=workers/need if need else 1.
@@ -168,9 +174,9 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
                 port_staff.append(ratio)
             if key=='granary': granaries += ratio*LEVEL_OUTPUT[level]
             outputs={k:v for k,v in read_json(bd['effect_json']).items() if isinstance(v,(int,float)) and math.isfinite(v)}
-            from technology import ALGAE_YIELD
+            from technology import algae_yield
             if outputs.get('algae',0)>0:
-                if key=='algae_farm':outputs['algae']=min(ALGAE_YIELD,outputs['algae'])
+                if key=='algae_farm':outputs['algae']=min(algae_yield(economy_level),outputs['algae'])
                 else:outputs.pop('algae')
             for resource,value in list(outputs.items()):
                 if value<=0 or resource=='algae':continue

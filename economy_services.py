@@ -19,10 +19,12 @@ def spend(c,n, cost):
               (json.dumps(res),cost.get('gold',0),n['id']))
 
 
-def build(nid,cell,key,upgrade=False):
+def build(nid,cell,key,upgrade=False,uid=None):
     from cogs.economy import _tech_ok,_terrain_ok
+    from world_service import world_lock,owned
     with db.atomic() as c:
-        n=lock_nation(c,nid)
+        world_lock(c)
+        n=owned(c,nid,uid) if uid is not None else lock_nation(c,nid)
         c.execute('SELECT * FROM provinces WHERE azgaar_cell_id=? AND owner_nation_id=? AND active=1'+(' FOR UPDATE' if db.USE_POSTGRES else ''),(cell,nid))
         p=c.fetchone()
         if not p: raise ValueError(i18n.text('Province not found or not yours.'))
@@ -38,7 +40,8 @@ def build(nid,cell,key,upgrade=False):
             c.execute('SELECT province_id FROM algae_sites WHERE province_id=?',(p['id'],))
             if not c.fetchone():
                 raise ValueError(i18n.text('Algae extraction requires a rare deposit. See /algae locations.'))
-        if (key!='algae_farm' and not _terrain_ok(p['terrain'],b['requires_terrain'])) or not _tech_ok(n,max(6,b['requires_tech']) if key=='algae_farm' else b['requires_tech'],key):
+        required=max(6 if upgrade else 3,b['requires_tech']) if key=='algae_farm' else b['requires_tech']
+        if (key!='algae_farm' and not _terrain_ok(p['terrain'],b['requires_terrain'])) or not _tech_ok(n,required,key):
             raise ValueError(i18n.text('Terrain or technology requirements are not met.'))
         multiplier={0:1,1:1.5,2:2}[old]
         cost={k:v*multiplier for k,v in read_json(b['cost_json']).items()}

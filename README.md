@@ -208,8 +208,7 @@ Każde państwo otrzymuje 1 darmową wiedzę na miesiąc gry; uniwersytety przys
 badania. Jeden projekt naraz, automatyczny postęp, istniejące poziomy zachowane.
 
 `/algae locations` pokazuje do pięciu złóż wskazanych przez GM komendami
-`/algae deposit_add` i `/algae deposit_remove`. Wydajne pozyskiwanie algae wymaga
-wydobycia lub handlu i zasila silne programy gospodarki, armii, marynarki i kolonii.
+`/algae deposit_add` i `/algae deposit_remove`. Algae z wydobycia lub handlu zasila silne programy gospodarki, armii, marynarki i kolonii.
 `/algae programs` pozwala włączyć programy za 1 algae miesięcznie każdy.
 Megaprojekty mają nazwę „projekty” i komendy `/project`; zapisane projekty pozostają.
 
@@ -217,8 +216,13 @@ Megaprojekty mają nazwę „projekty” i komendy `/project`; zapisane projekty
 poza stanowiskami są nieaktywne i nie ponoszą kosztów utrzymania.
 
 
-`/algae gather`: tylko **na własnym złożu**, od gospodarki 3, raz na miesiąc
-gry: 0,05 algae za 100 złota i 10 drewna. W panelu wojska są kosztowne elitarne
+`/algae production` i **Technologie → Wydobycie algae** obsługują budowę farm
+na własnych złożach i pokazują prognozę. Farma poziomu 1 jest dostępna od
+gospodarki 3. Automatyczna bazowa produkcja co miesiąc gry: gospodarka 3 → 0,05;
+4 → 0,1; 5 → 0,2; 6+ → 0,5 algae. Od gospodarki 6 można ulepszyć budynek:
+poziom 2 → 0,85; poziom 3 → 1,2. Obsada, stabilność i etap kolonii wpływają na wynik.
+
+W panelu wojska są kosztowne elitarne
 gwardie, jeźdźcy i fregaty algae; rekrutacja wymaga 4 zwykłych jednostek na
 każdą elitarną. `/nation stats` pokazuje umowny odpowiednik roku technologicznego.
 

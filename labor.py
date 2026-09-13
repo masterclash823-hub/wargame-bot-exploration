@@ -3,7 +3,7 @@ import json
 import math
 
 import db
-from economy_engine import WORKERS,LEVEL_WORK,read_json
+from economy_engine import WORKERS,LEVEL_WORK,read_json,building_level
 from technology import tr
 
 
@@ -13,7 +13,7 @@ def set_assignment(nid,uid,cell,building=None,workers=None):
     if workers is not None and (type(workers) is not int or workers<0):
         raise ValueError(tr('Podaj nieujemną, całkowitą liczbę pracowników.', 'Enter a non-negative whole number of workers.'))
     with db.atomic() as c:
-        world_lock(c);owned(c,nid,uid)
+        world_lock(c);n=owned(c,nid,uid)
         c.execute('SELECT p.*,d.levels_json FROM provinces p LEFT JOIN province_development d ON d.province_id=p.id '
                   'WHERE p.azgaar_cell_id=? AND p.owner_nation_id=? AND p.active=1',(cell,nid))
         p=c.fetchone()
@@ -24,7 +24,7 @@ def set_assignment(nid,uid,cell,building=None,workers=None):
         if building is None:values={}
         else:
             if building not in buildings:raise ValueError(tr('W tej prowincji nie ma tego budynku.', 'This building is not in the province.'))
-            need=WORKERS.get(building,200)*LEVEL_WORK[min(3,max(1,int(levels.get(building,1))))]
+            need=WORKERS.get(building,200)*LEVEL_WORK[building_level(building,levels,read_json(n['tech_json']).get('economy',3))]
             if workers is None:values.pop(building,None)
             else:
                 if workers>need:raise ValueError(tr(f'Ten budynek potrzebuje najwyżej {need:g} pracowników.', f'This building needs at most {need:g} workers.'))

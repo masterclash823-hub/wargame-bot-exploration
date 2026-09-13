@@ -160,7 +160,7 @@ class AlgaeTests(ResearchFixture,unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'rare deposit'):build(1,10,'algae_farm')
         self.assertEqual(self.nation(),before)
         with db.cursor() as c:c.execute('INSERT INTO algae_sites(province_id) VALUES(?)',(self.pid,))
-        self.levels(economy=5)
+        self.levels(economy=2.99)
         with self.assertRaises(ValueError):build(1,10,'algae_farm')
         self.levels(economy=6);build(1,10,'algae_farm')
         r=forecast(1)

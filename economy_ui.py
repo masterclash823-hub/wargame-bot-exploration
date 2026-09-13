@@ -37,8 +37,8 @@ def dashboard(n,r):
     if p['arrears']:tips.append(tr('⚠️ Brak złota na rachunki. Zmniejsz armię aktywną lub przenieś ją do rezerwy.',
                                   '⚠️ Bills exceed available gold. Reduce active forces or put units in reserve.'))
     blocked=sum(s.get('blocked')=='algae_site_or_tech' for s in r['staffing'])
-    if blocked:tips.append(tr('🧪 Nieaktywne farmy algae: potrzebują rzadkiego stanowiska i gospodarki 6. Sprawdź /algae locations.',
-                              '🧪 Dormant algae farms need a rare deposit and economy 6. See /algae locations.'))
+    if blocked:tips.append(tr('🧪 Nieaktywne farmy algae: potrzebują własnego złoża i gospodarki 3. Sprawdź /algae locations.',
+                              '🧪 Dormant algae farms need your own deposit and economy 3. See /algae locations.'))
     for program in r.get('algae_programs',[]):
         if program['enabled'] and not program['funded']:
             tips.append('🧪 '+i18n.term(program['category'])+': '+tr('brak algae na program w następnym miesiącu.','not enough algae for next month’s program.'))

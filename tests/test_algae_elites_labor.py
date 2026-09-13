@@ -41,46 +41,98 @@ class AlgaeExtensionTests(ResearchFixture,unittest.TestCase):
         with self.assertRaises(ValueError):tech.set_deposit(10,False)
         tech.set_deposit(15,True)
 
-    def test_trace_gathering_requires_own_active_deposit_and_tech(self):
+    def test_automatic_low_tech_farm_requires_own_deposit(self):
+        from economy_services import build
         self.resources(wood=100)
-        before=self.nation()
-        with self.assertRaises(ValueError):tech.gather(1,1)
-        self.assertEqual(self.nation(),before)
-        tech.set_deposit(10,True);self.levels(economy=2)
-        with self.assertRaises(ValueError):tech.gather(1,1)
         self.levels(economy=3)
-        self.assertEqual(tech.gather(1,1),.05)
-        self.assertEqual(self.nation()['treasury'],900)
-        self.assertEqual(json.loads(self.nation()['resources_json'])['wood'],90)
-        run_tick();tech.set_deposit(10,False)
-        with self.assertRaises(ValueError):tech.gather(1,1)
-        tech.set_deposit(10,True)
-        with db.cursor() as c:c.execute('UPDATE provinces SET owner_nation_id=2 WHERE id=?',(self.pid,))
-        with self.assertRaises(ValueError):tech.gather(1,1)
-
-    def test_gathering_concurrency_cooldown_and_forecast_rollback(self):
-        tech.set_deposit(10,True);self.resources(wood=100)
-        def attempt(_):
-            try:tech.gather(1,1);return True
-            except ValueError:return False
-        with ThreadPoolExecutor(2) as pool:self.assertEqual(sum(pool.map(attempt,range(2))),1)
-        before=self.nation();forecast(1)
-        self.assertEqual(self.nation(),before)
-        self.assertFalse(attempt(0))
-        run_tick();self.assertTrue(attempt(0))
-        self.assertEqual(json.loads(self.nation()['resources_json'])['algae'],.1)
-
-    def test_failed_gather_never_charges_or_consumes_cooldown(self):
-        tech.set_deposit(10,True);self.resources(wood=9)
         before=self.nation()
-        with self.assertRaises(ValueError):tech.gather(1,1)
+        with self.assertRaises(ValueError):build(1,10,'algae_farm',uid=1)
         self.assertEqual(self.nation(),before)
-        self.assertFalse(self.rows('SELECT * FROM algae_gathering'))
-        self.resources(wood=100)
-        with self.assertRaises(ValueError):tech.gather(1,2)
-        self.assertFalse(self.rows('SELECT * FROM algae_gathering'))
+        tech.set_deposit(10,True)
+        self.levels(economy=2.99)
+        with self.assertRaises(ValueError):build(1,10,'algae_farm',uid=1)
+        self.levels(economy=3)
+        build(1,10,'algae_farm',uid=1)
+        self.assertEqual(self.nation()['treasury'],600)
+        self.assertEqual(json.loads(self.nation()['resources_json'])['wood'],40)
+        run_tick()
+        self.assertAlmostEqual(json.loads(self.nation()['resources_json'])['algae'],.05)
+        tech.set_deposit(10,False)
+        self.assertNotIn('algae',forecast(1)['production'])
 
-    def test_removing_site_stops_farm_and_traces_without_destroying_farm(self):
+    def test_automatic_output_thresholds_include_fractional_technologies(self):
+        tech.set_deposit(10,True)
+        with db.cursor() as c:c.execute('UPDATE provinces SET buildings_json=? WHERE id=?',('["farm","algae_farm"]',self.pid))
+        for level,expected in ((2.99,0),(3,.05),(3.99,.05),(4,.1),(4.5,.1),(5,.2),(5.99,.2),(6,.5),(10,.5)):
+            with self.subTest(economy=level):
+                self.levels(economy=level)
+                before=self.nation();r=forecast(1)
+                self.assertAlmostEqual(r['production'].get('algae',0),expected)
+                self.assertEqual(self.nation(),before)
+        self.assertFalse(hasattr(tech,'gather'))
+
+    def test_monthly_farm_does_not_double_pay_or_produce_on_restart(self):
+        from economy_engine import run_month
+        tech.set_deposit(10,True);self.levels(economy=3)
+        with db.cursor() as c:c.execute('UPDATE provinces SET buildings_json=? WHERE id=?',('["farm","algae_farm"]',self.pid))
+        before=self.nation();forecast(1);db.init_db()
+        self.assertEqual(self.nation(),before)
+        with ThreadPoolExecutor(2) as pool:
+            outcomes=list(pool.map(lambda _:run_month(expected_month=12),range(2)))
+        self.assertEqual(sum(x is not None for x in outcomes),1)
+        self.assertAlmostEqual(json.loads(self.nation()['resources_json'])['algae'],.05)
+        run_tick()
+        self.assertAlmostEqual(json.loads(self.nation()['resources_json'])['algae'],.1)
+
+    def test_upgrades_require_six_and_keep_previous_high_tech_yields(self):
+        from economy_services import build
+        tech.set_deposit(10,True);self.levels(economy=3);self.resources(wood=10000)
+        with db.cursor() as c:c.execute('UPDATE nations SET treasury=10000 WHERE id=1')
+        build(1,10,'algae_farm')
+        for level in (3,4,5,5.99):
+            self.levels(economy=level);before=self.nation()
+            with self.assertRaises(ValueError):build(1,10,'algae_farm',True)
+            self.assertEqual(self.nation(),before)
+        self.levels(economy=6)
+        for expected in (.85,1.2):
+            build(1,10,'algae_farm',True)
+            self.assertAlmostEqual(forecast(1)['production']['algae'],expected)
+        # A GM lowering the technology does not delete stored building upgrades.
+        self.levels(economy=3)
+        r=forecast(1)
+        self.assertAlmostEqual(r['production']['algae'],.05)
+        self.assertEqual(next(x for x in r['staffing'] if x['building']=='algae_farm')['need'],250)
+        with self.assertRaises(ValueError):labor.set_assignment(1,1,10,'algae_farm',500)
+        self.levels(economy=6)
+        self.assertAlmostEqual(forecast(1)['production']['algae'],1.2)
+
+    def test_low_tech_yield_respects_manual_workers_stability_and_colonies(self):
+        tech.set_deposit(10,True);self.levels(economy=4)
+        with db.cursor() as c:
+            c.execute('UPDATE provinces SET buildings_json=? WHERE id=?',('["farm","algae_farm"]',self.pid))
+            c.execute('UPDATE nations SET stability=50 WHERE id=1')
+            c.execute("INSERT INTO colonies(nation_id,province_id,name,status) VALUES(1,?,'Site','outpost')",(self.pid,))
+        labor.set_assignment(1,1,10,'algae_farm',125)
+        r=forecast(1)
+        self.assertAlmostEqual(r['production']['algae'],.1*.5*.875*.5)
+        labor.set_assignment(1,1,10,'algae_farm',0)
+        self.assertEqual(forecast(1)['production']['algae'],0)
+
+    def test_migration_opens_existing_farms_at_three_without_changing_costs(self):
+        from cogs.economy import _seed_buildings
+        with db.cursor() as c:
+            c.execute("DELETE FROM economy_meta WHERE key='algae_automatic_v2'")
+            c.execute("UPDATE building_defs SET requires_tech=6,cost_json=?,description=? WHERE key='algae_farm'",
+                      ('{"gold":777}', 'Rare deposit only: /algae locations. Economy 6, 250 workers; 0.5 algae per month.'))
+        self.resources(algae=.7);before=self.nation()
+        _seed_buildings();_seed_buildings()
+        row=self.rows("SELECT * FROM building_defs WHERE key='algae_farm'")[0]
+        self.assertEqual(row['requires_tech'],3)
+        self.assertEqual(json.loads(row['cost_json']),{'gold':777})
+        self.assertIn('0.05/0.1/0.2/0.5',row['description'])
+        self.assertEqual(self.nation(),before)
+
+    def test_removing_site_stops_production_without_destroying_farm(self):
         tech.set_deposit(10,True);self.levels(economy=6)
         with db.cursor() as c:c.execute('UPDATE provinces SET buildings_json=? WHERE id=?',('["farm","algae_farm"]',self.pid))
         self.assertEqual(forecast(1)['production']['algae'],.5)
@@ -265,19 +317,27 @@ class ExtensionUITests(ResearchFixture,unittest.IsolatedAsyncioTestCase):
             await TechCog.deposit_add.callback(cog,interaction(1),10)
         self.assertEqual(len(self.rows('SELECT * FROM algae_sites')),1)
         self.assertEqual(TechCog.deposit_add.name,'deposit_add')
-        self.assertEqual(TechCog.algae_gather.name,'gather')
+        self.assertEqual(TechCog.algae_production.name,'production')
 
-    async def test_gather_panel_is_confirmation_and_checks_live_ownership(self):
+    async def test_production_panel_builds_after_confirmation_and_never_gathers(self):
         import technology_ui as ui
         tech.set_deposit(10,True);self.resources(wood=100)
-        inter=interaction(1);before=self.nation()
-        await ui.show_gather(inter,1)
+        inter=interaction(1);inter.edit_original_response=AsyncMock();before=self.nation()
+        await ui.show_production(inter,1)
         view=inter.response.send_message.call_args.kwargs['view']
         self.assertEqual(self.nation(),before)
-        with db.cursor() as c:c.execute("UPDATE nations SET owner_id='3' WHERE id=1")
+        self.assertIn('Build farm',view.children[0].label)
         await view.children[0].callback(inter)
-        self.assertEqual(self.nation()['treasury'],before['treasury'])
-        self.assertFalse(self.rows('SELECT * FROM algae_gathering'))
+        confirm=inter.response.edit_message.call_args.kwargs['view']
+        self.assertEqual(self.nation(),before)
+        await confirm.children[0].callback(inter)
+        self.assertEqual(self.nation()['treasury'],600)
+        self.assertEqual(json.loads(self.nation()['resources_json']).get('algae',0),0)
+        run_tick()
+        self.assertAlmostEqual(json.loads(self.nation()['resources_json'])['algae'],.05)
+        with db.cursor() as c:c.execute("UPDATE nations SET owner_id='3' WHERE id=1")
+        before=self.nation();await confirm.children[0].callback(inter)
+        self.assertEqual(self.nation(),before)
 
     async def test_worker_views_paginate_and_modal_changes_real_assignment(self):
         import labor_ui as ui

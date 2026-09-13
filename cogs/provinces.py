@@ -646,7 +646,7 @@ class ProvincesCog(commands.Cog):
         embed.add_field(name=i18n.text('Base Resources'), value=res_str,                   inline=False)
         with db.cursor() as c:
             c.execute('SELECT province_id FROM algae_sites WHERE province_id=?',(row['id'],))
-            if c.fetchone():embed.add_field(name='🧪 Algae',value=i18n.text('Rare algae deposit. Extraction needs an Algae Farm and economy 6.'),inline=False)
+            if c.fetchone():embed.add_field(name='🧪 Algae',value=i18n.text('Rare algae deposit. Automatic farm production from economy 3; see /algae production.'),inline=False)
         flagged_embed(embed, (row['nation_flag'], row['nation_name']))
         await interaction.response.send_message(embed=embed)
 

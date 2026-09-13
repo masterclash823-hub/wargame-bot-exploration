@@ -51,7 +51,7 @@ DEFAULT_BUILDINGS = [
     {"key":"port",            "name":"Port",             "tier":1,"cost":{"gold":150,"wood":80},                      "effect":{"gold":10},                  "upkeep":{"gold":2}, "terrain":"", "tech":0.0,"desc":"Trade gold on coastal/water provinces."},
     {"key":"fort",            "name":"Fort",             "tier":1,"cost":{"gold":200,"stone":80,"clay":40},           "effect":{},                           "upkeep":{"gold":5}, "terrain":"",                       "tech":0.0,"desc":"+1 fortification. Requires clay."},
     {"key":"university",      "name":"University",       "tier":3,"cost":{"gold":500,"stone":100,"wood":50,"clay":60},"effect":{"universal_knowledge":1},   "upkeep":{"gold":10},"terrain":"",                       "tech":5.0,"desc":"Universal Knowledge each tick. Requires clay. Tech 5."},
-    {"key":"algae_farm",      "name":"Algae Farm",       "tier":3,"cost":{"gold":400,"wood":60},                      "effect":{"algae":0.5},                  "upkeep":{"gold":8}, "terrain":"",        "tech":6.0,"desc":"Rare deposit only: /algae locations. Economy 6, 250 workers; 0.5 algae per month."},
+    {"key":"algae_farm",      "name":"Algae Farm",       "tier":3,"cost":{"gold":400,"wood":60},                      "effect":{"algae":0.5},                  "upkeep":{"gold":8}, "terrain":"",        "tech":3.0,"desc":"Own deposit required. Automatic output at economy 3/4/5/6+: 0.05/0.1/0.2/0.5 algae per month. Upgrades require economy 6."},
 ]
 BUILDING_TRANSLATIONS_PL = {
     "farm":           ("Farma",           "Produkuje żywność na równinach i trawiastych terenach."),
@@ -71,7 +71,7 @@ BUILDING_TRANSLATIONS_PL = {
     "port":           ("Port",            "Złoto handlowe w prowincjach przybrzeżnych."),
     "fort":           ("Fort",            "+1 fortyfikacja. Wymaga gliny."),
     "university":     ("Uniwersytet",     "Powszechna Wiedza każdy tick. Wymaga gliny. Tech 5."),
-    "algae_farm":     ("Farma Alg",       "Tylko rzadkie stanowiska: /algae locations. Gospodarka 6, 250 pracowników, 0,5 algae/miesiąc."),
+    "algae_farm":     ("Farma Alg",       "Tylko własne złoża. Automatycznie przy gospodarce 3/4/5/6+: 0,05/0,1/0,2/0,5 algae na miesiąc. Ulepszenia od gospodarki 6."),
 }
 # ---------------------------------------------------------------------------
 # Pure helper functions (no discord imports needed)
@@ -333,9 +333,9 @@ HELP_SECTIONS = {
             ("/project list", "View your projects."),
             ("/tech status", "Open private research: recommendations, progress, discoveries and bonuses."),
             ("/tech research [project]", "Choose a named project. Free knowledge each game month; universities accelerate research."),
-            ("/algae locations", "List rare deposits by province ID. Extraction needs a farm and economy 6."),
+            ("/algae locations", "List rare deposits by province ID. Farms can be built from economy 3."),
             ("/algae programs", "Enable researched applications: 1 algae per program per month."),
-            ("/algae gather", "Own deposit + economy 3: 0.05 algae for 100 gold and 10 wood, once per game month."),
+            ("/algae production", "Automatic farm output at economy 3/4/5/6+: 0.05/0.1/0.2/0.5 per month. Build and upgrade from this panel."),
             ("Resource mechanics",
              "• **Food**: consumed by population (1/100 pop) + military (1/10 units) per tick. "
              "Surplus → pop growth. Shortage → stability loss. Severe shortage → pop decline.\n"
@@ -495,9 +495,9 @@ HELP_SECTIONS_PL = {
             ("/project list", "Lista twoich projektów."),
             ("/tech status", "Prywatny panel badań: rekomendacje, postęp, odkrycia i premie."),
             ("/tech research [projekt]", "Wybierz nazwane badanie. Darmowa wiedza co miesiąc gry; uniwersytety przyspieszają naukę."),
-            ("/algae locations", "Stanowiska algae z ID prowincji. Wydobycie wymaga farmy i gospodarki 6."),
+            ("/algae locations", "Złoża algae z ID prowincji. Farmę można zbudować od gospodarki 3."),
             ("/algae programs", "Włącz zastosowania po badaniach: 1 algae na program miesięcznie."),
-            ("/algae gather", "Własne złoże + gospodarka 3: 0,05 algae za 100 złota i 10 drewna, raz na miesiąc gry."),
+            ("/algae production", "Automatyczna produkcja farmy przy gospodarce 3/4/5/6+: 0,05/0,1/0,2/0,5 miesięcznie. Buduj i ulepszaj z tego panelu."),
             ("Mechaniki zasobów",
              "• **Żywność**: zużywana przez populację (1/100) + wojsko (1/10) na tick.\n"
              "• **Jedwab + Przyprawy**: zużywane automatycznie; nadwyżki sprzedają rynki i porty. Sam zapas nie daje złota.\n"

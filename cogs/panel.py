@@ -15,7 +15,7 @@ from utils import get_nation_by_owner, gm_only
 
 
 PL = {
-    'workers':'Pracownicy', 'algae_gather':'Śladowe pozyskiwanie algae',
+    'workers':'Pracownicy', 'algae_production':'Wydobycie algae',
     'goals':'Cele państwowe', 'memories':'Pamięć decyzji', 'treaties':'Traktaty i propozycje',
     'new_treaty':'Nowy traktat', 'calls':'Wezwania do obrony',
     'posture':'Rezerwa i mobilizacja', 'settlers':'Wyślij osadników', 'contracts':'Umowy miesięczne',
@@ -46,7 +46,7 @@ PL = {
 
 def tr(lang: str, key: str) -> str:
     en = {
-        'workers':'Workers', 'algae_gather':'Trace algae gathering',
+        'workers':'Workers', 'algae_production':'Algae production',
         'goals':'National goals', 'memories':'Decision memory', 'treaties':'Treaties & proposals',
         'new_treaty':'New treaty', 'calls':'Defense calls',
         'posture':'Reserves & mobilization', 'settlers':'Send settlers', 'contracts':'Monthly contracts',
@@ -219,7 +219,7 @@ ACTIONS = {
     "home": [("stats","📊"),("resources","📦"),("calendar","📅"),("goals","🎯"),("refresh","🔄")],
     "economy": [("resources","💰"),("build","🏗️"),("buildings","📚"),("yield","🌾"),("trades","🔁"),("new_trade","➕"),
                 ("projects","🏛️"),("new_project","📝"),("start_project","▶️"),("contracts","📆"),("workers","👥")],
-    "technology": [("research","🔬"),("algae_locations","🧪"),("algae_programs","⚙️"),("algae_gather","🧫")],
+    "technology": [("research","🔬"),("algae_locations","🧪"),("algae_programs","⚙️"),("algae_production","🧫")],
     "military": [("forces","🛡️"),("blueprints","📐"),("recruit","➕"),("move","➡️"),
                  ("new_blueprint","🧰"),("posture","⏳")],
     "territory": [("provinces","🗺️"),("province","🔎"),("colonies","🏝️"),("colony_view","🔎"),
@@ -326,7 +326,7 @@ class PlayerPanel(OwnedView):
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
-            'workers':('EconomyControlCog','workers',[]), 'algae_gather':('TechCog','algae_gather',[]),
+            'workers':('EconomyControlCog','workers',[]), 'algae_production':('TechCog','algae_production',[]),
             'goals':('WorldCog','status',[]), 'memories':('WorldCog','memory',[]),
             'treaties':('TreatiesCog','list_treaties',[]), 'calls':('TreatiesCog','calls',[]),
             "stats":("NationCog","stats",[""]), "resources":("EconomyCog","resources",[]),
