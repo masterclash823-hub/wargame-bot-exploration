@@ -24,9 +24,11 @@ class BuildingLocationsTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
             with i18n.using_language(lang):
                 panel=PlayerPanel(None,1,lang)
                 first=interaction(1)
+                first.response.is_done=lambda:False
                 await panel.choose_build(first)
                 provinces=first.response.send_message.call_args.kwargs['view']
                 second=interaction(1)
+                second.response.is_done=lambda:False
                 await provinces.handler(second,'10')
                 buildings=second.response.send_message.call_args.kwargs['view']
                 options={o.value:o for o in buildings.children[0].options}
