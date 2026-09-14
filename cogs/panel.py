@@ -15,6 +15,7 @@ from utils import get_nation_by_owner, gm_only
 
 
 PL = {
+    'exploration':'Eksploracja','captives':'Jeńcy',
     'labor':'Polityka pracy',
     'workers':'Pracownicy', 'algae_production':'Wydobycie algae',
     'goals':'Cele państwowe', 'memories':'Pamięć decyzji', 'treaties':'Traktaty i propozycje',
@@ -47,6 +48,7 @@ PL = {
 
 def tr(lang: str, key: str) -> str:
     en = {
+        'exploration':'Exploration','captives':'Captives',
         'labor':'Labor policy',
         'workers':'Workers', 'algae_production':'Algae production',
         'goals':'National goals', 'memories':'Decision memory', 'treaties':'Treaties & proposals',
@@ -223,12 +225,12 @@ ACTIONS = {
                 ("projects","🏛️"),("new_project","📝"),("start_project","▶️"),("contracts","📆"),("workers","👥"),("labor","⚖️")],
     "technology": [("research","🔬"),("algae_locations","🧪"),("algae_programs","⚙️"),("algae_production","🧫")],
     "military": [("forces","🛡️"),("blueprints","📐"),("recruit","➕"),("move","➡️"),
-                 ("new_blueprint","🧰"),("posture","⏳")],
+                 ("new_blueprint","🧰"),("posture","⏳"),("captives","⛓️")],
     "territory": [("provinces","🗺️"),("province","🔎"),("colonies","🏝️"),("colony_view","🔎"),
                   ("colony_found","🚩"),("colony_develop","📈"),("colony_expand","🧭"),("routes","🚢"),("settlers","👥")],
     "diplomacy": [("relations","📜"),("war","⚔️"),("peace","🕊️"),("alliance","🤝"),
                   ("battle_plan","🗒️"),("battles","📖"),("treaties","📜"),("new_treaty","📝"),("calls","🛡️")],
-    "events": [("event_list","📋"),("event_play","🎭"),("memories","🧠")],
+    "events": [("event_list","📋"),("event_play","🎭"),("memories","🧠"),("exploration","🧭")],
     "settings": [("help","❓"),("tutorial","📘"),("language_pl","🇵🇱"),("language_en","🇬🇧")],
 }
 
@@ -330,6 +332,7 @@ class PlayerPanel(OwnedView):
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
+            'exploration':('ExplorationCog','exploration',[]),'captives':('CaptivesCog','list_claims',[]),
             'labor':('EconomyControlCog','labor',[]),
             'workers':('EconomyControlCog','workers',[]), 'algae_production':('TechCog','algae_production',[]),
             'goals':('WorldCog','status',[]), 'memories':('WorldCog','memory',[]),

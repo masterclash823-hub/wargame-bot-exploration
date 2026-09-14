@@ -378,6 +378,8 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
             result['research_completed']=completed
             result['algae_programs']=programs
             for pid,pop in result['populations'].items(): c.execute('UPDATE provinces SET population=? WHERE id=?',(pop,pid))
+            from captivity import reconcile
+            reconcile(c,nid)
             if result['policy']['unpaid_months']>=3:
                 from battle_resolution import allocate_losses
                 c.execute('SELECT id,quantity FROM military_units WHERE nation_id=?',(nid,))

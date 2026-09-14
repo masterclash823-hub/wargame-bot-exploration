@@ -36,6 +36,12 @@ def treaty_embed(t):
         'guarantee':tr('Autor gwarantuje bezpieczeństwo odbiorcy. Po ataku musi odpowiedzieć na wezwanie przed kolejnym miesiącem.','The proposer guarantees the recipient. After an attack, answer the call before the next game month.'),
     }
     e.add_field(name=tr('Zasady','Rules'),value=details[t['kind']],inline=False)
+    if t['kind']=='peace':
+        winner=terms.get('war_winner','none')
+        name=t['a_name'] if winner=='proposer' else t['b_name'] if winner=='recipient' else tr('Bez wskazanego zwycięzcy','No declared winner')
+        e.add_field(name=tr('Uzgodniony wynik wojny','Agreed war outcome'),value=name+'\n'+tr(
+            'Wskazany zwycięzca może jednorazowo wziąć jeńców: do 1% pozostałej ludności przegranego, maks. 500. Akceptacja traktatu obejmuje ten warunek.',
+            'A declared winner may claim captives once: up to 1% of the loser’s remaining population, maximum 500. Accepting the treaty includes this term.'),inline=False)
     from dynasty import current
     with db.cursor() as c: marriage=current(c,t['id'])
     if marriage:
@@ -64,6 +70,8 @@ class TreatyView(i18n.LocalizedView):
         self.submit.disabled=t['status']!='draft' or str(viewer)!=t['a_owner']
         self.marriage.label=tr('Mariaż dynastyczny','Dynastic marriage')
         self.marriage.disabled=t['kind']!='alliance' or t['status']!='active' or str(viewer) not in (t['a_owner'],t['b_owner'])
+        self.outcome.label=tr('Wynik wojny','War outcome')
+        self.outcome.disabled=t['kind']!='peace' or t['status'] not in ('draft','proposed') or str(viewer)!=t['a_owner']
         from dynasty import current
         with db.cursor() as c:m=current(c,t['id'])
         if m and m['status']=='active':self.end.label=tr('Zerwij (−20 rep., −5 stab.)','Break (−20 rep., −5 stab.)')
@@ -73,6 +81,18 @@ class TreatyView(i18n.LocalizedView):
     async def marriage(self,interaction,button):
         from dynasty_ui import show
         await show(interaction,self.t['id'])
+
+    @discord.ui.button(label='War outcome',row=2)
+    @i18n.localized
+    async def outcome(self,interaction,button):
+        from cogs.panel import ChoiceView
+        options=[discord.SelectOption(label=label[:100],value=value) for value,label in (
+            ('none',tr('Bez zwycięzcy / remis','No winner / draw')),('proposer',self.t['a_name']),('recipient',self.t['b_name']))]
+        async def choose(i,value):
+            try:service.set_war_outcome(self.t['id'],i.user.id,value)
+            except ValueError as exc:await i.response.send_message(str(exc),ephemeral=True);return
+            await show_treaty(i,self.t['id'])
+        await interaction.response.send_message(tr('Wynik musi zatwierdzić druga strona wraz z traktatem.','The other party must approve the outcome with the treaty.'),view=ChoiceView(interaction.user.id,i18n.current_language(),options,choose),ephemeral=True)
 
     @i18n.localized
     async def interaction_check(self,interaction):
@@ -197,6 +217,13 @@ class TreatyListView(i18n.LocalizedView):
 
 class TreatiesCog(commands.Cog):
     treaty=app_commands.Group(name='treaty',description='Diplomatic treaties / Traktaty dyplomatyczne')
+
+    @treaty.command(name='outcome',description='Set the agreed peace outcome / Ustal wynik wojny w propozycji pokoju')
+    @i18n.localized
+    async def outcome(self,interaction:discord.Interaction,treaty_id:int,winner:Literal['none','proposer','recipient']):
+        try:service.set_war_outcome(treaty_id,interaction.user.id,winner)
+        except ValueError as exc:await interaction.response.send_message(str(exc),ephemeral=True);return
+        await show_treaty(interaction,treaty_id)
 
     @treaty.command(name='marriage',description='Arrange a dynastic marriage in an active alliance / Mariaż w sojuszu')
     @i18n.localized

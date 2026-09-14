@@ -99,10 +99,12 @@ def render(d):
             'guarantee':('Dotrzymana gwarancja','Guarantee honored'),
             'marriage':('Mariaż dynastyczny','Dynastic marriage'),
             'labor_reform':('Reforma pracy','Labor reform'),
+            'captives':('Zniewolenie jeńców','Captives enslaved'),
         }
         title=labels[kind][0 if pl else 1]
         detail=''
         if kind=='marriage':detail=('Więź dynastyczna wzmacnia sojusz z ' if pl else 'A dynastic bond strengthens the alliance with ')+other+'.'
+        elif kind=='captives':detail=(str(p['quantity'])+' ' if 'quantity' in p else '')+('jeńcy z państwa ' if pl else 'captives from ')+other+'.'
         elif kind=='labor_reform':detail=(('Wprowadzono niewolnictwo.' if pl else 'Slavery was introduced.') if p.get('mode')=='slavery' else ('Zniesiono niewolnictwo.' if pl else 'Slavery was abolished.'))
         elif kind=='building':detail=f"{i18n.term(p['building'],lang)} · {p['level']}/3 · #{p['cell']}"
         elif kind in ('colony','expansion'):detail=('Prowincja ' if pl else 'Province ')+str(p['cell'])

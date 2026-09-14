@@ -9,7 +9,10 @@ DEFAULT = {'mode': 'free', 'transition_months': 0, 'version': 0}
 
 def state(c, nid):
     c.execute('SELECT * FROM labor_regimes WHERE nation_id=?', (nid,))
-    return c.fetchone() or dict(DEFAULT)
+    r=c.fetchone() or dict(DEFAULT)
+    c.execute('SELECT COALESCE(SUM(x.quantity),0) AS n FROM province_captives x JOIN provinces p ON p.id=x.province_id WHERE p.owner_nation_id=? AND p.active=1',(nid,))
+    r['captives']=c.fetchone()['n'] if r['mode']=='slavery' else 0
+    return r
 
 
 def label(mode):
@@ -34,8 +37,13 @@ def change(nid, uid, mode, version, expected_cost):
         from economy_services import spend
         spend(c, n, {'gold': cost})
         if mode == 'slavery':
+            from captivity import emancipate
+            emancipate(c,nid)  # Previously free residents do not regain an inherited captive marker.
             c.execute('UPDATE nations SET stability=CASE WHEN stability>=5 THEN stability-5 ELSE 0 END WHERE id=?', (nid,))
             reward(c, nid, reputation=-10)
+        else:
+            from captivity import emancipate
+            emancipate(c,nid)
         c.execute('INSERT INTO labor_regimes(nation_id,mode,transition_months,version) VALUES(?,?,?,?) '
                   'ON CONFLICT(nation_id) DO UPDATE SET mode=excluded.mode,transition_months=excluded.transition_months,version=excluded.version',
                   (nid, mode, 3 if mode == 'free' else 0, old['version']+1))

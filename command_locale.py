@@ -3,6 +3,7 @@ from discord import Locale, app_commands
 import i18n
 
 PARAMETERS = {
+    'preparations':'przygotowania','expedition_id':'id_wyprawy','claim_id':'id_uprawnienia','winner':'zwycięzca',
     'orders_file':'plik_rozkazów', 'plan_id':'id_planu',
     'player':'gracz', 'hour_utc':'godzina_utc', 'language':'język',
     'kind':'rodzaj', 'duration':'czas_trwania', 'give_cells':'oddawane_prowincje',

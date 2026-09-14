@@ -40,6 +40,8 @@ def cells(raw):
 
 def validate_terms(terms,duration):
     t=dict(terms)
+    if t.setdefault('war_winner','none') not in ('none','proposer','recipient'):
+        raise ValueError(tr('Nieprawidłowy wynik wojny.','Invalid war outcome.'))
     for key in ('give_gold','receive_gold','tribute_gold'):
         value=t.setdefault(key,0)
         if type(value) not in (int,float) or not math.isfinite(value) or not 0<=value<=1_000_000:
@@ -131,6 +133,18 @@ def _ceded_provinces(c,terms,a,b):
     return transfers
 
 
+def set_war_outcome(tid,uid,winner):
+    if winner not in ('none','proposer','recipient'):raise ValueError(tr('Nieprawidłowy wynik wojny.','Invalid war outcome.'))
+    with db.atomic() as c:
+        world_lock(c)
+        c.execute('SELECT * FROM treaties WHERE id=?',(tid,));t=c.fetchone()
+        if not t or t['kind']!='peace' or t['status'] not in ('draft','proposed'):
+            raise ValueError(tr('Wynik ustala się w oczekującym traktacie pokojowym.','Set the outcome in a pending peace treaty.'))
+        owned(c,t['proposer_id'],uid)
+        terms=read_json(t['terms_json']);terms['war_winner']=winner
+        c.execute('UPDATE treaties SET terms_json=?,version=version+1 WHERE id=?',(json.dumps(terms),tid))
+
+
 def accept(tid,owner_id,expected_version):
     with db.atomic() as c:
         world_lock(c)
@@ -166,7 +180,12 @@ def accept(tid,owner_id,expected_version):
         month=month_index(c)
         c.execute("UPDATE treaties SET status='active',accepted_month=?,expires_month=?,last_paid_month=?,payments_left=? WHERE id=?",
                   (month,month+t['duration'],month,terms['tribute_months'],tid))
-        if t['kind']=='peace':set_relation(c,a['id'],b['id'],'peace')
+        if t['kind']=='peace':
+            set_relation(c,a['id'],b['id'],'peace')
+            from captivity import peace_pool
+            peace_pool(c,tid,terms,a['id'],b['id'])
+        from captivity import reconcile
+        reconcile(c,a['id']);reconcile(c,b['id'])
         if t['kind']=='alliance':set_relation(c,a['id'],b['id'],'alliance')
         if t['visibility']=='public':activity(c,'treaty',a['id'],f'treaty:{tid}',{'kind':t['kind']},b['id'])
         return tid

@@ -112,6 +112,8 @@ def _build_nation_context(nat) -> str:
                   "JOIN treaties t ON t.id=m.treaty_id JOIN nations a ON a.id=m.proposer_id JOIN nations b ON b.id=m.recipient_id "
                   "WHERE m.status='active' AND t.status='active' AND (m.proposer_id=? OR m.recipient_id=?)",(nat['id'],nat['id']))
         marriages=json.dumps(c.fetchall(),ensure_ascii=False)
+        c.execute("SELECT state_json FROM explorations WHERE nation_id=? AND status='resolved' ORDER BY id DESC LIMIT 3",(nat['id'],))
+        expeditions=[{k:s[k] for k in ('text','success')} for row in c.fetchall() for s in [json.loads(row['state_json'])]]
     return f"""Nation: {nat['name']}
 Government: {nat['government_type']}
 Stability: {nat['stability']:.0f}/100
@@ -121,6 +123,8 @@ Tech levels: {tech_str}
 Resources (non-zero): {res_str or 'none'}
 Diplomatic relations: {rel_str}
 Labor policy: {labor['mode']}; emancipation transition remaining: {labor['transition_months']} months.
+Enslaved war captives already included in population: {labor.get('captives',0)}.
+Recent expedition outcomes: {json.dumps(expeditions,ensure_ascii=False)}
 Active dynastic bonds (all participants are adult fictional characters): {marriages}
 Use these institutions for relevant social or diplomatic dilemmas, without inventing people as tradable resources or new mechanical effects.
 Current in-game date: {mname}, Year {year}

@@ -48,11 +48,11 @@ ACTIVITY_FIELDS={
     'building':{'building','level','cell'}, 'colony':{'cell'}, 'expansion':{'cell'},
     'research':{'category','completed'}, 'project':set(), 'event':set(),
     'battle':{'winner'}, 'war':set(), 'treaty':{'kind'}, 'breach':{'kind'},
-    'goal':{'code'}, 'guarantee':set(), 'marriage':set(), 'labor_reform':{'mode'},
+    'goal':{'code'}, 'guarantee':set(), 'marriage':set(), 'labor_reform':{'mode'}, 'captives':{'quantity'},
 }
 SCORES={'war':100,'battle':90,'breach':85,'treaty':80,'guarantee':75,'goal':70,
         'event':60,'expansion':55,'colony':50,'project':40,'research':30,'building':10,
-        'marriage':78,'labor_reform':65}
+        'marriage':78,'labor_reform':65,'captives':72}
 
 
 def activity(c,kind,nid,source_key,payload=None,other=None):

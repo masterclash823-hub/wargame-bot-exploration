@@ -58,6 +58,7 @@ async def show(i):
     from flags import flagged_embed
     flagged_embed(e,(n['flag'],n['name']))
     e.add_field(name=tr('Obecnie','Current'),value=service.label(state['mode']))
+    e.add_field(name=tr('Zniewoleni jeńcy w ludności','Enslaved captives within population'),value=str(state.get('captives',0)))
     e.add_field(name=tr('Okres przejściowy','Transition remaining'),value=str(state['transition_months'])+tr(' mies.',' months'))
     e.add_field(name=tr('Koszt proponowanej reformy','Quoted reform cost'),value=f'{cost:g}g')
     e.add_field(name=tr('Nadzór przy niewolnictwie / miesiąc','Supervision under slavery / month'),value=f'{pop/1000:g}g')

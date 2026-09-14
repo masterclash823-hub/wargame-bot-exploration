@@ -199,6 +199,25 @@ CREATE TABLE IF NOT EXISTS battles (
     resolved_at            TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS explorations (
+    id SERIAL PRIMARY KEY, nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    guild_id TEXT NOT NULL, channel_id TEXT NOT NULL, role_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active', version INTEGER NOT NULL DEFAULT 0,
+    state_json TEXT NOT NULL, publication_status TEXT NOT NULL DEFAULT 'waiting',
+    publication_started TEXT, message_id TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_active_exploration ON explorations(nation_id) WHERE status='active';
+CREATE TABLE IF NOT EXISTS captive_opportunities (
+    id SERIAL PRIMARY KEY, source_type TEXT NOT NULL, source_id INTEGER NOT NULL,
+    winner_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    loser_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    capacity INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0, created_month INTEGER NOT NULL,
+    UNIQUE(source_type,source_id)
+);
+CREATE TABLE IF NOT EXISTS province_captives (
+    province_id INTEGER PRIMARY KEY REFERENCES provinces(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS events (
     id            SERIAL PRIMARY KEY,
     nation_id     INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
