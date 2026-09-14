@@ -8,6 +8,91 @@ from economy_engine import read_json, LEVEL_OUTPUT, LEVEL_WORK, building_level, 
 from world_service import tr
 
 
+def candidate_priority(context, quote, needs):
+    """Food first, then missing supplies; compare added base output per gold."""
+    from economy_engine import LEVEL_OUTPUT
+    raw = read_json(quote['definition']['effect_json'])
+    outputs = {k:v for k,v in raw.items() if isinstance(v, (int,float)) and math.isfinite(v) and v > 0}
+    old = quote['old']
+    growth = LEVEL_OUTPUT[old+1] - (LEVEL_OUTPUT[old] if old else 0)
+    priority = 2
+    if outputs.get('food', 0) > 0 and needs.get('food', 0) > 0:
+        priority = 0
+    elif any(needs.get(k, 0) > 0 for k in outputs if k != 'food'):
+        priority = 1
+    useful = sum(min(v*growth, needs[k]) if needs.get(k, 0) > 0 else v*growth
+                 for k,v in outputs.items())
+    efficiency = useful / max(1, quote['cost'].get('gold', 0))
+    return (priority, -efficiency, quote['key'], quote['province']['azgaar_cell_id'])
+
+
+def supply_needs(context, s):
+    from economy_engine import LEVEL_OUTPUT, building_level
+    before = context['before']
+    needs = {}
+    inputs = {}
+    n, provinces, definitions = context['data'][:3]
+    economy = read_json(n['tech_json']).get('economy', 3)
+    for p in provinces:
+        for key in read_json(p['buildings_json'], []):
+            definition = definitions.get(key)
+            if not definition:
+                continue
+            level = building_level(key, read_json(p['levels_json']), economy)
+            for resource, value in read_json(definition['effect_json']).items():
+                if isinstance(value, (int,float)) and math.isfinite(value) and value < 0 and resource != 'gold':
+                    inputs[resource] = inputs.get(resource, 0) - value*LEVEL_OUTPUT[level]
+    for resource, demand in inputs.items():
+        needs[resource] = max(0, 3*demand - before['resources'].get(resource, 0))
+    # Also replenish materials needed for the company's own construction.
+    stock = read_json(n['resources_json'])
+    for key in s['types']:
+        definition = definitions.get(key)
+        if definition:
+            for resource, value in read_json(definition['cost_json']).items():
+                if resource != 'gold':
+                    needs[resource] = max(needs.get(resource, 0), 2*value - stock.get(resource, 0), 0)
+    needs['food'] = max(0, before['food_needed'] - before['production'].get('food', 0),
+                        3*before['food_needed'] - before['resources'].get('food', 0))
+    return needs
+
+
+def automate(c, nid, s, target):
+    # Each success raises a building by one level (maximum 3), so this terminates
+    # even for zero-gold definitions. There is no arbitrary investments-per-month cap.
+    while True:
+        if co.remaining_budget(s, target) <= .000001:
+            s['report']['waiting'] = tr('Budżet na ten miesiąc jest wykorzystany lub wynosi 0.',
+                                        'This month’s budget is spent or set to zero.')
+            return
+        context = co.investment_context(c, nid, s)
+        needs = supply_needs(context, s)
+        candidates = []
+        reasons = {}
+        for cell in context['provinces']:
+            for key in s['types']:
+                try:
+                    quote = co.investment_quote(c, nid, s, cell, key, target, context)
+                except ValueError as exc:
+                    reasons[str(exc)] = reasons.get(str(exc), 0) + 1
+                else:
+                    candidates.append((candidate_priority(context, quote, needs), quote))
+        for rank, quote in sorted(candidates, key=lambda item: item[0]):
+            try:
+                co.preview_investment(context, s, quote)
+            except ValueError as exc:
+                reasons[str(exc)] = reasons.get(str(exc), 0) + 1
+                continue
+            co.invest(c, nid, s, quote['province']['azgaar_cell_id'], quote['key'], target, automatic=True)
+            s['report']['investment']['reason'] = ('food', 'supplies', 'growth')[rank[0]]
+            break
+        else:
+            reason = max(reasons, key=reasons.get) if reasons else tr('Brak własnych aktywnych prowincji.',
+                                                                     'No active domestic provinces.')
+            s['report']['waiting'] = tr('Automat czeka: ', 'Automation is waiting: ') + reason
+            return
+
+
 def prepare(c,target):
     c.execute("SELECT * FROM company_concessions WHERE status IN ('active','proposed')")
     for grant in c.fetchall():
@@ -26,7 +111,8 @@ def prepare(c,target):
         n=lock_nation(c,nid)
         with i18n.using_language(i18n.get_user_language(n['owner_id'])):
             s=co.state(c,nid)
-            s['report']={'month':target,'waiting':'','received':{},'costs':{}}
+            co.begin_month(s,target)
+            s['report'].update(budget=s['monthly_budget'], spent=s['spent'])
             if not co.unlocked(n) or s['paused']:
                 s['report']['waiting']=tr('Firma jest wstrzymana lub wymaga gospodarki 4.',
                                          'The company is paused or requires economy 4.')
@@ -36,25 +122,8 @@ def prepare(c,target):
                 if p['status']=='running' and target-p['started']>=p['months']:
                     p['status']='complete'
             co.save(c,nid,s)
-            if s['mode']=='off':
-                continue
-            targets=[(cell,key) for cell in s['cells'] for key in s['types']]
-            for grant in co.grants(c,nid):
-                if grant['company_nation_id']==nid and co.valid_grant(c,grant,target):
-                    targets += [(cell,key) for cell in grant['terms']['cells'] for key in grant['terms']['types']]
-            for cell,key in dict.fromkeys(targets):
-                if s['mode']=='supply':
-                    c.execute('SELECT effect_json FROM building_defs WHERE key=?',(key,))
-                    definition=c.fetchone()
-                    if not definition or read_json(definition['effect_json']).get(s['resource'],0)<=0:
-                        continue
-                try:
-                    co.invest(c,nid,s,cell,key,target,automatic=True)
-                except ValueError as exc:
-                    s['report']['waiting']=str(exc)
-                else:
-                    s['report']['waiting']=''
-                    break
+            if s['mode']=='auto':
+                automate(c,nid,s,target)
             co.save(c,nid,s)
 
     # Expired or transferred permissions cease to manage the host's buildings.

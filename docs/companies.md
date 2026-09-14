@@ -5,38 +5,65 @@ the Company button only while the current nation meets this threshold.
 Opening an old panel or calling /company cannot bypass the gate.
 Formation and investment services also check technology and current ownership.
 
-## Starting
+## Starting and budget
 
 Use Economy → Company or /company. Choose one to three production building
-types, a name and a description. Formation is free, specialties are fixed,
-and automation starts disabled. Set domestic province IDs, a gold limit per
-investment and resource reserves in Budget and automation.
+types, a name and a description. Formation is free and specialties are fixed.
+Then open Budget and automation, choose **Automatic** or **Manual**, and enter
+one amount: **gold per game month**. New companies start in Manual with 0 gold.
 
-Companies use the nation's treasury and stocks, with no separate currency.
-The investment budget limits construction and upgrades, not ordinary national
-expenses. Company purchases and foreign operating prepayments must leave the
-configured reserves intact. Explicitly confirmed improvements cost 100 gold.
+The amount is a recurring construction and upgrade allowance drawn from the
+nation's treasury when an investment actually succeeds. Materials come from
+national stocks. Unspent gold stays in the treasury; unused allowances do not
+accumulate. The allowance renews with the game calendar, not every real day.
+The panel shows the amount spent and remaining this month.
 
-Existing buildings can be assigned through Plants. Construction and upgrades
-through the company receive a 10% discount. Managed ordinary production
-receives +5%. Buildings still occupy the normal one-per-type provincial slot,
-need workers and inputs, and have a maximum level of 3. Company investment
-does not bypass either party's technology requirements or algae deposits.
-Ordinary /build remains available at its ordinary price.
+Automatic and manual company construction share this allowance, including
+manual foreign investments. Changing the amount, toggling the mode, reopening
+the menu or pausing the company does not reset spending. Reducing the amount
+below spending already incurred prevents further investment that month.
+Ordinary national expenses, plant upkeep, foreign operating supplies and
+explicitly accepted improvement projects are paid separately.
 
-## Automation
+Existing buildings can be assigned through Plants. Company construction and
+upgrades receive a 10% discount; managed ordinary production receives +5%.
+Buildings still occupy the one-per-type provincial slot, need workers and
+inputs, and have at most 3 levels. Technology, terrain, algae deposits and
+available funds remain required. Ordinary /build remains available at its
+ordinary price.
 
-Supply: build or upgrade a specialty that produces the selected resource.
-Expansion: build missing specialty buildings.
-Upgrades: upgrade existing specialty buildings.
-Manual: no automatic investment.
+## Automatic operation
 
-At most one successful company construction or upgrade per game month,
-including manual company investment. Automation searches approved provinces,
-checks terrain, technology, reserves, budget and available workers, and rejects
-forecasts with a worsened food shortage or a negative host monthly balance.
-It does not buy inputs on the player's behalf from other players.
-The monthly company report records the investment or the reason for waiting.
+The company considers **all currently owned, active provinces**. Newly acquired
+provinces are included automatically; lost or inactive provinces are excluded.
+There is no province whitelist, selected supply resource, configurable reserve
+or one-investment-per-month limit.
+
+Each game month it chooses between new construction and upgrades in its
+specialties. It prioritizes food production or a low food buffer, then missing
+production/construction materials, then further output. Within a priority it
+compares added base output per gold. After each success it reads the updated
+state and chooses again, until the remaining allowance or available resources,
+workers, technology or profitable options prevent further construction.
+The report lists investments and the reason for the next wait.
+
+The forecast includes construction payments and current manual worker
+allocations. Automation rejects investments without a production gain, those
+worsening food shortages, or those causing an unsustainable operating balance
+or increased arrears. It does not buy resources from other players.
+
+Automatic construction operates domestically. Foreign construction remains
+an explicit manual action under an accepted concession. Existing foreign
+plants continue their monthly production and deliveries.
+
+## Existing companies
+
+Old Supply, Expansion and Upgrades settings become Automatic; Manual stays
+Manual, and paused companies remain paused. The previous gold amount becomes
+the monthly allowance. A recorded investment in the current month counts
+toward it. Old province/resource selections and reserves are removed.
+Settings migrate when read and persist with the next company update/tick;
+no database reset or new environment variable is needed.
 
 ## Concessions
 
@@ -56,7 +83,7 @@ is split, with the host retaining the remaining share. The host's other
 buildings and base resource yields are not shared.
 
 Before settlement, foreign plants reserve their maximum monthly inputs and
-maintenance from the company nation's stocks. If reserves would be breached,
+maintenance from the company nation's stocks. If those funds are unavailable,
 that plant is unstaffed and produces nothing for that month. Unused inputs
 and unused maintenance prepayment are returned. Shipments and refunds enter
 the company's closing stocks **after all nations settle**, ready for the next
@@ -106,9 +133,14 @@ No new environment variables are needed. Slash commands synchronize on boot.
 The short player tutorial remains unchanged; this feature is optional.
 
 The PR adds regression cases for technology gating, stale actions, ownership,
-discounts, reserves, monthly investment limits, forecast rollback, foreign
+discounts, shared monthly budgets, forecast rollback, foreign
 payments and production shares, unused escrow refunds, war suspension,
 termination, narrated improvement approval and technology caps.
 GitHub Actions runs the Python suite with dummy credentials and temporary
 SQLite databases. A live Discord/Render/PostgreSQL rollout is not performed
 by these tests.
+
+The simplified automation has regression coverage for multiple investments,
+automatic construction/upgrading, domestic scope despite foreign concessions,
+budget renewal and edits, material/worker constraints, legacy settings and
+the one-field Polish/English budget form.

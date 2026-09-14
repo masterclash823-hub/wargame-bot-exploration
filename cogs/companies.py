@@ -29,16 +29,6 @@ def values(text):
     return [int(v.strip()) for v in text.split(',') if v.strip()]
 
 
-def reserves(text):
-    result={}
-    for entry in text.split(','):
-        if not entry.strip():continue
-        key,amount=entry.split('=',1)
-        key=i18n.normalize_key(key.strip())
-        if key in result:raise ValueError(tr('Powtórzony zasób.', 'Duplicate resource.'))
-        result[key]=co.number(amount.strip())
-    return result
-
 
 def field(pl,en,default=None,required=True,paragraph=False):
     return dict(label=tr(pl,en),default=default,required=required,max_length=3000 if paragraph else 500,
@@ -124,14 +114,22 @@ async def show(i):
         return
     report=s.get('report',{})
     text=s['description']+'\n\n'+tr('Specjalizacje: ','Specialties: ')+', '.join(i18n.term(k) for k in s['types'])
-    text+='\n'+tr('Limit złota na inwestycję: ','Gold limit per investment: ')+f"{s['budget']:g}"
-    modes={'off':tr('ręcznie','manual'),'supply':tr('zaopatrzenie','supply'),
-           'expand':tr('rozbudowa','expansion'),'upgrade':tr('modernizacja','upgrades')}
+    with db.cursor() as c:
+        current=co.month_index(c)
+    remaining=co.remaining_budget(s,current)
+    spent=s['spent'] if s['budget_month']==current else 0
+    text+='\n'+tr('Budżet na miesiąc: ','Monthly budget: ')+f"{s['monthly_budget']:g} "+tr('złota','gold')
+    text+='\n'+tr('Wydano / zostało w tym miesiącu: ','Spent / remaining this month: ')+f"{spent:g} / {remaining:g}"
+    modes={'off':tr('ręczny','manual'),'auto':tr('automatyczny — całe własne państwo','automatic — all domestic provinces')}
     text+='\n'+tr('Tryb: ','Mode: ')+modes[s['mode']]
     if s['paused']:text+='\n'+tr('Działalność wstrzymana.','Operations paused.')
-    if report.get('investment'):
-        investment=report['investment']
-        text+='\n\n'+tr('Ostatnia inwestycja: ','Last investment: ')+f"{i18n.term(investment['building'])} · {investment['cell']} · {investment['level']}/3"
+    investments=report.get('investments',[])
+    if investments:
+        reasons={'food':tr('żywność','food'),'supplies':tr('surowce','supplies'),'growth':tr('rozwój','growth')}
+        text+='\n\n'+tr('Inwestycje w ostatnim raporcie: ','Investments in the latest report: ')+str(len(investments))
+        for item in investments[-5:]:
+            reason=reasons.get(item.get('reason'),tr('ręcznie','manual'))
+            text+=f"\n{i18n.term(item['building'])} · #{item['cell']} · {item['level']}/3 · {item['cost'].get('gold',0):g}g · {reason}"
     if report.get('received'):
         text+='\n'+tr('Dostawy i zwroty: ','Deliveries and refunds: ')+i18n.resource_list(report['received'])
     if report.get('costs'):
@@ -154,19 +152,27 @@ async def show(i):
 async def budget(interaction):
     n,s=get_state(interaction.user.id)
     async def mode(interaction,value):
-        async def submitted(interaction,cells,limit,minimum,resource):
-            await execute(interaction,co.configure,n['id'],interaction.user.id,s['version'],
-                          values(cells),limit,reserves(minimum),value,i18n.normalize_key(resource or 'food'))
-        await interaction.response.send_modal(InputModal(tr('Budżet firmy','Company budget'),[
-            field('Własne prowincje: ID po przecinku','Domestic province IDs, comma-separated',','.join(map(str,s['cells'])),False),
-            field('Limit złota na jedną inwestycję','Gold limit per investment',str(s['budget'])),
-            field('Rezerwy: gold=100,wood=50','Reserves: gold=100,wood=50',','.join(f'{k}={v:g}' for k,v in s['reserves'].items()),False),
-            field('Zasób dla zaopatrzenia, np. food','Supply resource, e.g. food',s['resource'],False)],submitted))
-    options=[discord.SelectOption(label=label,value=key) for key,label in [
-        ('off',tr('Ręczne inwestycje','Manual investments')),('supply',tr('Zaopatrzenie','Supply')),
-        ('expand',tr('Rozbudowa','Expansion')),('upgrade',tr('Modernizacja','Upgrades'))]]
-    await choose(interaction,tr('Wybierz priorytet. Automat wykonuje do jednej inwestycji na miesiąc.',
-                                 'Choose a priority. Automation makes up to one investment per month.'),options,mode)
+        async def submitted(interaction,amount):
+            await execute(interaction,co.configure,n['id'],interaction.user.id,s['version'],amount,value)
+        await interaction.response.send_modal(InputModal(tr('Budżet miesięczny','Monthly budget'),[
+            field('Złoto na miesiąc gry','Gold per game month',str(s['monthly_budget']))],submitted))
+    options=[discord.SelectOption(label=label,value=key,description=description) for key,label,description in [
+        ('auto',tr('Automatyczny','Automatic'),
+         tr('Wszystkie własne prowincje; sam wybiera budowę i modernizację.',
+            'All domestic provinces; chooses construction and upgrades.')),
+        ('off',tr('Ręczny','Manual'),tr('Ty wybierasz każdą inwestycję.','You choose every investment.'))]]
+    await choose(interaction,tr(
+        'Ustaw miesięczną kwotę złota na budowę i modernizację. Materiały pochodzą z zapasów państwa. '
+        'Automat najpierw uzupełnia braki, potem rozwija produkcję. Może wykonać kilka inwestycji. '
+        'Ręczne inwestycje firmy korzystają z tej samej kwoty; jej zmiana nie zeruje wydatków. '
+        'Niewydane złoto zostaje w skarbcu, a budżet odnawia się co miesiąc bez kumulowania. '
+        'Utrzymanie zakładów i zatwierdzone usprawnienia opłacasz osobno. Za granicą inwestujesz ręcznie przez koncesje.',
+        'Set a monthly gold amount for construction and upgrades. Materials come from national stocks. '
+        'Automation addresses shortages first, then grows production. It can make several investments. '
+        'Manual company investments use the same amount; editing it does not reset spending. '
+        'Unspent gold stays in the treasury; the budget renews monthly without accumulating. '
+        'Plant upkeep and approved improvements are paid separately. Foreign investment is manual through concessions.'),
+        options,mode)
 
 
 async def plants(interaction):
@@ -189,8 +195,8 @@ async def plants(interaction):
     view.add(tr('Zbuduj lub ulepsz','Build or upgrade'),build)
     view.add(tr('Przypisz istniejący budynek','Assign existing building'),assign)
     lines=[f"{r['azgaar_cell_id']} · {i18n.term(r['building_key'])} · {r['name']}" for r in rows]
-    text='\n'.join(lines) or tr('Brak zakładów. Najpierw ustaw prowincje i budżet.',
-                               'No plants. Set provinces and budget first.')
+    text='\n'.join(lines) or tr('Brak zakładów. Ustaw budżet miesięczny i włącz automat.',
+                               'No plants. Set a monthly budget and enable automation.')
     await interaction.response.send_message(text[:1900],view=view,ephemeral=True)
     for start in range(1900,len(text),1900):
         await interaction.followup.send(text[start:start+1900],ephemeral=True)
