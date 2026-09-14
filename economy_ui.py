@@ -24,6 +24,13 @@ def dashboard(n,r):
                          'Forecast for the next month. Workers are assigned automatically by default. Open Workers for manual assignments.')
     embed.add_field(name=tr('Złoto / miesiąc','Gold / month'),value=f"{r['balance']:+.1f}g\n"+tr('Dochód','Income')+f": {r['income']:.1f}g | "+tr('Utrzymanie','Upkeep')+f": {r['upkeep']:.1f}g")
     embed.add_field(name=tr('Skarbiec teraz','Treasury now'),value=f"{n['treasury']:.1f}g")
+    from labor_regimes import label
+    regime=r.get('labor',{'mode':'free','transition_months':0})
+    embed.add_field(name=tr('Polityka pracy','Labor policy'),value=label(regime['mode'])+
+                    tr(' · nadzór: ',' · supervision: ')+f"{r.get('labor_upkeep',0):g}g/"+tr('mies.','month')+
+                    (tr(' · okres przejściowy: ',' · transition: ')+str(regime['transition_months']) if regime['transition_months'] else ''),inline=False)
+    if r.get('dynasty_stability'):
+        embed.add_field(name=tr('Mariaże dynastyczne','Dynastic marriages'),value=f"+{r['dynasty_stability']:g} "+tr('stabilności/miesiąc','stability/month'))
     needed=r['food_needed'];stock=read_json(n['resources_json']).get('food',0)
     cover=f'{stock/needed:.1f}' if needed else '∞'
     embed.add_field(name=tr('Żywność','Food'),value=tr('Zapas na ','Stock for ')+cover+tr(' mies.',' months')+f"\n{r['food_change']:+.1f}/"+tr('mies.','month'))
@@ -59,6 +66,7 @@ class EconomyView(i18n.LocalizedView):
     def __init__(self,owner,nid):
         super().__init__(timeout=600)
         self.owner,self.nid=owner,nid
+        self.labor.label=tr('Polityka pracy','Labor policy')
         options=[('tax:low',tr('Podatki niskie','Low taxes')),('tax:normal',tr('Podatki normalne — domyślne','Normal taxes — default')),
                  ('tax:high',tr('Podatki wysokie','High taxes')),('priority:balanced',tr('Rozwój zrównoważony — domyślny','Balanced growth — default')),
                  ('priority:food',tr('Priorytet: żywność','Priority: food')),('priority:industry',tr('Priorytet: przemysł','Priority: industry')),
@@ -103,6 +111,12 @@ class EconomyView(i18n.LocalizedView):
         from labor_ui import show
         await show(interaction,self.nid)
 
+    @discord.ui.button(label='Labor policy',row=1)
+    @i18n.localized
+    async def labor(self,interaction,button):
+        from labor_policy_ui import show
+        await show(interaction)
+
 
 async def show_dashboard(interaction):
     n=get_nation_by_owner(str(interaction.user.id))
@@ -128,6 +142,12 @@ class PopulationConfirm(i18n.LocalizedView):
 
 class EconomyControlCog(commands.Cog):
     economy=app_commands.Group(name='economy',description='Economy dashboard / Panel gospodarki')
+
+    @economy.command(name='labor',description='Labor policy, slavery and emancipation / Polityka pracy')
+    @i18n.localized
+    async def labor(self,interaction:discord.Interaction):
+        from labor_policy_ui import show
+        await show(interaction)
 
     @economy.command(name='status',description='Simple balance and settings / Bilans i ustawienia')
     @i18n.localized

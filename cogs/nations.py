@@ -139,6 +139,9 @@ class NationCog(commands.Cog):
         embed.add_field(name=i18n.text('Population'),  value=f"{total_population:,}",           inline=True)
         
         from world_service import profile, tr
+        from labor_regimes import state as labor_state,label as labor_label
+        with db.cursor() as cur: labor=labor_state(cur,nation['id'])
+        embed.add_field(name=tr('Polityka pracy','Labor policy'),value=labor_label(labor['mode']))
         from technology import historical_year, discoveries
         with db.cursor() as cur:year,_=historical_year(nation,discoveries(cur,nation['id']))
         embed.add_field(name=tr('Orientacyjny rok technologiczny (IRL)', 'Approximate technology year (IRL)'),
@@ -239,7 +242,7 @@ class NationCog(commands.Cog):
     async def nation_list(self, interaction: discord.Interaction):
         lang = _lang(interaction)
         with db.cursor() as cur:
-            cur.execute("SELECT name, flag, government_type, owner_id FROM nations ORDER BY name")
+            cur.execute("SELECT name, government_type, owner_id FROM nations ORDER BY name")
             rows = cur.fetchall()
 
         if not rows:
@@ -248,17 +251,33 @@ class NationCog(commands.Cog):
             )
             return
 
-        from utils import EmbedPager
-        pages = []
+        descriptions = []
+        current = ''
         for r in rows:
-            flag = flag_text(r["flag"])
+            name = discord.utils.escape_markdown(' '.join(r['name'].split()))
+            government = discord.utils.escape_markdown(' '.join((r['government_type'] or '').split()))
             owner = f"<@{r['owner_id']}>"
-            pages.append(flagged_embed(discord.Embed(
-                title=i18n.t(lang, "nation_list_title"),
-                description=f"{flag} **{r['name']}** — {r['government_type']} ({owner})",
+            line = f"**{name}**" + (f" — {government}" if government else '') + f" · {owner}"
+            # Send the whole roster; long lists continue automatically without a pager.
+            for start in range(0, len(line), 4000):
+                part = line[start:start+4000]
+                if current and len(current) + len(part) + 1 > 4000:
+                    descriptions.append(current)
+                    current = ''
+                current += ('\n' if current else '') + part
+        if current:
+            descriptions.append(current)
+        for index, description in enumerate(descriptions):
+            embed = discord.Embed(
+                title=i18n.t(lang, "nation_list_title") + f" ({len(rows)})",
+                description=description,
                 color=discord.Color.blurple(),
-            ), (r['flag'], r['name'])))
-        await interaction.response.send_message(embed=pages[0], view=EmbedPager(pages, interaction.user.id))
+            )
+            if index == 0:
+                await interaction.response.send_message(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            else:
+                await interaction.followup.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+
     @nation_group.command(name="history_add", description="[GM] Add history entry / [GM] Dodaj wpis historii")
     @app_commands.describe(
         name="Nation name / Nazwa narodu",

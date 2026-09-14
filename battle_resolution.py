@@ -263,6 +263,8 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
     with db.cursor() as c:
         if not db.USE_POSTGRES:
             c.execute("BEGIN IMMEDIATE")
+        from world_service import world_lock
+        world_lock(c)
         lock = " FOR UPDATE" if db.USE_POSTGRES else ""
         c.execute("SELECT * FROM battles WHERE id=?" + lock, (battle_id,))
         battle = c.fetchone()
@@ -296,10 +298,14 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
             result['research_bonuses'][side]={k+stat:v for k in categories if (v:=bonuses(c,n['id']).get(k+stat,0))}
         result["battlefield"] = battlefield
         result["casualties_applied"] = bool(apply_casualties)
+        c.execute("SELECT u.id FROM military_units u LEFT JOIN blueprints b ON b.id=u.blueprint_id WHERE b.type IS NULL OR b.type!='ship'")
+        land_ids={u['id'] for u in c.fetchall()}
         result["attacker_losses"] = _casualties(c, atk_units, result["atk_casualties_pct"],
                                                 ai['attacker_exposure'], apply_casualties)
         result["defender_losses"] = _casualties(c, def_units, result["def_casualties_pct"],
                                                 ai['defender_exposure'], apply_casualties)
+        from captivity import battle_pool
+        result['captives_available']=battle_pool(c,battle_id,result,nat_a['id'],nat_b['id'],land_ids)
         final = {"attacker_modifier": atk_mod, "defender_modifier": def_mod,
                  "overridden": bool(atk_override or def_override)}
         c.execute("UPDATE battles SET status='resolved',ai_modifier_json=?,gm_final_modifier_json=?,"

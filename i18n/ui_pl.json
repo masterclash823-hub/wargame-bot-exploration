@@ -879,5 +879,13 @@
   "Algae extraction requires a rare deposit. See /algae locations.": "Wydobycie algae wymaga rzadkiego stanowiska. Sprawdź /algae locations.",
   "Rare deposit only: /algae locations. Economy 6, 250 workers; 0.5 algae per month.": "Tylko rzadkie stanowiska: /algae locations. Gospodarka 6, 250 pracowników; 0,5 algae/miesiąc.",
   "Rare algae deposit. Extraction needs an Algae Farm and economy 6.": "Rzadkie stanowisko algae. Wydobycie wymaga farmy algae i gospodarki 6.",
-  "Outpost established at **{p0}**.\nProduces **50%** of base resources.\nAdvancement needs {p1} gold and {p2} game months, plus population, food and technology.": "Założono placówkę w **{p0}**.\nProdukuje **50%** zasobów bazowych.\nAwans wymaga {p1} złota i {p2} miesięcy gry oraz ludności, żywności i technologii."
+  "Outpost established at **{p0}**.\nProduces **50%** of base resources.\nAdvancement needs {p1} gold and {p2} game months, plus population, food and technology.": "Założono placówkę w **{p0}**.\nProdukuje **50%** zasobów bazowych.\nAwans wymaga {p1} złota i {p2} miesięcy gry oraz ludności, żywności i technologii.",
+  "Start or resume a free-text expedition / Rozpocznij lub wznów wyprawę": "Rozpocznij lub wznów wyprawę z własnymi odpowiedziami",
+  "Captives after a victory / Jeńcy po zwycięstwie": "Jeńcy po zwycięstwie",
+  "Review a captive transfer / Sprawdź przeniesienie jeńców": "Sprawdź przeniesienie jeńców przed zatwierdzeniem",
+  "Available victory claims / Dostępni jeńcy po zwycięstwach": "Dostępni jeńcy po zwycięstwach",
+  "Set the agreed peace outcome / Ustal wynik wojny w propozycji pokoju": "Ustal wynik wojny w propozycji pokoju",
+  "Arrange a dynastic marriage in an active alliance / Mariaż w sojuszu": "Zaproponuj lub zaakceptuj mariaż w aktywnym sojuszu",
+  "Labor policy, slavery and emancipation / Polityka pracy": "Polityka pracy, niewolnictwo i emancypacja",
+  "none": "Bez wskazanego zwycięzcy"
 }

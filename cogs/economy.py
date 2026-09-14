@@ -6,7 +6,7 @@ from flags import flag_text, flagged_embed
 import psycopg2
 import psycopg2.extras
 
-import json, asyncio
+import json, asyncio, math
 from datetime import datetime, timezone
 
 import discord
@@ -63,15 +63,16 @@ BUILDING_TRANSLATIONS_PL = {
     "copper_mine":    ("Kopalnia Miedzi", "Miedź z wzgórz i gór."),
     "clay_pit":       ("Glinianka",       "Glina z mokradeł i równin."),
     "tar_works":      ("Smolarnia",       "Smoła z lasów i mokradeł."),
-    "powder_mill":    ("Młyn Prochowy",   "Proch. Wymaga węgla+miedzi+żelaza. Tech 4."),
+    "powder_mill":    ("Młyn Prochowy",   "Produkuje proch, zużywając węgiel i miedź. Tech 4."),
     "cannon_foundry": ("Ludwisarnia",     "Więcej prochu, zużywa żelazo. Wymaga węgla+miedzi. Tech 4."),
     "textile_mill":   ("Tkacalnia",       "Sukno. Wymaga tech 3."),
     "silk_workshop":  ("Warsztat Jedwabiu","Produkcja jedwabiu. Wymaga sukna. Tech 3."),
-    "market":         ("Rynek",           "Dochód złota każdy tick."),
-    "port":           ("Port",            "Złoto handlowe w prowincjach przybrzeżnych."),
+    "market":         ("Rynek",           "Zwiększa podatki prowincji i sprzedaje nadwyżki dóbr luksusowych."),
+    "port":           ("Port",            "Umożliwia eksport dóbr luksusowych przez szlaki z przydzielonymi statkami."),
     "fort":           ("Fort",            "+1 fortyfikacja. Wymaga gliny."),
     "university":     ("Uniwersytet",     "Powszechna Wiedza każdy tick. Wymaga gliny. Tech 5."),
     "algae_farm":     ("Farma Alg",       "Tylko własne złoża. Automatycznie przy gospodarce 3/4/5/6+: 0,05/0,1/0,2/0,5 algae na miesiąc. Ulepszenia od gospodarki 6."),
+    "granary":        ("Spichlerz",       "Chroni państwowe zapasy żywności przed psuciem."),
 }
 # ---------------------------------------------------------------------------
 # Pure helper functions (no discord imports needed)
@@ -106,6 +107,67 @@ def _building_label(row, lang=None):
     if (default and row['name'] == default['name']) or (row['key']=='granary' and row['name']=='Granary'):
         return i18n.term(row['key'], lang)
     return row['name']
+
+
+def _building_description(row, lang):
+    """Translate stock descriptions while preserving descriptions written by the GM."""
+    from economy_migration import NEW_DESCRIPTIONS
+    default = next((b for b in DEFAULT_BUILDINGS if b['key'] == row['key']), None)
+    descriptions = {default['desc']} if default else set()
+    descriptions.add(NEW_DESCRIPTIONS.get(row['key']))
+    if row['key'] == 'granary':
+        descriptions.add('Reduces food spoilage; 50 workers.')
+    if lang == 'pl' and row['key'] in BUILDING_TRANSLATIONS_PL and row['description'] in descriptions:
+        return BUILDING_TRANSLATIONS_PL[row['key']][1]
+    return row['description'] or ''
+
+
+def _building_effect_text(row, lang):
+    """Describe base level-one effects, including mechanics outside effect_json."""
+    from technology import algae_yield
+    pl = lang == 'pl'
+    special = {
+        'market': (
+            '+15% do podatków prowincji. Limit eksportu: 1 szt. jedwabiu lub przypraw '
+            'na 1000 mieszkańców tej prowincji miesięcznie.' if pl else
+            '+15% province tax revenue. Export capacity: 1 unit of silk or spices '
+            'per 1,000 province residents per month.'),
+        'port': (
+            'Udostępnia eksport jedwabiu i przypraw z limitem równym łącznej ładowności '
+            'statków przydzielonych do aktywnych szlaków miesięcznie. Limit wspólny dla wszystkich portów.' if pl else
+            'Enables silk and spice exports with monthly capacity equal to the total cargo '
+            'of ships assigned to active routes. All ports share this capacity.'),
+        'fort': (
+            '+1 do poziomu fortyfikacji prowincji przy budowie; każde ulepszenie dodaje kolejny +1.' if pl else
+            '+1 province fortification level when built; each upgrade adds another +1.'),
+        'granary': (
+            'Zmniejsza miesięczne psucie żywności w całym państwie z 2% do 0,5% '
+            'zapasów przekraczających 3 miesiące zapotrzebowania. Łączna redukcja ze spichlerzy: maks. 75%.' if pl else
+            'Reduces nationwide monthly food spoilage from 2% to 0.5% of stocks above '
+            '3 months of demand. Combined granary reduction is capped at 75%.'),
+    }
+    parts = [special[row['key']]] if row['key'] in special else []
+    if row['key'] in ('market', 'port'):
+        parts.append('Ceny: jedwab 4 złota/szt., przyprawy 3 złota/szt.; sprzedaż zgodnie z polityką dóbr luksusowych.' if pl else
+                     'Prices: silk 4 gold/unit, spices 3 gold/unit; sales follow the luxury policy.')
+    monthly = 'miesiąc' if pl else 'month'
+    def number(value):
+        result = f'{value:+g}'
+        return result.replace('.', ',') if pl else result
+    resources = []
+    for key, value in json.loads(row['effect_json']).items():
+        if not isinstance(value, (int, float)) or not math.isfinite(value) or value == 0:
+            continue
+        if key == 'algae' and value > 0:
+            if row['key'] == 'algae_farm':
+                yields = '/'.join(number(min(algae_yield(level), value)) for level in (3, 4, 5, 6))
+                parts.append((f'Gospodarka 3/4/5/6+: {yields} algae/{monthly}; tylko na złożach.' if pl else
+                              f'Economy 3/4/5/6+: {yields} algae/{monthly}; deposits only.'))
+            continue  # Positive algae output is restricted to deposit extractors.
+        resources.append(f'{number(value)} {i18n.term(key, lang)}/{monthly}')
+    if resources:
+        parts.append(', '.join(resources))
+    return '\n'.join(parts) or ('Brak automatycznego efektu gospodarczego.' if pl else 'No automatic economic effect.')
 
 
 def _terrain_label(value):
@@ -322,6 +384,8 @@ HELP_SECTIONS = {
             ("/build <cell_id> <key>", "Construct one of each building type per province. Workers are assigned automatically."),
             ("/economy status", "Monthly balance, warnings and optional settings. Also available from the panel."),
             ("/economy workers [cell_id]", "Reserve workers for buildings; leave a field empty to restore automatic staffing."),
+            ("/economy labor", "Review labor policy, slavery and the cost of emancipation; confirm a reform."),
+            ("/captives list", "Review one-use victory claims; take captives into your province or waive the claim."),
             ("/economy upgrade <cell_id> <building>", "Upgrade a building to level 2 or 3. Output: 170% / 240%."),
             ("/economy posture <unit_id> <mode>", "Reserve 35%, active 100%, expedition 150% upkeep. Mobilization takes one month."),
             ("/economy recurring <trade_id>", "Propose monthly deliveries. The recipient must explicitly accept monthly:True."),
@@ -398,6 +462,9 @@ HELP_SECTIONS = {
             ("/diplomacy status", "View your own diplomatic relations."),
             ("/treaty propose", "Propose a peace settlement, alliance, non-aggression pact, military access or guarantee."),
             ("/treaty list", "Review proposals and accepted terms; accept, decline or break a treaty."),
+            ("/treaty marriage treaty_id", "Propose or accept an adult dynastic marriage in an active alliance."),
+            ("/treaty outcome", "Declare a winner in a peace proposal; the other party must accept the outcome and captive terms."),
+            ("/exploration [preparations] [expedition_id]", "Free-text expedition: up to three replies, then a public outcome in the original channel with a GM ping."),
             ("/treaty tribute", "Add monthly reparations before acceptance. Also available through the terms button."),
             ("/treaty calls", "Answer a guarantee call before the next game month; joining war requires your decision."),
             ("/event list [nation]", "View posted events for a nation or your own."),
@@ -484,6 +551,8 @@ HELP_SECTIONS_PL = {
             ("/build <id> <klucz>", "Wybuduj budynek w prowincji."),
             ("/economy status", "Bilans miesiąca, podpowiedzi i opcjonalne ustawienia. Dostępne też w panelu."),
             ("/economy workers [cell_id]", "Przydziel ludzi do budynków; puste pole przywraca automat."),
+            ("/economy labor", "Sprawdź politykę pracy, niewolnictwo i koszt zniesienia; zatwierdź reformę."),
+            ("/captives list", "Przejrzyj jednorazowe uprawnienia po zwycięstwach; weź jeńców do prowincji lub zrezygnuj."),
             ("/economy upgrade <id> <budynek>", "Ulepsz budynek do poziomu 2 lub 3: 170% / 240% produkcji. Obsada automatyczna."),
             ("/economy posture <id> <tryb>", "Utrzymanie: rezerwa 35%, aktywne 100%, wyprawa 150%. Mobilizacja trwa miesiąc."),
             ("/economy recurring <id>", "Zaproponuj wymianę co miesiąc. Odbiorca musi wyrazić zgodę na miesięczne dostawy."),
@@ -545,6 +614,9 @@ HELP_SECTIONS_PL = {
             ("/diplomacy status", "Twoje relacje dyplomatyczne."),
             ("/treaty propose", "Zaproponuj pokój, sojusz, nieagresję, dostęp wojskowy lub gwarancję bezpieczeństwa."),
             ("/treaty list", "Przejrzyj propozycje i warunki; zaakceptuj, odrzuć lub zerwij traktat."),
+            ("/treaty marriage treaty_id", "Zaproponuj lub zaakceptuj mariaż dorosłych postaci w aktywnym sojuszu."),
+            ("/treaty outcome", "Wskaż zwycięzcę w propozycji pokoju; druga strona zatwierdza wynik i warunek jeńców."),
+            ("/exploration [preparations] [expedition_id]", "Opisowa wyprawa: do trzech odpowiedzi, potem publiczny wynik na pierwotnym kanale z pingiem GM."),
             ("/treaty tribute", "Dodaj raty reparacji przed akceptacją. Dostępne też przyciskiem warunków."),
             ("/treaty calls", "Odpowiedz na gwarancję przed następnym miesiącem gry. Sam decydujesz o wejściu do wojny."),
             ("/event list [naród]", "Lista opublikowanych eventów dla narodu."),
@@ -786,14 +858,11 @@ class EconomyCog(commands.Cog):
                 )
         for i, b in enumerate(rows):
             cost_str = ", ".join(f"{v} {i18n.term(k)}" for k, v in json.loads(b["cost_json"]).items())
-            eff_str  = ", ".join(i18n.text('+{p0} {p1}/tick', p0=v, p1=i18n.term(k)) for k, v in json.loads(b["effect_json"]).items()) or i18n.term("special")
+            eff_str  = _building_effect_text(b, lang)
             terrain  = b["requires_terrain"] or "any"
             tech     = i18n.text(' | Tech≥{p0}', p0=b['requires_tech']) if b["requires_tech"] > 0 else ""
-            lang = _lang(interaction)
-            if lang == "pl" and b["key"] in BUILDING_TRANSLATIONS_PL:
-                bname, bdesc = BUILDING_TRANSLATIONS_PL[b["key"]]
-            else:
-                bname, bdesc = b["name"], b["description"]
+            bname = _building_label(b, lang)
+            bdesc = _building_description(b, lang)
             terrain_label = _terrain_label(terrain)
             cur_embed.add_field(
                 name=f"T{b['tier']} `{b['key']}` — {bname}",
@@ -801,7 +870,7 @@ class EconomyCog(commands.Cog):
                     f"{bdesc}\n"
                     f"{'Koszt' if lang=='pl' else i18n.text('Cost')}: {cost_str} | "
                     f"{'Teren' if lang=='pl' else i18n.text('Terrain')}: {terrain_label}{tech}\n"
-                    f"{'Produkuje' if lang=='pl' else i18n.text('Produces')}: {eff_str}"
+                    f"{'Efekt' if lang=='pl' else 'Effect'}: {eff_str}"
                 ),
                 inline=False,
             )
@@ -815,6 +884,10 @@ class EconomyCog(commands.Cog):
             pages.append(cur_embed)
         for idx, p in enumerate(pages):
             p.title = f"{title_base} ({idx+1}/{len(pages)})"
+            p.set_footer(text=(
+                'Wartości bazowe dla poziomu 1 i pełnej obsady; produkcja przed premiami i mnożnikami. Rzeczywisty bilans w panelu.' if lang == 'pl' else
+                'Base values at level 1 and full staffing; production before bonuses and modifiers. The panel shows the actual forecast.'
+            ))
         view = PageView(pages)
         await interaction.response.send_message(embed=pages[0], view=view, ephemeral=True)
 

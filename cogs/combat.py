@@ -188,6 +188,8 @@ async def _generate_ai_battle_report(plan_a, plan_b, nat_a, nat_b, battlefield,
     language = "Polish" if i18n.current_language() == "pl" else "English"
     prompt = f"""You are writing the official report of a fantasy Age of Exploration battle.
 The mechanical outcome below is final. Do not change the winner, casualties, units or numbers.
+captives_available is a subset of the losing side's land losses, not additional casualties.
+When nonzero, those losses include prisoners: do not describe every lost soldier as killed.
 Research and funded algae bonuses listed in the result are already included in the numbers.
 Explain relevant bonuses in the story without adding another multiplier or inventing effects.
 The attacker_losses and defender_losses arrays give exact losses per unit_id and tactical exposure reasons.
@@ -735,6 +737,9 @@ class CombatCog(commands.Cog):
             color=WINNER_COLOR.get(result["winner"], discord.Color.greyple()),
         )
         flagged_embed(report_embed, (nat_a['flag'], nat_a['name']), (nat_b['flag'], nat_b['name']))
+        if result.get('captives_available'):
+            from world_service import tr
+            report_embed.add_field(name=tr('Jeńcy','Captives'),value=str(result['captives_available'])+tr(' w ramach strat przegranego. Zwycięzca: Panel → Wojsko → Jeńcy.',' included in the loser’s losses. Winner: Panel → Military → Captives.'),inline=False)
         report_embed.add_field(
             name=i18n.text('Combatants'),
             value=(

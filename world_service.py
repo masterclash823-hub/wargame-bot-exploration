@@ -48,10 +48,11 @@ ACTIVITY_FIELDS={
     'building':{'building','level','cell'}, 'colony':{'cell'}, 'expansion':{'cell'},
     'research':{'category','completed'}, 'project':set(), 'event':set(),
     'battle':{'winner'}, 'war':set(), 'treaty':{'kind'}, 'breach':{'kind'},
-    'goal':{'code'}, 'guarantee':set(),
+    'goal':{'code'}, 'guarantee':set(), 'marriage':set(), 'labor_reform':{'mode'}, 'captives':{'quantity'},
 }
 SCORES={'war':100,'battle':90,'breach':85,'treaty':80,'guarantee':75,'goal':70,
-        'event':60,'expansion':55,'colony':50,'project':40,'research':30,'building':10}
+        'event':60,'expansion':55,'colony':50,'project':40,'research':30,'building':10,
+        'marriage':78,'labor_reform':65,'captives':72}
 
 
 def activity(c,kind,nid,source_key,payload=None,other=None):
@@ -131,6 +132,7 @@ def transfer_nation(nid,new_owner,expected_owner,gm_id):
         c.execute('INSERT INTO ownership_changes(nation_id,previous_owner,new_owner,gm_id) VALUES(?,?,?,?)',
                   (nid,n['owner_id'],str(new_owner),str(gm_id)))
         c.execute("UPDATE treaties SET status='cancelled' WHERE status IN ('draft','proposed') AND (proposer_id=? OR recipient_id=?)",(nid,nid))
+        c.execute("UPDATE dynastic_marriages SET status='cancelled' WHERE status='proposed' AND (proposer_id=? OR recipient_id=?)",(nid,nid))
         c.execute("UPDATE trades SET status='cancelled',resolved_at=CURRENT_TIMESTAMP WHERE status='pending' AND (from_nation_id=? OR to_nation_id=?)",(nid,nid))
         return n
 

@@ -88,6 +88,10 @@ def snapshot(c, nid):
     n = c.fetchone()
     from technology import bonuses
     n=dict(n, research_bonuses=bonuses(c,nid))
+    from labor_regimes import state
+    from dynasty import stability_bonus
+    n['labor_regime'] = state(c, nid)
+    n['dynasty_stability'] = stability_bonus(c, nid)
     c.execute('SELECT p.*,d.levels_json,c.status AS colony_status,a.province_id AS algae_site,l.allocations_json FROM provinces p '
               'LEFT JOIN province_development d ON d.province_id=p.id LEFT JOIN colonies c ON c.province_id=p.id '
               'LEFT JOIN algae_sites a ON a.province_id=p.id '
@@ -126,6 +130,10 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
     taxes = output_gold = building_upkeep = 0.
     production, staffing, populations = {}, [], {}
     population = sum(max(0,r['population']) for r in provinces)
+    from labor_regimes import DEFAULT as LABOR_DEFAULT, output_bonus
+    regime = dict(nation.get('labor_regime', LABOR_DEFAULT))
+    slavery = regime['mode'] == 'slavery'
+    supervision = population / 1000 if slavery else 0
     food_need = population/100 + sum(u['quantity'] for u in units)/10
     granaries = 0
     market_capacity = 0.
@@ -182,7 +190,7 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
                 if value<=0 or resource=='algae':continue
                 bonus=effects.get('knowledge',0) if resource=='universal_knowledge' else effects.get('production',0)
                 if key=='farm' and resource=='food':bonus+=effects.get('farm_food',0)
-                outputs[resource]=value*(1+bonus)
+                outputs[resource]=value*(1+bonus)*(1+output_bonus(regime,key))
             jobs.append((key,outputs,amount))
         taxes += pop/1000*TAX[p['tax']]*stab*col*(1+market_bonus)*max(.5,1-p['unrest']/200)*(1+effects.get('taxes',0))
         for k,v in read_json(prov['base_resources_json']).items():
@@ -224,6 +232,10 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
     res['food'] = max(0,food_have-food_need)
     p['hunger_months'] = p['hunger_months']+1 if shortage else 0
     p['unrest'] = min(100,max(0,p['unrest']+{'low':-3,'normal':-1,'high':3}[p['tax']]))
+    if slavery:
+        p['unrest'] = min(100, p['unrest'] + 2)
+        stability -= .5
+    stability += nation.get('dynasty_stability', 0)
     growth = 0.
     if shortage:
         if p['hunger_months'] >= 2: stability -= (1-fed)*8
@@ -239,7 +251,7 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
     for prov in provinces:
         populations[prov['id']] = max(0,int(prov['population']*(1+growth)))
     gold_income = taxes+output_gold+luxury_gold
-    upkeep = building_upkeep+military_upkeep
+    upkeep = building_upkeep+military_upkeep+supervision
     due = upkeep+p['arrears']
     cash = max(0,start_gold+gold_income)
     paid = min(cash,due)
@@ -252,7 +264,8 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
                 balance=round(gold_income-upkeep,2),food_needed=food_need,food_shortage=shortage,
                 food_change=res['food']-read_json(nation['resources_json']).get('food',0),
                 food_months=res['food']/food_need if food_need else None,spoilage=spoilage,
-                luxury_income=luxury_gold,production=production)
+                luxury_income=luxury_gold,production=production,
+                labor=regime,labor_upkeep=supervision,dynasty_stability=nation.get('dynasty_stability',0))
 
 
 def forecast(nid):
@@ -337,6 +350,8 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
         from economy_services import settle_contracts
         from treaty_service import tick as treaty_tick
         treaty_tick(c,target)
+        from dynasty import tick as dynasty_tick
+        dynasty_tick(c,target)
         settle_contracts(c,target)
         c.execute("UPDATE military_posture SET mode='active' WHERE mode='mobilizing' AND ready_month<=?",(target,))
         reports={}
@@ -355,12 +370,16 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
             c.execute('UPDATE nations SET resources_json=?,treasury=?,stability=?,population=? WHERE id=?',
                       (json.dumps(result['resources']),result['treasury'],result['stability'],result['population'],nid))
             save_policy(c,nid,result['policy'])
+            from labor_regimes import settle as settle_labor
+            settle_labor(c,nid,result)
             with i18n.using_language(i18n.get_user_language(n['owner_id'])):
                 completed,resources=tick_research(c,nid,target)
             result['resources']=resources
             result['research_completed']=completed
             result['algae_programs']=programs
             for pid,pop in result['populations'].items(): c.execute('UPDATE provinces SET population=? WHERE id=?',(pop,pid))
+            from captivity import reconcile
+            reconcile(c,nid)
             if result['policy']['unpaid_months']>=3:
                 from battle_resolution import allocate_losses
                 c.execute('SELECT id,quantity FROM military_units WHERE nation_id=?',(nid,))

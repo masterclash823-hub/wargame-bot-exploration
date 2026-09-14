@@ -35,13 +35,20 @@ class FlagTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(card.thumbnail.url, self.urls[1])
         self.assert_no_text_urls(card)
 
-    async def test_nation_list_preserves_each_flag_on_its_page(self):
+    async def test_nation_list_shows_all_nations_without_flags_or_paging(self):
         request = interaction(2)
         await NationCog.nation_list.callback(None, request)
-        pages = request.response.send_message.call_args.kwargs['view'].pages
-        self.assertEqual([page.thumbnail.url for page in pages], self.urls)
-        for page in pages:
-            self.assert_no_text_urls(page)
+        sent = request.response.send_message.call_args.kwargs
+        card = sent['embed']
+        self.assertIn('**A**', card.description)
+        self.assertIn('**B**', card.description)
+        self.assertIn('<@1>', card.description)
+        self.assertIn('<@2>', card.description)
+        self.assertIsNone(sent.get('view'))
+        self.assertIsNone(card.thumbnail.url)
+        self.assertIsNone(card.image.url)
+        self.assert_no_text_urls(card)
+        request.followup.send.assert_not_called()
 
     async def test_trade_renders_both_flags(self):
         request = interaction(2)
