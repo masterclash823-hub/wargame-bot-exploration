@@ -358,6 +358,9 @@ class NationCog(commands.Cog):
             ),
             color=discord.Color.red(),
         )
+        embed.description += ("\n\nPowiązane bitwy (także zakończone) zostaną usunięte."
+                              if lang == "pl" else
+                              "\n\nRelated battles (including resolved battles) will be removed.")
         await interaction.response.send_message(embed=embed, view=ConfirmDelete(), ephemeral=True)
 
 async def setup(bot: commands.Bot):

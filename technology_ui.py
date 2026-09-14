@@ -2,6 +2,7 @@
 import math
 import json
 import asyncio
+import logging
 
 import discord
 
@@ -169,6 +170,21 @@ async def show(interaction,nid,*,code=None,catalogue=False,edit=False):
     await deliver(interaction,embed=e,view=view,edit=edit)
 
 
+async def show_locations(interaction, *, deferred=False, notice=None):
+    """Acknowledge first; PostgreSQL reads must not block Discord's event loop."""
+    if not deferred and not response_done(interaction):
+        await interaction.response.defer(ephemeral=True)
+    try:
+        embed=await asyncio.to_thread(locations_embed)
+    except Exception:
+        logging.getLogger(__name__).exception('Could not display algae deposits')
+        error=tech.tr('Nie udało się odczytać złóż algae. Spróbuj ponownie; jeśli błąd wróci, poproś GM o sprawdzenie logów.',
+                      'Could not read algae deposits. Try again; if this continues, ask the GM to check the logs.')
+        await interaction.followup.send(content=((notice+'\n') if notice else '')+error,ephemeral=True)
+        return
+    await interaction.followup.send(content=notice,embed=embed,ephemeral=True)
+
+
 def locations_embed():
     with db.cursor() as c:
         c.execute('SELECT p.*,n.name AS owner_name FROM algae_sites a JOIN provinces p ON p.id=a.province_id '
@@ -180,7 +196,13 @@ def locations_embed():
     for p in sites:
         title=f"#{p['azgaar_cell_id']} · {p['name'] or i18n.term(p['terrain'])}"
         value=(p['owner_name'] or tech.tr('Niczyje','Unclaimed'))+' · '+i18n.term(p['terrain'])
-        if 'algae_farm' in json.loads(p['buildings_json']):value+=' · '+tech.tr('farma istnieje','farm exists')
+        try:
+            buildings=json.loads(p['buildings_json'] or '[]')
+            if not isinstance(buildings,list):raise ValueError('Expected a building list')
+        except (ValueError,TypeError):
+            buildings=[]
+            value+=' · '+tech.tr('nie można odczytać budynków','building data unreadable')
+        if 'algae_farm' in buildings:value+=' · '+tech.tr('farma istnieje','farm exists')
         e.add_field(name=discord.utils.escape_mentions(title)[:256],value=discord.utils.escape_mentions(value)[:1024],inline=False)
     if not sites:e.add_field(name='—',value=tech.tr('Brak aktywnych złóż. GM wskazuje je przez /algae deposit_add cell_id. Import ani restart nie tworzą złóż.', 'No active deposits. The GM places them with /algae deposit_add cell_id. Importing or restarting creates no deposits.'))
     with db.cursor() as c:

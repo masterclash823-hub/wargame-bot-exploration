@@ -15,6 +15,7 @@ from utils import get_nation_by_owner, gm_only
 
 
 PL = {
+    'company':'Kompania', 'company_offers':'Oferty inwestycji',
     'exploration':'Eksploracja','captives':'Jeńcy',
     'labor':'Polityka pracy',
     'workers':'Pracownicy', 'algae_production':'Wydobycie algae',
@@ -48,6 +49,7 @@ PL = {
 
 def tr(lang: str, key: str) -> str:
     en = {
+        'company':'Company', 'company_offers':'Investment offers',
         'exploration':'Exploration','captives':'Captives',
         'labor':'Labor policy',
         'workers':'Workers', 'algae_production':'Algae production',
@@ -252,7 +254,17 @@ class PlayerPanel(OwnedView):
             await interaction.response.edit_message(embed=self.embed(), view=self)
         category.callback = change
         self.add_item(category)
-        for index, (action, emoji) in enumerate(ACTIONS[self.section]):
+        actions = list(ACTIONS[self.section])
+        from companies import unlocked
+        nation = get_nation_by_owner(str(self.owner_id))
+        if self.section == 'economy' and unlocked(nation):
+            actions.append(('company', '🏢'))
+        if self.section == 'diplomacy' and nation:
+            with db.cursor() as c:
+                c.execute("SELECT id FROM company_concessions WHERE host_nation_id=? AND status IN ('proposed','active') LIMIT 1", (nation['id'],))
+                if c.fetchone():
+                    actions.append(('company_offers', '🏢'))
+        for index, (action, emoji) in enumerate(actions):
             key = action.removeprefix("language_") if action.startswith("language_") else action
             label = {"pl":"Polski", "en":"English"}[key] if action.startswith("language_") else tr(self.lang, key)
             button = discord.ui.Button(label=label, emoji=emoji, style=discord.ButtonStyle.secondary,
@@ -332,6 +344,7 @@ class PlayerPanel(OwnedView):
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
+            'company':('CompanyCog','company',[]), 'company_offers':('CompanyCog','company_offers',[]),
             'exploration':('ExplorationCog','exploration',[]),'captives':('CaptivesCog','list_claims',[]),
             'labor':('EconomyControlCog','labor',[]),
             'workers':('EconomyControlCog','workers',[]), 'algae_production':('TechCog','algae_production',[]),
@@ -429,6 +442,7 @@ class PlayerPanel(OwnedView):
                         lambda r:discord.SelectOption(label=r['name'][:100],value=r['name']),target)
 
     async def choose_build(self, i):
+        from cogs.economy import _building_label, _building_effect_summary
         n=get_nation_by_owner(str(self.owner_id))
         async def province(i2,cell):
             with db.cursor() as c:
@@ -439,8 +453,8 @@ class PlayerPanel(OwnedView):
                     await invoke(self.cog('EconomyControlCog'),'upgrade',i3,int(cell),key)
                 else:
                     await invoke(self.cog("EconomyCog"),"build",i3,int(cell),key)
-            await self.rows(i2,"SELECT key,name,description FROM building_defs ORDER BY tier,name",(),
-                lambda r:discord.SelectOption(label=((('↑ ' if r['key'] in existing else '+ '))+i18n.term(r['key'],self.lang))[:100],value=r['key'],description=('Ulepsz / Upgrade' if r['key'] in existing else 'Buduj / Build')),building)
+            await self.rows(i2,"SELECT * FROM building_defs ORDER BY tier,name",(),
+                lambda r:discord.SelectOption(label=(('↑ ' if r['key'] in existing else '+ ')+_building_label(r,self.lang))[:100],value=r['key'],description=_building_effect_summary(r,self.lang)),building)
         await self.owned_provinces(i,n,province)
 
     async def owned_provinces(self,i,n,handler):
