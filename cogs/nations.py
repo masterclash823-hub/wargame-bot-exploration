@@ -8,6 +8,9 @@ Nation commands:
 """
 from flags import flag_text, flagged_embed
 import json
+import asyncio
+import logging
+from nation_deletion import delete_nation
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -319,12 +322,27 @@ class NationCog(commands.Cog):
 
             @discord.ui.button(label="⚠️ Confirm Delete", style=discord.ButtonStyle.danger)
             async def confirm(self, btn: discord.Interaction, button: discord.ui.Button):
-                with db.cursor() as cur:
-                    cur.execute("UPDATE provinces SET owner_nation_id=NULL WHERE owner_nation_id=?",
-                                (nation["id"],))
-                    cur.execute("DELETE FROM nations WHERE id=?", (nation["id"],))
+                if btn.user.id != interaction.user.id or not _gm(btn):
+                    await btn.response.send_message(i18n.t(_lang(btn), "gm_only"), ephemeral=True)
+                    return
+                await btn.response.defer()
+                try:
+                    deleted = await asyncio.to_thread(delete_nation, nation["id"])
+                except Exception:
+                    logging.getLogger(__name__).exception("Nation deletion failed: %s", nation["id"])
+                    await btn.followup.send(
+                        "Nie udało się usunąć państwa. Zmiany wycofano; sprawdź logi bota."
+                        if _lang(btn) == "pl" else
+                        "Could not delete the nation. Changes were rolled back; check the bot logs.",
+                        ephemeral=True)
+                    return
+                if not deleted:
+                    self.stop()
+                    await btn.edit_original_response(content=i18n.t(_lang(btn), "nation_not_found"),
+                                                     embed=None, view=None)
+                    return
                 self.stop()
-                await btn.response.edit_message(
+                await btn.edit_original_response(
                     content=i18n.text('🗑️ Nation **{p0}** deleted. Provinces unclaimed.', p0=nation['name']),
                     embed=None, view=None)
 
@@ -340,6 +358,9 @@ class NationCog(commands.Cog):
             ),
             color=discord.Color.red(),
         )
+        embed.description += ("\n\nPowiązane bitwy (także zakończone) zostaną usunięte."
+                              if lang == "pl" else
+                              "\n\nRelated battles (including resolved battles) will be removed.")
         await interaction.response.send_message(embed=embed, view=ConfirmDelete(), ephemeral=True)
 
 async def setup(bot: commands.Bot):
