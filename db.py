@@ -82,6 +82,26 @@ CREATE TABLE IF NOT EXISTS province_neighbors (
 CREATE INDEX IF NOT EXISTS idx_province_neighbors_neighbor
     ON province_neighbors(neighbor_cell_id);
 
+CREATE TABLE IF NOT EXISTS companies (
+    nation_id INTEGER PRIMARY KEY REFERENCES nations(id) ON DELETE CASCADE,
+    state_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS company_concessions (
+    id TEXT PRIMARY KEY,
+    company_nation_id INTEGER NOT NULL REFERENCES companies(nation_id) ON DELETE CASCADE,
+    host_nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    status TEXT NOT NULL,
+    terms_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS company_plants (
+    province_id INTEGER NOT NULL REFERENCES provinces(id) ON DELETE CASCADE,
+    building_key TEXT NOT NULL,
+    company_nation_id INTEGER NOT NULL REFERENCES companies(nation_id) ON DELETE CASCADE,
+    host_nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    concession_id TEXT REFERENCES company_concessions(id) ON DELETE CASCADE,
+    PRIMARY KEY(province_id, building_key)
+);
+
 CREATE TABLE IF NOT EXISTS building_defs (
     key              TEXT PRIMARY KEY,
     name             TEXT NOT NULL,

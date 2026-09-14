@@ -15,6 +15,7 @@ from utils import get_nation_by_owner, gm_only
 
 
 PL = {
+    'company':'Kompania', 'company_offers':'Oferty inwestycji',
     'exploration':'Eksploracja','captives':'Jeńcy',
     'labor':'Polityka pracy',
     'workers':'Pracownicy', 'algae_production':'Wydobycie algae',
@@ -48,6 +49,7 @@ PL = {
 
 def tr(lang: str, key: str) -> str:
     en = {
+        'company':'Company', 'company_offers':'Investment offers',
         'exploration':'Exploration','captives':'Captives',
         'labor':'Labor policy',
         'workers':'Workers', 'algae_production':'Algae production',
@@ -252,7 +254,17 @@ class PlayerPanel(OwnedView):
             await interaction.response.edit_message(embed=self.embed(), view=self)
         category.callback = change
         self.add_item(category)
-        for index, (action, emoji) in enumerate(ACTIONS[self.section]):
+        actions = list(ACTIONS[self.section])
+        from companies import unlocked
+        nation = get_nation_by_owner(str(self.owner_id))
+        if self.section == 'economy' and unlocked(nation):
+            actions.append(('company', '🏢'))
+        if self.section == 'diplomacy' and nation:
+            with db.cursor() as c:
+                c.execute("SELECT id FROM company_concessions WHERE host_nation_id=? AND status IN ('proposed','active') LIMIT 1", (nation['id'],))
+                if c.fetchone():
+                    actions.append(('company_offers', '🏢'))
+        for index, (action, emoji) in enumerate(actions):
             key = action.removeprefix("language_") if action.startswith("language_") else action
             label = {"pl":"Polski", "en":"English"}[key] if action.startswith("language_") else tr(self.lang, key)
             button = discord.ui.Button(label=label, emoji=emoji, style=discord.ButtonStyle.secondary,
@@ -332,6 +344,7 @@ class PlayerPanel(OwnedView):
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
+            'company':('CompanyCog','company',[]), 'company_offers':('CompanyCog','company_offers',[]),
             'exploration':('ExplorationCog','exploration',[]),'captives':('CaptivesCog','list_claims',[]),
             'labor':('EconomyControlCog','labor',[]),
             'workers':('EconomyControlCog','workers',[]), 'algae_production':('TechCog','algae_production',[]),
