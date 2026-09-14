@@ -323,7 +323,9 @@ class ResearchUITests(ResearchFixture,unittest.IsolatedAsyncioTestCase):
         with db.cursor() as c:c.execute('INSERT INTO algae_sites(province_id) VALUES(?)',(self.pid,))
         i18n.set_user_language(99,'pl');request=interaction(99)
         await TechCog.algae_locations.callback(None,request)
-        e=request.response.send_message.call_args.kwargs['embed']
+        request.response.defer.assert_awaited_once_with(ephemeral=True)
+        request.response.send_message.assert_not_awaited()
+        e=request.followup.send.call_args.kwargs['embed']
         self.assertIn('#10',e.fields[0].name)
         self.assertIn('A',e.fields[0].value)
         self.assertIn('Stanowiska',e.title)

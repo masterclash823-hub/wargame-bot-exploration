@@ -63,7 +63,12 @@ class TechCog(commands.Cog):
     @i18n.localized
     async def algae_locations(self,interaction:discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        await ui.deliver(interaction,embed=ui.locations_embed())
+        await ui.show_locations(interaction,deferred=True)
+
+    @app_commands.command(name='algae_locations',description='List every active algae deposit on the map')
+    @i18n.localized
+    async def algae_locations_alias(self,interaction:discord.Interaction):
+        await ui.show_locations(interaction)
 
     @algae_grp.command(name='production',description='View automatic algae production and build or upgrade farms')
     @i18n.localized
@@ -83,7 +88,7 @@ class TechCog(commands.Cog):
             text=tech.tr('Dodano złoże w prowincji ', 'Added deposit in province ') if add else tech.tr('Usunięto złoże z prowincji ', 'Removed deposit from province ')
             text+=f"#{p['azgaar_cell_id']}. "
             if not add:text+=tech.tr('Farma zostaje, ale wydobycie ustaje. Zapasy graczy pozostają.', 'The farm remains, but extraction stops. Player stockpiles are preserved.')
-            await ui.deliver(interaction,content=text,embed=ui.locations_embed())
+            await ui.show_locations(interaction,deferred=True,notice=text)
         except ValueError as exc:await ui.deliver(interaction,content=str(exc))
 
     @algae_grp.command(name='deposit_add',description='[GM] Add an algae deposit by province cell ID')

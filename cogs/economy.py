@@ -170,6 +170,28 @@ def _building_effect_text(row, lang):
     return '\n'.join(parts) or ('Brak automatycznego efektu gospodarczego.' if pl else 'No automatic economic effect.')
 
 
+
+def _building_effect_summary(row, lang):
+    """One-line base effects for Discord's 100-character option description."""
+    pl = lang == 'pl'
+    short = {
+        'market': '+15% podatków prowincji; sprzedaż jedwabiu i przypraw.' if pl else '+15% province taxes; sells silk and spices.',
+        'port': 'Eksport jedwabiu i przypraw; limit zależy od ładowności statków.' if pl else 'Exports silk and spices; capacity depends on assigned cargo ships.',
+        'fort': '+1 fortyfikacji przy budowie i każdym ulepszeniu.' if pl else '+1 fortification when built and with each upgrade.',
+        'granary': 'Psucie nadwyżek żywności: 2% → 0,5% miesięcznie.' if pl else 'Monthly spoilage of surplus food: 2% → 0.5%.',
+    }
+    key = row['key']
+    if key in short:
+        numeric = {k:v for k,v in json.loads(row['effect_json']).items()
+                   if isinstance(v,(int,float)) and math.isfinite(v) and v}
+        extra = ', '.join(f'{v:+g} {i18n.term(k,lang)}' for k,v in numeric.items())
+        text = (extra+'; ' if extra else '')+short[key]
+    else:
+        text = _building_effect_text(row, lang)
+    text = ('Poz. 1: ' if pl else 'Level 1: ')+' '.join(text.split())
+    return text if len(text)<=100 else text[:99]+'…'
+
+
 def _terrain_label(value):
     return ', '.join(i18n.term(t.strip()) for t in value.split(','))
 
