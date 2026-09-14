@@ -8,7 +8,7 @@ import db
 import i18n
 import companies as co
 from utils import get_nation_by_owner, gm_only
-from cogs.panel import OwnedView, ChoiceView, InputModal
+from cogs.panel import OwnedView, ChoiceView, FieldsModal as InputModal
 from world_service import tr
 
 
