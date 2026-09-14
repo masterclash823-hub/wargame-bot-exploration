@@ -88,7 +88,14 @@ async def choose(i,title,options,handler,multiple=False):
 
 
 def specialties(keys):
-    return [discord.SelectOption(label=i18n.term(key)[:100],value=key) for key in keys]
+    from cogs.economy import _building_label, _building_effect_summary
+    with db.cursor() as c:
+        c.execute('SELECT * FROM building_defs')
+        definitions={row['key']:row for row in c.fetchall()}
+    lang=i18n.current_language()
+    return [discord.SelectOption(label=_building_label(definitions[key],lang)[:100],value=key,
+                                 description=_building_effect_summary(definitions[key],lang))
+            for key in keys if key in definitions]
 
 
 async def show(i):

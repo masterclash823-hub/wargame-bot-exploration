@@ -442,6 +442,7 @@ class PlayerPanel(OwnedView):
                         lambda r:discord.SelectOption(label=r['name'][:100],value=r['name']),target)
 
     async def choose_build(self, i):
+        from cogs.economy import _building_label, _building_effect_summary
         n=get_nation_by_owner(str(self.owner_id))
         async def province(i2,cell):
             with db.cursor() as c:
@@ -452,8 +453,8 @@ class PlayerPanel(OwnedView):
                     await invoke(self.cog('EconomyControlCog'),'upgrade',i3,int(cell),key)
                 else:
                     await invoke(self.cog("EconomyCog"),"build",i3,int(cell),key)
-            await self.rows(i2,"SELECT key,name,description FROM building_defs ORDER BY tier,name",(),
-                lambda r:discord.SelectOption(label=((('↑ ' if r['key'] in existing else '+ '))+i18n.term(r['key'],self.lang))[:100],value=r['key'],description=('Ulepsz / Upgrade' if r['key'] in existing else 'Buduj / Build')),building)
+            await self.rows(i2,"SELECT * FROM building_defs ORDER BY tier,name",(),
+                lambda r:discord.SelectOption(label=(('↑ ' if r['key'] in existing else '+ ')+_building_label(r,self.lang))[:100],value=r['key'],description=_building_effect_summary(r,self.lang)),building)
         await self.owned_provinces(i,n,province)
 
     async def owned_provinces(self,i,n,handler):
