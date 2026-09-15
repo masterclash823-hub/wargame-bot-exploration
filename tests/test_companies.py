@@ -29,7 +29,7 @@ class CompanyTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
 
     def create(self):
         co.create(1,1,'Company','A production company',['farm','powder_mill','lumber_camp'])
-        co.configure(1,1,self.state()['version'],[10],1000,{},'off')
+        co.configure(1,1,self.state()['version'],1000,'off')
 
     def host_plant(self,key):
         with db.cursor() as c:
@@ -57,25 +57,28 @@ class CompanyTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):co.create(1,1,'X','Example',['farm','mine','pasture','clay_pit'])
         self.create()
         old=self.state()['version']
-        co.configure(1,1,old,[10],100,{'gold':100},'expand')
-        with self.assertRaises(ValueError):co.configure(1,1,old,[10],900,{},'expand')
+        co.configure(1,1,old,100,'auto')
+        with self.assertRaises(ValueError):co.configure(1,1,old,900,'auto')
         with db.cursor() as c:c.execute("UPDATE nations SET owner_id='99' WHERE id=1")
         with self.assertRaises(ValueError):co.pause(1,1,self.state()['version'])
 
-    async def test_discount_reserves_and_one_monthly_investment(self):
+    async def test_discount_and_shared_monthly_budget(self):
         self.create()
+        co.configure(1,1,self.state()['version'],225,'off')
         cost=co.manual_invest(1,1,self.state()['version'],10,'farm')
         self.assertAlmostEqual(cost['gold'],90)
         self.assertAlmostEqual(cost['wood'],45)
-        with self.assertRaises(ValueError):co.manual_invest(1,1,self.state()['version'],10,'farm')
-        co.configure(1,1,self.state()['version'],[10],1000,{'gold':10000},'upgrade')
+        cost2=co.manual_invest(1,1,self.state()['version'],10,'farm')
+        self.assertAlmostEqual(cost2['gold'],135)
+        self.assertAlmostEqual(self.state()['spent'],225)
         before=self.balances()
-        with self.assertRaises(ValueError):co.manual_invest(1,1,self.state()['version'],10,'farm')
+        with self.assertRaisesRegex(ValueError,'monthly budget'):
+            co.manual_invest(1,1,self.state()['version'],10,'farm')
         self.assertEqual(before,self.balances())
 
     async def test_automation_forecast_and_rollback(self):
         self.create()
-        co.configure(1,1,self.state()['version'],[10],1000,{},'expand')
+        co.configure(1,1,self.state()['version'],90,'auto')
         before=self.balances()
         s=self.state()
         result=forecast(1)

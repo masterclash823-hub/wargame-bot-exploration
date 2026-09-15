@@ -28,7 +28,35 @@ def number(value, minimum=0, maximum=100000000):
 def state(c, nid):
     c.execute('SELECT state_json FROM companies WHERE nation_id=?', (nid,))
     row = c.fetchone()
-    return read_json(row['state_json']) if row else None
+    if not row:
+        return None
+    value = read_json(row['state_json'])
+    if value.get('settings_version', 1) < 2:
+        # Preserve the amount and whether automation was enabled, not old filters.
+        limit = value.pop('budget', 0)
+        last = value.pop('last_investment', -1)
+        investment = value.get('report', {}).get('investment', {})
+        value.update(settings_version=2, monthly_budget=limit, budget_month=last,
+                     spent=investment.get('cost', {}).get('gold', limit) if last >= 0 else 0,
+                     mode='off' if value.get('mode') == 'off' else 'auto')
+        for key in ('cells', 'reserves', 'resource'):
+            value.pop(key, None)
+        if investment:
+            value['report'].setdefault('investments', [investment])
+    return value
+
+
+def remaining_budget(s, target):
+    used = s.get('spent', 0) if s.get('budget_month') == target else 0
+    return max(0, s['monthly_budget'] - used)
+
+
+def begin_month(s, target):
+    if s.get('budget_month') != target:
+        s.update(budget_month=target, spent=0)
+        s['report'] = dict(month=target, waiting='', received={}, costs={}, investments=[])
+    for key, default in (('investments', []), ('received', {}), ('costs', {}), ('waiting', '')):
+        s.setdefault('report', {}).setdefault(key, default)
 
 
 def save(c, nid, value):
@@ -70,28 +98,20 @@ def create(nid, uid, name, description, types):
         if state(c, nid):
             raise ValueError(tr('Państwo ma już kompanię.', 'This nation already has a company.'))
         save(c, nid, dict(name=name.strip(), description=description.strip(), types=types,
-                         cells=[], budget=0, reserves={}, mode='off', resource='food',
-                         paused=False, improvements=[], report={}, last_investment=-1))
+                         settings_version=2, monthly_budget=0, budget_month=-1, spent=0, mode='off',
+                         paused=False, improvements=[], report={}))
 
 
-def configure(nid, uid, version, cells, budget, reserves, mode, resource='food'):
-    if mode not in ('off', 'supply', 'expand', 'upgrade'):
+def configure(nid, uid, version, budget, mode):
+    if mode not in ('off', 'auto'):
         raise ValueError(tr('Nieprawidłowy tryb.', 'Invalid mode.'))
-    cells = list(dict.fromkeys(int(cell) for cell in cells))
-    if len(cells) > 200:
-        raise ValueError(tr('Maksymalnie 200 prowincji.', 'At most 200 provinces.'))
-    reserves = {str(k): number(v) for k, v in reserves.items()}
     budget = number(budget)
     with db.atomic() as c:
         n, s = actor(c, nid, uid, version)
         require_tech(n)
-        for cell in cells:
-            c.execute('SELECT owner_nation_id FROM provinces WHERE azgaar_cell_id=? AND active=1', (cell,))
-            p = c.fetchone()
-            if not p or p['owner_nation_id'] != nid:
-                raise ValueError(tr('Wybierz własne aktywne prowincje. Zagraniczne dodaje koncesja.',
-                                    'Choose your active provinces. Concessions add foreign provinces.'))
-        s.update(cells=cells, budget=budget, reserves=reserves, mode=mode, resource=resource)
+        begin_month(s, month_index(c))
+        # Editing the amount or toggling modes never replenishes this month's funds.
+        s.update(monthly_budget=budget, mode=mode)
         save(c, nid, s)
 
 
@@ -122,11 +142,6 @@ def bonus(nation, s, key):
 
 
 def pay(c, nation, company, cost):
-    stock = dict(read_json(nation['resources_json']), gold=nation['treasury'])
-    for key, value in cost.items():
-        number(value)
-        if stock.get(key, 0) - value < company['reserves'].get(key, 0) - .000001:
-            raise ValueError(tr('Brak środków ponad ustalone rezerwy: ', 'Insufficient funds above reserves: ') + key)
     spend(c, nation, cost)
 
 
@@ -167,7 +182,7 @@ def propose_concession(nid, uid, version, host, cells, types, share, months, fee
             raise ValueError(tr('Koncesja musi dotyczyć specjalizacji firmy.', 'Use the company specialties.'))
         h = lock_nation(c, int(host))
         if h['id'] == nid:
-            raise ValueError(tr('Własne prowincje dodaj w budżecie.', 'Add domestic provinces in the budget settings.'))
+            raise ValueError(tr('Własne prowincje są dostępne bez koncesji.', 'Domestic provinces are available without a concession.'))
         for cell in cells:
             c.execute('SELECT owner_nation_id FROM provinces WHERE azgaar_cell_id=? AND active=1', (cell,))
             p = c.fetchone()
@@ -227,7 +242,7 @@ def respond_concession(identifier, uid, action):
 
 
 def permission(c, nid, s, province, key, target=None):
-    if province['owner_nation_id'] == nid and province['azgaar_cell_id'] in s['cells']:
+    if province['owner_nation_id'] == nid:
         return None
     for grant in grants(c,nid):
         terms = grant['terms']
@@ -238,88 +253,154 @@ def permission(c, nid, s, province, key, target=None):
     raise ValueError(tr('Brak zgody na tę inwestycję.', 'This investment is not authorized.'))
 
 
-def invest(c, nid, s, cell, key, target, automatic=False):
+def investment_context(c, nid, s):
+    """One snapshot per planning round, including this company's domestic bonuses."""
+    from economy_engine import snapshot, project
+    data = list(snapshot(c, nid))
+    c.execute('SELECT * FROM company_plants WHERE host_nation_id=?', (nid,))
+    plants = {(r['province_id'], r['building_key']): r for r in c.fetchall()}
+    for p in data[1]:
+        for key in read_json(p['buildings_json'], []):
+            plant = plants.get((p['id'], key))
+            if plant and plant['company_nation_id'] == nid and not plant['concession_id']:
+                p['company_plants'][key] = dict(bonus=bonus(data[0], s, key), foreign=False)
+    return dict(data=data, before=project(*data), plants=plants,
+                provinces={p['azgaar_cell_id']: p for p in data[1]})
+
+
+def investment_quote(c, nid, s, cell, key, target, context=None):
     from cogs.economy import _terrain_ok, _tech_ok
-    from economy_engine import project, snapshot
-    n = lock_nation(c,nid)
+    n = context['data'][0] if context else lock_nation(c, nid)
     require_tech(n)
-    if s['paused'] or key not in s['types'] or s['last_investment'] == target:
-        raise ValueError(tr('Firma jest wstrzymana albo wykorzystała inwestycję w tym miesiącu.',
-                            'The company is paused or has used this month’s investment.'))
-    c.execute('SELECT * FROM provinces WHERE azgaar_cell_id=? AND active=1', (int(cell),))
-    p = c.fetchone()
+    if s['paused'] or key not in s['types']:
+        raise ValueError(tr('Firma jest wstrzymana lub budynek nie jest jej specjalizacją.',
+                            'The company is paused or this building is not a specialty.'))
+    if context:
+        p = context['provinces'].get(int(cell))
+    else:
+        c.execute('SELECT * FROM provinces WHERE azgaar_cell_id=? AND active=1', (int(cell),))
+        p = c.fetchone()
     if not p:
         raise ValueError(tr('Nie znaleziono prowincji.', 'Province not found.'))
-    grant_id = permission(c,nid,s,p,key,target)
-    c.execute('SELECT * FROM company_plants WHERE province_id=? AND building_key=?',(p['id'],key))
-    plant = c.fetchone()
+    grant_id = permission(c, nid, s, p, key, target)
+    if context:
+        plant = context['plants'].get((p['id'], key))
+        levels = dict(read_json(p['levels_json']))
+        definition = context['data'][2].get(key)
+    else:
+        c.execute('SELECT * FROM company_plants WHERE province_id=? AND building_key=?', (p['id'], key))
+        plant = c.fetchone()
+        c.execute('SELECT levels_json FROM province_development WHERE province_id=?', (p['id'],))
+        row = c.fetchone()
+        levels = read_json(row['levels_json']) if row else {}
+        c.execute('SELECT * FROM building_defs WHERE key=?', (key,))
+        definition = c.fetchone()
     if plant and plant['company_nation_id'] != nid:
         raise ValueError(tr('Zakład prowadzi inna firma.', 'Another company manages this building.'))
-    buildings = read_json(p['buildings_json'],[])
-    c.execute('SELECT levels_json FROM province_development WHERE province_id=?',(p['id'],))
-    row = c.fetchone()
-    levels = read_json(row['levels_json']) if row else {}
-    old = int(levels.get(key,1)) if key in buildings else 0
+    buildings = list(read_json(p['buildings_json'], []))
+    old = int(levels.get(key, 1)) if key in buildings else 0
     if old >= 3:
         raise ValueError(tr('Budynek ma już poziom 3.', 'The building is already level 3.'))
-    if automatic and ((s['mode']=='upgrade' and not old) or (s['mode']=='expand' and old)):
-        raise ValueError(tr('Inwestycja nie pasuje do trybu.', 'The investment does not match the selected mode.'))
-    c.execute('SELECT * FROM building_defs WHERE key=?',(key,))
-    definition = c.fetchone()
     if not definition:
         raise ValueError(tr('Nie znaleziono typu budynku.', 'Building type not found.'))
-    host = lock_nation(c,p['owner_nation_id'])
-    required = max(6 if old else 3,definition['requires_tech']) if key=='algae_farm' else definition['requires_tech']
-    if not _tech_ok(n,required,key) or not _tech_ok(host,required,key):
+    host = n if p['owner_nation_id'] == nid else lock_nation(c, p['owner_nation_id'])
+    required = max(6 if old else 3, definition['requires_tech']) if key == 'algae_farm' else definition['requires_tech']
+    if not _tech_ok(n, required, key) or not _tech_ok(host, required, key):
         raise ValueError(tr('Firma lub gospodarz nie spełnia wymagań technologii.', 'Company or host technology is insufficient.'))
-    if key=='algae_farm':
-        c.execute('SELECT province_id FROM algae_sites WHERE province_id=?',(p['id'],))
-        if not c.fetchone():
+    if key == 'algae_farm':
+        if context:
+            site = p['algae_site']
+        else:
+            c.execute('SELECT province_id FROM algae_sites WHERE province_id=?', (p['id'],))
+            site = c.fetchone()
+        if not site:
             raise ValueError(tr('Farma algae wymaga złoża.', 'An algae farm requires a deposit.'))
-    elif not _terrain_ok(p['terrain'],definition['requires_terrain']):
+    elif not _terrain_ok(p['terrain'], definition['requires_terrain']):
         raise ValueError(tr('Nieodpowiedni teren.', 'Unsuitable terrain.'))
     extra = WORKERS[key] * (LEVEL_WORK[old+1] - (LEVEL_WORK[old] if old else 0))
-    used = sum(WORKERS.get(k,200)*LEVEL_WORK[min(3,max(1,int(levels.get(k,1))))] for k in set(buildings))
-    if p['population']*.4-used < extra:
+    used = sum(WORKERS.get(k, 200)*LEVEL_WORK[min(3, max(1, int(levels.get(k, 1))))] for k in set(buildings))
+    if p['population']*.4 - used < extra:
         raise ValueError(tr('Za mało wolnych pracowników.', 'Not enough available workers.'))
-    discount = bonus(n,s,key)['construction']
-    cost = {k:v*{0:1,1:1.5,2:2}[old]*(1-discount) for k,v in read_json(definition['cost_json']).items()}
-    if cost.get('gold',0) > s['budget']:
-        raise ValueError(tr('Inwestycja przekracza budżet.', 'The investment exceeds the budget.'))
-    # Validate all conditions before writing: nested atomic() does not create savepoints.
-    stock = dict(read_json(n['resources_json']),gold=n['treasury'])
-    for resource,amount in cost.items():
+    discount = bonus(n, s, key)['construction']
+    cost = {k: v*{0:1, 1:1.5, 2:2}[old]*(1-discount) for k, v in read_json(definition['cost_json']).items()}
+    if cost.get('gold', 0) > remaining_budget(s, target) + .000001:
+        raise ValueError(tr('Za mało złota w pozostałym budżecie miesięcznym.',
+                            'Not enough gold in the remaining monthly budget.'))
+    stock = dict(read_json(n['resources_json']), gold=n['treasury'])
+    for resource, amount in cost.items():
         number(amount)
-        if stock.get(resource,0)-amount < s['reserves'].get(resource,0):
-            raise ValueError(tr('Brak środków ponad rezerwy: ', 'Insufficient funds above reserves: ')+resource)
-    data = list(snapshot(c,host['id']))
-    before = project(*data)
-    changed = [dict(prov) for prov in data[1]]
-    for prov in changed:
-        if prov['id']==p['id']:
-            projected_levels = dict(levels,**{key:old+1})
-            prov['buildings_json'] = json.dumps(list(dict.fromkeys(buildings+[key])))
-            prov['levels_json'] = json.dumps(projected_levels)
+        if stock.get(resource, 0) < amount:
+            raise ValueError(tr('Brak środków: ', 'Insufficient funds: ') + resource)
+    return dict(nation=n, province=p, levels=levels, buildings=buildings, old=old,
+                key=key, cost=cost, grant=grant_id, definition=definition)
+
+
+def preview_investment(context, s, quote):
+    """Preview paid construction before accepting an automatic investment."""
+    from economy_engine import project
+    data = list(context['data'])
+    key, p, old = quote['key'], quote['province'], quote['old']
+    n = dict(data[0])
+    stock = dict(read_json(n['resources_json']))
+    for resource, value in quote['cost'].items():
+        if resource == 'gold':
+            n['treasury'] -= value
+        else:
+            stock[resource] = stock.get(resource, 0) - value
+    n['resources_json'] = json.dumps(stock)
+    data[0] = n
+    changed = []
+    for original in data[1]:
+        prov = dict(original)
+        if prov['id'] == p['id']:
+            prov['buildings_json'] = json.dumps(list(dict.fromkeys(quote['buildings'] + [key])))
+            prov['levels_json'] = json.dumps(dict(quote['levels'], **{key: old+1}))
+            prov['company_plants'] = dict(prov['company_plants'])
+            prov['company_plants'][key] = dict(bonus=bonus(n, s, key), foreign=False)
+        changed.append(prov)
     data[1] = changed
     after = project(*data)
-    if automatic and (after['food_shortage'] > before['food_shortage'] or after['balance'] < 0):
-        raise ValueError(tr('Prognoza nie pozwala na bezpieczne utrzymanie inwestycji.',
-                            'The forecast cannot sustain this investment.'))
-    pay(c,n,s,cost)
+    before = context['before']
+    gain = any(v > before['production'].get(k, 0) + .000001 for k, v in after['production'].items())
+    if (not gain or after['food_shortage'] > before['food_shortage'] + .000001
+            or after['balance'] < 0 or after['policy']['arrears'] > before['policy']['arrears'] + .000001):
+        raise ValueError(tr('Brak użytecznego przyrostu produkcji lub środków na utrzymanie.',
+                            'No useful production gain or insufficient funds for upkeep.'))
+    return after
+
+
+def invest(c, nid, s, cell, key, target, automatic=False):
+    context = investment_context(c, nid, s) if automatic else None
+    if automatic and s['mode'] != 'auto':
+        raise ValueError(tr('Automat jest wyłączony.', 'Automation is disabled.'))
+    quote = investment_quote(c, nid, s, cell, key, target, context)
+    if automatic:
+        preview_investment(context, s, quote)
+    n, p = quote['nation'], quote['province']
+    old, levels, buildings, cost = quote['old'], quote['levels'], quote['buildings'], quote['cost']
+    # No writes occur until all checks succeed; the caller holds the world lock.
+    pay(c, n, s, cost)
     levels[key] = old+1
-    if not old: buildings.append(key)
-    c.execute('UPDATE provinces SET buildings_json=? WHERE id=?',(json.dumps(buildings),p['id']))
+    if not old:
+        buildings.append(key)
+    c.execute('UPDATE provinces SET buildings_json=? WHERE id=?', (json.dumps(buildings), p['id']))
     c.execute('INSERT INTO province_development(province_id,levels_json) VALUES(?,?) '
-              'ON CONFLICT(province_id) DO UPDATE SET levels_json=excluded.levels_json',(p['id'],json.dumps(levels)))
+              'ON CONFLICT(province_id) DO UPDATE SET levels_json=excluded.levels_json', (p['id'], json.dumps(levels)))
     c.execute('INSERT INTO company_plants(province_id,building_key,company_nation_id,host_nation_id,concession_id) '
               'VALUES(?,?,?,?,?) ON CONFLICT(province_id,building_key) DO UPDATE SET concession_id=excluded.concession_id,host_nation_id=excluded.host_nation_id',
-              (p['id'],key,nid,p['owner_nation_id'],grant_id))
-    s['last_investment'] = target
-    s['report']['investment'] = dict(cell=cell,building=key,level=old+1,cost=cost)
-    save(c,nid,s)
+              (p['id'], key, nid, p['owner_nation_id'], quote['grant']))
+    begin_month(s, target)
+    s['spent'] += cost.get('gold', 0)
+    item = dict(cell=cell, building=key, level=old+1, cost=cost, automatic=automatic)
+    s['report']['investments'].append(item)
+    s['report']['investment'] = item
+    s['report']['spent'] = s['spent']
+    s['report']['budget'] = s['monthly_budget']
+    s['report']['waiting'] = ''
+    save(c, nid, s)
     from world_service import activity
-    activity(c,'building',host['id'],f"building:{p['id']}:{key}:{old+1}",
-             {'building':key,'level':old+1,'cell':cell})
+    activity(c, 'building', p['owner_nation_id'], f"building:{p['id']}:{key}:{old+1}",
+             {'building':key, 'level':old+1, 'cell':cell})
     return cost
 
 
