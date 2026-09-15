@@ -25,6 +25,7 @@ COGS = [
     "cogs.military",
     "cogs.combat",
     "cogs.events",
+    "cogs.ruins",
     "cogs.exploration",
     "cogs.captives",
     "cogs.colonialism",

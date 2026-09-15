@@ -93,11 +93,43 @@ class NationCog(commands.Cog):
             await interaction.response.send_message(i18n.t(_lang(interaction), 'nation_not_found'), ephemeral=True); return
         if player.bot or _get_by_owner(str(player.id)):
             await interaction.response.send_message(tr('Wybierz gracza, który nie ma państwa.', 'Choose a player without a nation.'), ephemeral=True); return
+        from nation_decay import require_playable
+        try:
+            with db.cursor() as c:require_playable(c,n['id'])
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
         text = f"**{n['name']}**: <@{n['owner_id']}> → <@{player.id}>\n\n" + tr(
             'Zasoby, wojsko, historia, cele i pamięć decyzji pozostaną przy państwie. Nowy właściciel przejmie aktywne traktaty i umowy, w tym reparacje. Oczekujące propozycje traktatów i wymian zostaną anulowane.',
             'Resources, forces, history, goals and decision memory remain with the nation. The new owner inherits active treaties and contracts, including reparations. Pending treaty and trade proposals will be cancelled.')
         embed = flagged_embed(discord.Embed(title=tr('Potwierdź przekazanie państwa', 'Confirm nation transfer'), description=text), (n['flag'],n['name']))
         await interaction.response.send_message(embed=embed, view=TransferView(interaction.user.id,n,player.id), ephemeral=True)
+
+    @nation_group.command(name='decay', description='GM: start a three-month collapse / GM: rozpocznij trzymiesięczny rozpad')
+    @i18n.localized
+    async def decay(self, interaction: discord.Interaction, nation: str, reason: str=''):
+        await self.change_decay(interaction,nation,reason,False)
+
+    @nation_group.command(name='decay_stop', description='GM: stop decay before collapse / GM: zatrzymaj rozpad przed upadkiem')
+    @i18n.localized
+    async def decay_stop(self, interaction: discord.Interaction, nation: str):
+        await self.change_decay(interaction,nation,'',True)
+
+    async def change_decay(self,interaction,nation,reason,cancel):
+        from nation_decay import set_decay
+        from world_service import tr
+        if not _gm(interaction):
+            await interaction.response.send_message(i18n.t(_lang(interaction),'gm_only'),ephemeral=True);return
+        n=_get_by_name(nation)
+        if not n:
+            await interaction.response.send_message(i18n.t(_lang(interaction),'nation_not_found'),ephemeral=True);return
+        await interaction.response.defer(ephemeral=True)
+        try:row=await asyncio.to_thread(set_decay,n['id'],interaction.user.id,reason,cancel)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True);return
+        text=tr('Rozpad zatrzymany.','Decay stopped.') if cancel else tr(
+            'Rozpad rozpoczęty. Po 3 miesiącach gry państwo stanie się niegrywalnym archiwum; gospodarka i umowy przestaną działać, a gracz straci kontrolę. Ruiny będą dostępne dla sąsiadów przez /ruins list. Termin: ',
+            'Decay started. After 3 game months the nation becomes an unplayable archive; its economy and agreements stop and the player loses control. Neighbors can find its ruins with /ruins list. Deadline: ')+f"{row['due_month']%12+1}/{row['due_month']//12}"
+        await interaction.followup.send(text,ephemeral=True)
 
     # ------------------------------------------------------------------ /nation stats
     @nation_group.command(name="stats", description="View nation stats / Statystyki narodu")
@@ -111,6 +143,11 @@ class NationCog(commands.Cog):
             await interaction.response.send_message(i18n.t(lang, "nation_not_found"), ephemeral=True)
             return
 
+        from nation_decay import state as decay_state
+        from world_service import month_index, tr
+        with db.cursor() as c:
+            decay=decay_state(c,nation['id'])
+            now=month_index(c)
         # Calculate dynamic population from owned provinces
         with db.cursor() as cur:
             cur.execute(
@@ -136,6 +173,10 @@ class NationCog(commands.Cog):
         elif stab >= 40: stab_str = i18n.text('🟠 {p0:.0f}/100 (Unstable)', p0=stab)
         else:            stab_str = i18n.text('🔴 {p0:.0f}/100 (Crisis)', p0=stab)
 
+        if decay and decay['status'] in ('decaying','ruins'):
+            status=tr('Ruiny — państwo niegrywalne','Ruins — nation unplayable') if decay['status']=='ruins' else tr('Rozpad: do upadku zostało miesięcy gry: ','Decay: game months until collapse: ')+str(max(0,decay['due_month']-now))
+            embed.add_field(name=tr('Stan państwa','Nation state'),value=status,inline=False)
+            if decay['status']=='ruins':embed.add_field(name=tr('ID ruin','Ruins ID'),value=str(nation['id']),inline=True)
         embed.add_field(name=i18n.text('Government'),  value=nation["government_type"],         inline=True)
         embed.add_field(name=i18n.text('Treasury'),    value=i18n.text('{p0:.0f} gold', p0=nation['treasury']),  inline=True)
         embed.add_field(name=i18n.text('Stability'),   value=stab_str,                          inline=True)
@@ -245,7 +286,7 @@ class NationCog(commands.Cog):
     async def nation_list(self, interaction: discord.Interaction):
         lang = _lang(interaction)
         with db.cursor() as cur:
-            cur.execute("SELECT name, government_type, owner_id FROM nations ORDER BY name")
+            cur.execute("SELECT n.name,n.government_type,n.owner_id,d.status AS decay_status FROM nations n LEFT JOIN nation_decay d ON d.nation_id=n.id ORDER BY n.name")
             rows = cur.fetchall()
 
         if not rows:
@@ -259,7 +300,8 @@ class NationCog(commands.Cog):
         for r in rows:
             name = discord.utils.escape_markdown(' '.join(r['name'].split()))
             government = discord.utils.escape_markdown(' '.join((r['government_type'] or '').split()))
-            owner = f"<@{r['owner_id']}>"
+            owner = ('Ruiny — niegrywalne' if lang=='pl' else 'Ruins — unplayable') if r['decay_status']=='ruins' else f"<@{r['owner_id']}>"
+            if r['decay_status']=='decaying':owner+=' · '+('rozpad' if lang=='pl' else 'decaying')
             line = f"**{name}**" + (f" — {government}" if government else '') + f" · {owner}"
             # Send the whole roster; long lists continue automatically without a pager.
             for start in range(0, len(line), 4000):

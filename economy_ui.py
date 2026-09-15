@@ -20,6 +20,10 @@ def tr(pl,en): return pl if i18n.current_language()=='pl' else en
 def dashboard(n,r):
     p=r['policy']
     embed=flagged_embed(discord.Embed(title=tr('💰 Gospodarka — ','💰 Economy — ')+n['name'],color=discord.Color.gold()),(n['flag'],n['name']))
+    if r.get('nation_ruins'):
+        embed.description=tr('Przy następnym rozliczeniu państwo będzie już ruinami. Gospodarka zostanie zatrzymana, a gracz straci kontrolę. Przed upadkiem GM może zatrzymać rozpad przez /nation decay_stop.',
+                             'At the next settlement this nation will be ruins. Its economy will stop and the player will lose control. Before collapse the GM can cancel decay with /nation decay_stop.')
+        return embed
     embed.description=tr('Prognoza następnego miesiąca. Domyślnie pracowników przydziela automat. W „Pracownikach” możesz ustawić ręczne przydziały.',
                          'Forecast for the next month. Workers are assigned automatically by default. Open Workers for manual assignments.')
     embed.add_field(name=tr('Złoto / miesiąc','Gold / month'),value=f"{r['balance']:+.1f}g\n"+tr('Dochód','Income')+f": {r['income']:.1f}g | "+tr('Utrzymanie','Upkeep')+f": {r['upkeep']:.1f}g")
