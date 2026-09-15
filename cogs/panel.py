@@ -15,7 +15,7 @@ from utils import get_nation_by_owner, gm_only
 
 
 PL = {
-    'company':'Kompania', 'company_offers':'Oferty inwestycji',
+    'ruins':'Ruiny', 'company':'Kompania', 'company_offers':'Oferty inwestycji',
     'exploration':'Eksploracja','captives':'Jeńcy',
     'labor':'Polityka pracy',
     'workers':'Pracownicy', 'algae_production':'Wydobycie algae',
@@ -49,7 +49,7 @@ PL = {
 
 def tr(lang: str, key: str) -> str:
     en = {
-        'company':'Company', 'company_offers':'Investment offers',
+        'ruins':'Ruins', 'company':'Company', 'company_offers':'Investment offers',
         'exploration':'Exploration','captives':'Captives',
         'labor':'Labor policy',
         'workers':'Workers', 'algae_production':'Algae production',
@@ -232,7 +232,7 @@ ACTIONS = {
                   ("colony_found","🚩"),("colony_develop","📈"),("colony_expand","🧭"),("routes","🚢"),("settlers","👥")],
     "diplomacy": [("relations","📜"),("war","⚔️"),("peace","🕊️"),("alliance","🤝"),
                   ("battle_plan","🗒️"),("battles","📖"),("treaties","📜"),("new_treaty","📝"),("calls","🛡️")],
-    "events": [("event_list","📋"),("event_play","🎭"),("memories","🧠"),("exploration","🧭")],
+    "events": [("ruins","🏚️"),("event_list","📋"),("event_play","🎭"),("memories","🧠"),("exploration","🧭")],
     "settings": [("help","❓"),("tutorial","📘"),("language_pl","🇵🇱"),("language_en","🇬🇧")],
 }
 
@@ -344,7 +344,7 @@ class PlayerPanel(OwnedView):
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
-            'company':('CompanyCog','company',[]), 'company_offers':('CompanyCog','company_offers',[]),
+            'ruins':('RuinsCog','ruins_list',[]), 'company':('CompanyCog','company',[]), 'company_offers':('CompanyCog','company_offers',[]),
             'exploration':('ExplorationCog','exploration',[]),'captives':('CaptivesCog','list_claims',[]),
             'labor':('EconomyControlCog','labor',[]),
             'workers':('EconomyControlCog','workers',[]), 'algae_production':('TechCog','algae_production',[]),

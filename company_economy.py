@@ -105,7 +105,7 @@ def prepare(c,target):
             c.execute('UPDATE company_concessions SET status=? WHERE id=?',
                       ('expired' if expired else 'withdrawn',grant['id']))
             c.execute('DELETE FROM company_plants WHERE concession_id=?',(grant['id'],))
-    c.execute('SELECT nation_id FROM companies ORDER BY nation_id')
+    c.execute("SELECT nation_id FROM companies WHERE nation_id NOT IN (SELECT nation_id FROM nation_decay WHERE status='ruins') ORDER BY nation_id")
     companies=[r['nation_id'] for r in c.fetchall()]
     for nid in companies:
         n=lock_nation(c,nid)
@@ -234,4 +234,5 @@ def finish(c,reports):
     c.execute('SELECT nation_id,state_json FROM companies ORDER BY nation_id')
     for row in c.fetchall():
         s=read_json(row['state_json'])
-        reports[str(row['nation_id'])]['company']=s['report']
+        if str(row['nation_id']) in reports:
+            reports[str(row['nation_id'])]['company']=s['report']
