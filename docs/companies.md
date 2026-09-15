@@ -102,18 +102,27 @@ to ordinary host operation until resumed.
 
 ## Described improvements
 
-Choose the building type and intended effect, then describe the concrete
-change in 20–3000 characters. A proposal quotes 100 gold, 2 game months and
-a 5-percentage-point improvement. The GM reviews it using /company_review,
-including previous proposal descriptions, and approves or rejects it.
-The player must then explicitly pay and start the approved project.
+1. Open Company → Improvements and describe an idea (20–4000 characters) for a
+   specialty building. The player does not select numerical effects.
+2. Alternatively, write the description in chat, open **Apps → company_improve**
+   on your own message, and choose the specialty. The bot saves the full text
+   and a link to its source. Later edits to the message do not rewrite the proposal.
+3. The GM opens **/company_review**, reads the idea and earlier decisions, then
+   selects **Set effects and approve**, or rejects the proposal.
+4. The player reads the decision in **Projects and GM decisions**. If accepted,
+   the player pays 100 gold and starts it. Effects begin after 2 game months.
+   They do not apply while merely proposed or approved. There is one active
+   proposal/project at a time; repeated approval or payment is rejected.
 
-Effects can improve production, input savings, worker savings, construction
-discount or upkeep discount for the selected building type. One proposal or
-project at a time; exact duplicate descriptions are rejected. The GM checks
-whether reworded proposals repeat an earlier idea. Merely writing more text
-does not improve the numerical reward. Completed improvements are permanent,
-subject to the company's current technology cap.
+The GM can combine changes to production, input consumption, required workers,
+construction cost and upkeep. Every field accepts a signed value from -50 to
++50 percent; zero leaves that value unchanged. **Plus increases the named
+value; minus decreases it.** For example, production +10 and inputs +5 means
+more output with higher consumption; construction -5 means cheaper building.
+At least one nonzero effect is required to approve a new decision.
+Algae only permits construction and upkeep changes.
+
+Positive company bonuses remain limited by technology:
 
 | Economy | Production bonus | Construction/upkeep discount | Input/worker savings |
 |---|---:|---:|---:|
@@ -121,9 +130,28 @@ subject to the company's current technology cap.
 | 6–7 | 25% | 20% | 15% |
 | 8–10 | 35% | 25% | 20% |
 
-Bonuses within the company add together and are capped, then combine with
-existing game modifiers. Algae permits construction/upkeep savings only;
-company production, input and worker bonuses do not increase algae extraction.
+Penalties apply after positive caps, so accumulated excess bonuses cannot hide
+a negative GM decision. The final company modifier has a lower bound of -50%:
+output cannot become negative, and extra costs/workforce requirements are at
+most +50%. Technology below 4 or paused operation disables company modifiers
+as before. Existing approved/running/completed projects retain their former
+5-point effect; newly approved decisions use the explicit GM fields.
+
+### Slash command and ordinary reply
+
+**/company_improve** opens the form. Supply a specialty through `building` and,
+optionally, a Discord `message_link` to your own message on the same server.
+The bot verifies channel visibility and history permissions before reading.
+If Discord withholds the text, use **Apps → company_improve** on the message;
+that route receives the selected text without Message Content Intent.
+
+To use the literal reply **!company_improve farm** (replace `farm` with a company
+specialty), reply to the original description. Enable **Message Content Intent**
+in Discord Developer Portal → application → Bot, then set
+`MESSAGE_CONTENT_INTENT=true` on Render and restart. This option defaults to
+false so existing deployments do not lose their connection when the privileged
+intent is disabled in the Developer Portal. Context commands and the form work
+without it. Prefix replies also require activation of the game server.
 
 ## Deployment and validation
 
@@ -144,3 +172,8 @@ The simplified automation has regression coverage for multiple investments,
 automatic construction/upgrading, domestic scope despite foreign concessions,
 budget renewal and edits, material/worker constraints, legacy settings and
 the one-field Polish/English budget form.
+
+Improvement regression tests cover all three message/form entry points, source
+ownership and channel visibility, context-menu registration, GM role changes,
+signed effects in real monthly production/upkeep, duplicate decisions/payments,
+stale forms, and old project compatibility.

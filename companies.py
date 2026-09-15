@@ -12,6 +12,30 @@ BUILDINGS = ('farm', 'pasture', 'fishing_wharf', 'plantation', 'lumber_camp',
              'mine', 'copper_mine', 'clay_pit', 'tar_works', 'powder_mill',
              'cannon_foundry', 'textile_mill', 'silk_workshop', 'algae_farm')
 KINDS = ('production', 'inputs', 'workers', 'construction', 'maintenance')
+IMPROVEMENT_TEXT_LIMIT = 4000
+
+
+def project_effects(project):
+    """Signed changes: + increases output/cost, - decreases it; read old saves too."""
+    if 'effects' in project:
+        return project['effects']
+    if project.get('kind') in KINDS:
+        kind = project['kind']
+        return {kind: project.get('amount', .05) * (100 if kind == 'production' else -100)}
+    return {}
+
+
+def validate_improvement_effects(key, effects):
+    allowed = ('construction', 'maintenance') if key == 'algae_farm' else KINDS
+    if not isinstance(effects, dict) or any(k not in allowed for k in effects):
+        raise ValueError(tr('Algae dopuszcza tylko zmianę kosztu budowy i utrzymania.',
+                            'Algae permits construction and upkeep cost changes only.'))
+    result = {k: number(v, -50, 50) for k, v in effects.items()}
+    result = {k: v for k, v in result.items() if v}
+    if not result:
+        raise ValueError(tr('Podaj co najmniej jeden skutek różny od zera lub odrzuć projekt.',
+                            'Enter at least one non-zero effect or reject the project.'))
+    return result
 
 
 def unlocked(nation):
@@ -131,10 +155,18 @@ def bonus(nation, s, key):
                 inputs=(.10,.15,.20)[tier], workers=(.10,.15,.20)[tier],
                 maintenance=(.15,.20,.25)[tier])
     result = dict(production=.05, construction=.10, inputs=0., workers=0., maintenance=0.)
+    penalties = {k: 0. for k in KINDS}
     for project in s['improvements']:
         if project['status'] == 'complete' and project['building'] == key:
-            result[project['kind']] += project['amount']
-    result = {k: min(caps[k], value) for k, value in result.items()}
+            for kind, percent in project_effects(project).items():
+                delta = percent / 100 * (1 if kind == 'production' else -1)
+                if delta < 0:
+                    penalties[kind] += delta
+                else:
+                    result[kind] += delta
+    # Apply penalties after the positive technology cap so excess bonuses cannot
+    # silently cancel an adverse GM decision. Multipliers remain above zero.
+    result = {k: max(-.5, min(caps[k], value) + penalties[k]) for k, value in result.items()}
     if key == 'algae_farm':
         for k in ('production', 'inputs', 'workers'):
             result[k] = 0
@@ -410,33 +442,40 @@ def manual_invest(nid,uid,version,cell,key):
         return invest(c,nid,s,cell,key,month_index(c))
 
 
-def improvement(nid,uid,version,key,kind,description):
-    text=' '.join(description.split())
-    if not 20<=len(text)<=3000 or kind not in KINDS:
-        raise ValueError(tr('Opisz usprawnienie w 20–3000 znakach.', 'Describe the improvement in 20–3000 characters.'))
+def improvement(nid,uid,version,key,description,source=None):
+    text=description.strip()
+    if not 20<=len(text)<=IMPROVEMENT_TEXT_LIMIT:
+        raise ValueError(tr('Opisz usprawnienie w 20–4000 znakach.', 'Describe the improvement in 20–4000 characters.'))
     with db.atomic() as c:
         n,s=actor(c,nid,uid,version)
         require_tech(n)
-        if key not in s['types'] or (key=='algae_farm' and kind not in ('construction','maintenance')):
+        if key not in s['types']:
             raise ValueError(tr('To usprawnienie nie pasuje do specjalizacji.', 'This improvement does not fit the specialty.'))
-        if any(x['description'].casefold()==text.casefold() for x in s['improvements']):
+        normalized=' '.join(text.split()).casefold()
+        if any(' '.join(x['description'].split()).casefold()==normalized for x in s['improvements']):
             raise ValueError(tr('Ten pomysł został już zapisany.', 'This idea is already recorded.'))
         if any(x['status'] in ('proposed','approved','running') for x in s['improvements']):
             raise ValueError(tr('Najpierw zakończ lub odrzuć bieżący projekt.', 'Finish or reject the current project first.'))
-        s['improvements'].append(dict(id=uuid.uuid4().hex,building=key,kind=kind,description=text,
-                                      status='proposed',amount=.05,cost={'gold':100},months=2))
+        identifier=uuid.uuid4().hex
+        s['improvements'].append(dict(id=identifier,building=key,description=text,source=source,
+                                      proposer_id=str(uid),status='proposed',effects={},cost={'gold':100},months=2))
         save(c,nid,s)
+        return identifier
 
 
-def review(nid,identifier,approved,gm_id):
+def review(nid,identifier,approved,gm_id,effects=None,version=None):
     """Called only by the GM-checked Discord review callback."""
     with db.atomic() as c:
         world_lock(c)
         s=state(c,nid)
+        if s and version is not None and version != s['version']:
+            raise ValueError(tr('Dane się zmieniły. Otwórz ocenę ponownie.', 'The data changed. Reopen the review.'))
         p=next((x for x in (s or {}).get('improvements',[]) if x['id']==identifier),None)
         if not p or p['status']!='proposed':
             raise ValueError(tr('Projekt nie czeka na ocenę.', 'The project is not awaiting review.'))
-        p.update(status='approved' if approved else 'rejected',gm_id=str(gm_id))
+        if approved:
+            p['effects']=validate_improvement_effects(p['building'],effects)
+        p.update(status='approved' if approved else 'rejected',gm_id=str(gm_id),reviewed_month=month_index(c))
         save(c,nid,s)
 
 

@@ -30,6 +30,8 @@ DISCORD_TOKEN = _require("DISCORD_TOKEN")
 GM_ROLE_NAME = os.getenv("GM_ROLE_NAME", "Game Master")
 # Prefer an exact role ID when names differ between Discord and deployment config.
 GM_ROLE_ID = os.getenv("GM_ROLE_ID", "").strip()
+# Optional prefix replies; message context commands work without this intent.
+MESSAGE_CONTENT_INTENT = os.getenv("MESSAGE_CONTENT_INTENT", "false").strip().lower() in ("1", "true", "yes")
 
 # --- Google Gemini ---
 GEMINI_API_KEY = _require("GEMINI_API_KEY")

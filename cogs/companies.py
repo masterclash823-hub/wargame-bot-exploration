@@ -35,8 +35,18 @@ def field(pl,en,default=None,required=True,paragraph=False):
                 style=discord.TextStyle.paragraph if paragraph else discord.TextStyle.short)
 
 
+def responded(i):
+    check=getattr(i.response,'is_done',None)
+    return bool(check and check())
+
+
+async def send_private(i,**kwargs):
+    sender=i.followup.send if responded(i) else i.response.send_message
+    await sender(**kwargs,ephemeral=True,allowed_mentions=discord.AllowedMentions.none())
+
+
 async def execute(i,fn,*args):
-    await i.response.defer(ephemeral=True)
+    if not responded(i):await i.response.defer(ephemeral=True)
     try:
         await asyncio.to_thread(fn,*args)
     except ValueError as exc:
@@ -62,7 +72,7 @@ class Menu(OwnedView):
 
 async def choose(i,title,options,handler,multiple=False):
     if not options:
-        await i.response.send_message(tr('Brak pozycji.', 'No items.'),ephemeral=True)
+        await send_private(i,content=tr('Brak pozycji.', 'No items.'))
         return
     # Keep every option reachable rather than silently dropping entries beyond 25.
     if len(options)>25:
@@ -71,10 +81,10 @@ async def choose(i,title,options,handler,multiple=False):
             async def page(interaction,start=start):
                 await choose(interaction,title,options[start:start+25],handler,multiple)
             view.add(f'{start+1}–{min(start+25,len(options))}',page)
-        await i.response.send_message(title,view=view,ephemeral=True)
+        await send_private(i,content=title,view=view)
         return
     view=ChoiceView(i.user.id,i18n.current_language(),options,i18n.localized(handler),multiple=multiple)
-    await i.response.send_message(title,view=view,ephemeral=True)
+    await send_private(i,content=title,view=view)
 
 
 def specialties(keys):
@@ -282,60 +292,92 @@ def lock_name(c,nid):
 
 
 
-def effect_text(kind):
-    labels={
-        'production':('Premia produkcji: +5 punktów procentowych.','Production bonus: +5 percentage points.'),
-        'inputs':('Oszczędność surowców: +5 punktów procentowych.','Input savings: +5 percentage points.'),
-        'workers':('Oszczędność pracowników: +5 punktów procentowych.','Worker savings: +5 percentage points.'),
-        'construction':('Zniżka budowy: +5 punktów procentowych.','Construction discount: +5 percentage points.'),
-        'maintenance':('Zniżka utrzymania: +5 punktów procentowych.','Upkeep discount: +5 percentage points.'),
-    }
-    return tr(*labels[kind])
+def effect_labels():
+    return dict(production=tr('Produkcja','Production'),inputs=tr('Zużycie surowców','Input use'),
+                workers=tr('Zapotrzebowanie na pracowników','Workers required'),
+                construction=tr('Koszt budowy','Construction cost'),maintenance=tr('Utrzymanie','Upkeep'))
+
+
+def effect_text(project):
+    values=co.project_effects(project)
+    labels=effect_labels()
+    if not values:
+        return tr('Skutki ustali GM.','The GM will decide the effects.')
+    return '\n'.join(f"{labels[k]}: {v:+g}%" for k,v in values.items())
+
+
+def project_embed(s,p):
+    status={'proposed':tr('Czeka na GM','Awaiting GM'),'approved':tr('Zatwierdzony','Approved'),
+            'running':tr('W realizacji','Running'),'complete':tr('Ukończony','Complete'),
+            'rejected':tr('Odrzucony','Rejected'),'cancelled':tr('Wycofany','Withdrawn')}[p['status']]
+    embed=discord.Embed(title=(s['name']+' · '+i18n.term(p['building']))[:256],description=p['description'])
+    embed.add_field(name=status,value=effect_text(p),inline=False)
+    embed.add_field(name=tr('Realizacja','Implementation'),value=i18n.resource_list(p['cost'])+' · '+str(p['months'])+' '+tr('miesiące gry','game months'),inline=False)
+    source=p.get('source')
+    if source:
+        embed.add_field(name=tr('Wiadomość z pomysłem','Idea message'),value=f"[Discord]({source['url']})",inline=False)
+    embed.set_footer(text=tr('Plus zwiększa daną wartość, minus ją zmniejsza. Premie mają limit technologii; kary obniżają wynik.',
+                            'Plus increases a value; minus decreases it. Bonuses have technology caps; penalties reduce the result.'))
+    return embed
+
+
+async def propose_improvement(interaction,building='',description=None,source=None):
+    n,s=get_state(interaction.user.id)
+    co.require_tech(n)
+    if not s:
+        raise ValueError(tr('Najpierw załóż kompanię.','Create a company first.'))
+    async def picked(interaction,key):
+        if key not in s['types']:
+            raise ValueError(tr('Wybierz specjalizację swojej kompanii.','Choose a company specialty.'))
+        if description is not None:
+            await execute(interaction,co.improvement,n['id'],interaction.user.id,s['version'],key,description,source)
+            return
+        async def submitted(interaction,text):
+            await execute(interaction,co.improvement,n['id'],interaction.user.id,s['version'],key,text)
+        item=field('Co zmieniasz i jak to ma działać?','What changes and how should it work?',paragraph=True)
+        item['max_length']=co.IMPROVEMENT_TEXT_LIMIT
+        await interaction.response.send_modal(InputModal(tr('Opisz usprawnienie','Describe improvement'),[item],submitted))
+    if building:
+        await picked(interaction,i18n.normalize_key(building))
+    else:
+        await choose(interaction,tr('Której specjalizacji dotyczy pomysł? GM ustali premie i straty.',
+                                    'Which specialty does the idea concern? The GM decides gains and losses.'),specialties(s['types']),picked)
+
 
 async def improvements(interaction):
     n,s=get_state(interaction.user.id)
+    if not s:
+        raise ValueError(tr('Najpierw załóż kompanię.','Create a company first.'))
     view=Menu(interaction.user.id)
-    labels=dict(production=tr('Produkcja','Production'),inputs=tr('Zużycie surowców','Input use'),
-                workers=tr('Pracownicy','Workers'),construction=tr('Koszt budowy','Construction cost'),
-                maintenance=tr('Utrzymanie','Upkeep'))
     async def propose(interaction):
-        async def building(interaction,key):
-            async def kind(interaction,value):
-                async def submitted(interaction,description):
-                    await execute(interaction,co.improvement,n['id'],interaction.user.id,s['version'],key,value,description)
-                await interaction.response.send_modal(InputModal(tr('Opisz usprawnienie','Describe improvement'),[
-                    field('Co zmieniasz i dlaczego ma to pomóc?','What will change, and how will it help?',paragraph=True)],submitted))
-            kinds=('construction','maintenance') if key=='algae_farm' else co.KINDS
-            await choose(interaction,tr('Wybierz zamierzony efekt.','Choose the intended effect.'),
-                         [discord.SelectOption(label=labels[k],value=k) for k in kinds],kind)
-        await choose(interaction,tr('Którego typu budynków dotyczy pomysł?',
-                                    'Which building type does the idea concern?'),specialties(s['types']),building)
+        await propose_improvement(interaction)
     view.add(tr('Zaproponuj usprawnienie','Propose improvement'),propose)
     async def projects(interaction):
         async def selected(interaction,identifier):
-            p=next(x for x in s['improvements'] if x['id']==identifier)
+            current_n,current_s=get_state(interaction.user.id)
+            if current_n['id']!=n['id']:
+                raise ValueError(tr('Państwo zmieniło właściciela.','Nation ownership changed.'))
+            p=next(x for x in current_s['improvements'] if x['id']==identifier)
             controls=Menu(interaction.user.id)
             if p['status']=='approved':
                 async def start(interaction):
-                    await execute(interaction,co.start_improvement,n['id'],interaction.user.id,s['version'],identifier,True)
-                controls.add(tr('Zapłać 100 złota i rozpocznij','Pay 100 gold and start'),start)
+                    await execute(interaction,co.start_improvement,n['id'],interaction.user.id,current_s['version'],identifier,True)
+                controls.add(tr('Zapłać i rozpocznij','Pay and start'),start)
             if p['status'] in ('proposed','approved'):
                 async def cancel(interaction):
-                    await execute(interaction,co.start_improvement,n['id'],interaction.user.id,s['version'],identifier,False)
+                    await execute(interaction,co.start_improvement,n['id'],interaction.user.id,current_s['version'],identifier,False)
                 controls.add(tr('Wycofaj projekt','Withdraw project'),cancel)
-            status={'proposed':tr('Czeka na GM','Awaiting GM'),'approved':tr('Zatwierdzony','Approved'),
-                    'running':tr('W realizacji','Running'),'complete':tr('Ukończony','Complete'),
-                    'rejected':tr('Odrzucony','Rejected'),'cancelled':tr('Wycofany','Withdrawn')}[p['status']]
-            text=f"{i18n.term(p['building'])} · {labels[p['kind']]} · {status}\n\n{p['description']}\n\n"
-            text+=effect_text(p['kind'])+'\n'
-            text+=tr('Koszt: 100 złota. Czas: 2 miesiące gry. Usprawnienie: 5 punktów procentowych, do limitu technologii.',
-                     'Cost: 100 gold. Time: 2 game months. Improvement: 5 percentage points, within the technology cap.')
-            await interaction.response.send_message(embed=discord.Embed(description=text),view=controls,ephemeral=True)
+            await interaction.response.send_message(embed=project_embed(current_s,p),view=controls,ephemeral=True)
         await choose(interaction,tr('Wybierz projekt.','Choose a project.'),
                      [discord.SelectOption(label=(i18n.term(p['building'])+' · '+p['description'])[:100],value=p['id']) for p in s['improvements']],selected)
     view.add(tr('Projekty i decyzje GM','Projects and GM decisions'),projects)
-    await interaction.response.send_message(tr('Opisz konkretny pomysł. GM ocenia, czy pasuje do wybranego efektu. Po zatwierdzeniu sam decydujesz, czy zapłacić i rozpocząć.',
-                                              'Describe a concrete idea. The GM checks whether it supports the chosen effect. After approval, you choose whether to pay and start.'),view=view,ephemeral=True)
+    await interaction.response.send_message(tr(
+        '1. Opisz pomysł i wybierz budynek. Możesz użyć formularza lub menu swojej wiadomości: Aplikacje → company_improve.\n'
+        '2. GM ustala skutki — premie, straty lub oba naraz. Nic nie jest przyznawane automatycznie.\n'
+        '3. Przeczytaj decyzję w „Projekty i decyzje GM”. Jeśli ją przyjmiesz, zapłać 100 złota. Po 2 miesiącach gry skutki zaczną działać.',
+        '1. Describe an idea and choose a building. Use the form or your message menu: Apps → company_improve.\n'
+        '2. The GM decides bonuses, penalties or both. No effect is awarded automatically.\n'
+        '3. Read Projects and GM decisions. If you accept, pay 100 gold. The effects start after 2 game months.'),view=view,ephemeral=True)
 
 
 async def review(interaction):
@@ -351,36 +393,126 @@ async def review(interaction):
                     options.append(discord.SelectOption(label=(lock_name(c,row['nation_id'])+' · '+p['description'])[:100],
                                                          value=f"{row['nation_id']}:{p['id']}"))
     async def selected(interaction,value):
-        if not gm_only(interaction):return
+        if not gm_only(interaction):
+            await interaction.response.send_message(i18n.t(i18n.current_language(),'gm_only'),ephemeral=True)
+            return
         nid,identifier=value.split(':',1)
         with db.cursor() as c:s=co.state(c,int(nid))
-        p=next(x for x in s['improvements'] if x['id']==identifier)
+        p=next((x for x in (s or {}).get('improvements',[]) if x['id']==identifier),None)
+        if not p or p['status']!='proposed':
+            raise ValueError(tr('Projekt nie czeka na ocenę.','The project is not awaiting review.'))
         view=Menu(interaction.user.id)
-        async def decision(interaction,approve):
+        async def accept(interaction):
             if not gm_only(interaction):
                 await interaction.response.send_message(i18n.t(i18n.current_language(),'gm_only'),ephemeral=True)
                 return
-            await execute(interaction,co.review,int(nid),identifier,approve,interaction.user.id)
-        async def accept(interaction):await decision(interaction,True)
-        async def reject(interaction):await decision(interaction,False)
-        view.add(tr('Zatwierdź','Approve'),accept,discord.ButtonStyle.success)
+            keys=('construction','maintenance') if p['building']=='algae_farm' else co.KINDS
+            labels=effect_labels()
+            async def submitted(interaction,*amounts):
+                if not gm_only(interaction):
+                    await interaction.response.send_message(i18n.t(i18n.current_language(),'gm_only'),ephemeral=True)
+                    return
+                effects={key:amount.replace(',','.') for key,amount in zip(keys,amounts)}
+                await execute(interaction,co.review,int(nid),identifier,True,interaction.user.id,effects,s['version'])
+            fields=[dict(label=labels[key]+' (%)',default='0',required=True,max_length=12) for key in keys]
+            await interaction.response.send_modal(InputModal(tr('Skutki: + zwiększa, − zmniejsza','Effects: + increases, − decreases'),fields,submitted))
+        async def reject(interaction):
+            if not gm_only(interaction):
+                await interaction.response.send_message(i18n.t(i18n.current_language(),'gm_only'),ephemeral=True)
+                return
+            await execute(interaction,co.review,int(nid),identifier,False,interaction.user.id,None,s['version'])
+        view.add(tr('Ustal skutki i zatwierdź','Set effects and approve'),accept,discord.ButtonStyle.success)
         view.add(tr('Odrzuć','Reject'),reject,discord.ButtonStyle.danger)
-        text=f"{s['name']} · {i18n.term(p['building'])}\n\n{p['description']}\n\n"
-        text+=effect_text(p['kind'])+'\n'+tr('100 złota, 2 miesiące. Sprawdź wcześniejsze usprawnienia, aby nie premiować tego samego pomysłu ponownie.', '100 gold, 2 months. Check previous improvements to avoid rewarding the same idea twice.')
         async def history(interaction):
             if not gm_only(interaction):return
             async def old_project(interaction,old_id):
                 if not gm_only(interaction):return
                 old=next(x for x in s['improvements'] if x['id']==old_id)
-                await interaction.response.send_message(embed=discord.Embed(description=old['description']+'\n\n'+effect_text(old['kind'])),ephemeral=True)
+                await interaction.response.send_message(embed=project_embed(s,old),ephemeral=True)
             await choose(interaction,tr('Wcześniejsze pomysły.','Earlier ideas.'),
                          [discord.SelectOption(label=x['description'][:100],value=x['id']) for x in s['improvements'] if x['id']!=identifier],old_project)
         view.add(tr('Historia usprawnień','Improvement history'),history)
-        await interaction.response.send_message(embed=discord.Embed(description=text),view=view,ephemeral=True)
+        await interaction.response.send_message(content=tr(
+            'GM wybiera każdą zmianę od −50 do +50%. Np. produkcja +10%, surowce +5% daje większą produkcję kosztem większego zużycia. '
+            'Minus przy kosztach oznacza oszczędność. Zostaw 0 przy braku zmiany. Premie nadal podlegają limitom technologii; kary działają po ich ograniczeniu.',
+            'The GM chooses each change from −50 to +50%. E.g. production +10%, inputs +5% increases output at the cost of more inputs. '
+            'Minus on a cost means savings. Leave 0 for no change. Bonuses retain technology caps; penalties apply after those caps.'),
+            embed=project_embed(s,p),view=view,ephemeral=True)
     await choose(interaction,tr('Projekty czekające na ocenę GM.','Projects awaiting GM review.'),options,selected)
 
 
 class CompanyCog(commands.Cog):
+    def __init__(self,bot=None):
+        self.bot=bot
+        self.message_command=app_commands.ContextMenu(name='company_improve',callback=self.improve_message)
+        self.message_command.guild_only=True
+
+    async def cog_load(self):
+        if self.bot:self.bot.tree.add_command(self.message_command)
+
+    async def cog_unload(self):
+        if self.bot:
+            self.bot.tree.remove_command(self.message_command.name,type=discord.AppCommandType.message)
+
+    @i18n.localized
+    async def improve_message(self,interaction:discord.Interaction,message:discord.Message):
+        from company_message import message_proposal
+        try:
+            description,source=message_proposal(message,interaction.user.id,interaction.guild_id)
+            await interaction.response.defer(ephemeral=True)
+            await propose_improvement(interaction,description=description,source=source)
+        except ValueError as exc:
+            await send_private(interaction,content=str(exc))
+
+    @app_commands.command(name='company_improve',description='Propose an improvement or use a message link / Zgłoś pomysł lub link do wiadomości')
+    @app_commands.guild_only()
+    @app_commands.describe(building='Company specialty / Specjalizacja kompanii',message_link='Your Discord message link; optional / Link do własnej wiadomości; opcjonalnie')
+    @i18n.localized
+    async def company_improve(self,interaction:discord.Interaction,building:str='',message_link:str=''):
+        from company_message import from_link
+        try:
+            description=source=None
+            if message_link:
+                await interaction.response.defer(ephemeral=True)
+                description,source=await from_link(interaction,message_link)
+            await propose_improvement(interaction,building,description,source)
+        except ValueError as exc:
+            await send_private(interaction,content=str(exc))
+
+    @company_improve.autocomplete('building')
+    @i18n.localized
+    async def improvement_buildings(self,interaction:discord.Interaction,current:str):
+        try:n,s=get_state(interaction.user.id)
+        except ValueError:return []
+        if not s:return []
+        return [app_commands.Choice(name=i18n.term(k)[:100],value=k) for k in s['types']
+                if current.casefold() in (k+' '+i18n.term(k)).casefold()][:25]
+
+    @commands.command(name='company_improve')
+    async def improvement_reply(self,ctx,building:str=''):
+        from company_message import from_reply
+        with i18n.using_language(i18n.get_user_language(ctx.author.id)):
+            try:
+                if not ctx.guild:
+                    raise ValueError(tr('Użyj tej komendy na serwerze gry.','Use this command on the game server.'))
+                with db.cursor() as c:
+                    c.execute('SELECT value FROM game_config WHERE key=?',(f'guild_active_{ctx.guild.id}',))
+                    active=c.fetchone()
+                if not active or active['value']!='1':
+                    raise ValueError(tr('Bot nie jest aktywowany na tym serwerze.','The bot is not activated on this server.'))
+                if not building:
+                    raise ValueError(tr('Podaj specjalizację, np. !company_improve farm.','Choose a specialty, e.g. !company_improve farm.'))
+                description,source=await from_reply(ctx)
+                n,s=get_state(ctx.author.id)
+                if not s:raise ValueError(tr('Najpierw załóż kompanię.','Create a company first.'))
+                await asyncio.to_thread(co.improvement,n['id'],ctx.author.id,s['version'],i18n.normalize_key(building),description,source)
+            except ValueError as exc:
+                await ctx.reply(str(exc),mention_author=False,allowed_mentions=discord.AllowedMentions.none())
+                return
+            await ctx.reply(tr('Pomysł zapisany. GM ustali skutki w /company_review. Decyzję zobaczysz w panelu kompanii → Usprawnienia.',
+                               'Idea saved. The GM chooses effects in /company_review. Read the decision in the company panel → Improvements.'),
+                            mention_author=False,allowed_mentions=discord.AllowedMentions.none())
+
     @app_commands.command(name='company',description='Company management / Zarządzanie kompanią')
     @i18n.localized
     async def company(self,interaction:discord.Interaction):
@@ -400,4 +532,4 @@ class CompanyCog(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(CompanyCog())
+    await bot.add_cog(CompanyCog(bot))
