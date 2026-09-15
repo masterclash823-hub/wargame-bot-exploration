@@ -35,6 +35,7 @@ COGS = [
 ]
 
 intents = discord.Intents.default()
+intents.message_content = config.MESSAGE_CONTENT_INTENT
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 print("[BOOT] bot object created", flush=True)

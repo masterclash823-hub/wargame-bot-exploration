@@ -149,14 +149,14 @@ class CompanyTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
 
     async def test_improvement_requires_gm_then_player_and_time(self):
         self.create()
-        co.improvement(1,1,self.state()['version'],'farm','production','We train supervisors to reduce harvesting delays.')
+        co.improvement(1,1,self.state()['version'],'farm','We train supervisors to reduce harvesting delays.')
         identifier=self.state()['improvements'][0]['id']
         with self.assertRaises(ValueError):co.start_improvement(1,1,self.state()['version'],identifier,True)
         request=interaction(1)
         with patch('cogs.companies.gm_only',return_value=False):
             await CompanyCog.company_review.callback(None,request)
         self.assertEqual(self.state()['improvements'][0]['status'],'proposed')
-        co.review(1,identifier,True,99)
+        co.review(1,identifier,True,99,{'production':5})
         co.start_improvement(1,1,self.state()['version'],identifier,True)
         run_month()
         self.assertEqual(self.state()['improvements'][0]['status'],'running')
