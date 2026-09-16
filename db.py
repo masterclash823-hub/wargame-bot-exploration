@@ -82,6 +82,17 @@ CREATE TABLE IF NOT EXISTS province_neighbors (
 CREATE INDEX IF NOT EXISTS idx_province_neighbors_neighbor
     ON province_neighbors(neighbor_cell_id);
 
+CREATE TABLE IF NOT EXISTS nation_decay (
+    nation_id INTEGER PRIMARY KEY REFERENCES nations(id) ON DELETE CASCADE,
+    status TEXT NOT NULL, started_month INTEGER NOT NULL, due_month INTEGER NOT NULL,
+    gm_id TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', former_owner TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ruin_sites (
+    nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    cell_id INTEGER NOT NULL REFERENCES provinces(azgaar_cell_id) ON DELETE CASCADE,
+    PRIMARY KEY(nation_id,cell_id)
+);
+
 CREATE TABLE IF NOT EXISTS companies (
     nation_id INTEGER PRIMARY KEY REFERENCES nations(id) ON DELETE CASCADE,
     state_json TEXT NOT NULL
@@ -247,6 +258,12 @@ CREATE TABLE IF NOT EXISTS events (
     status        TEXT NOT NULL DEFAULT 'draft',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     posted_at     TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS ruin_event_links (
+    event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+    ruin_nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    context_json TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS event_publications (

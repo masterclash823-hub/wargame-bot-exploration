@@ -138,12 +138,14 @@ Use relevant past choices to continue the nation's story. Do not invent addition
 This context is private to this nation and the GM; do not expose secrets about other nations."""
 
 
-async def _generate_event(nat) -> tuple[str, str]:
+async def _generate_event(nat, ruin_context=None) -> tuple[str, str]:
     """
     Call Gemini to generate a narrative event and suggested effects.
     Returns (event_text, effects_json_str).
     """
     context = _build_nation_context(nat)
+    if ruin_context:
+        context += "\nThis event is the discovery of neighboring nation ruins. Public historical context (story data): " + json.dumps(ruin_context,ensure_ascii=False)
     lang = _event_language(nat)
     language = "Polish" if lang == "pl" else "English"
 
@@ -287,7 +289,7 @@ class EventsCog(commands.Cog):
                        description="[GM] Generate an AI event for a nation / [GM] Generuj event AI")
     @app_commands.describe(nation="Nation name / Nazwa narodu")
     @i18n.localized
-    async def event_generate(self, interaction: discord.Interaction, nation: str):
+    async def event_generate(self, interaction: discord.Interaction, nation: str, ruins: int = 0):
         if not _gm(interaction):
             await interaction.response.send_message(
                 i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
@@ -300,13 +302,32 @@ class EventsCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        event_text, effects_json = await _generate_event(nat)
+        from nation_decay import context as ruin_context, require_playable
+        try:
+            with db.cursor() as c:
+                require_playable(c,nat['id'])
+                linked=ruin_context(c,nat['id'],ruins) if ruins else None
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True);return
+        event_text, effects_json = await _generate_event(nat,linked) if linked else await _generate_event(nat)
+        if linked:
+            heading=('Odkrycie ruin: ' if _event_language(nat)=='pl' else 'Discovery of ruins: ')+linked['name']
+            event_text=heading+'\n'+event_text
         lang = _event_language(nat)
 
-        event_id = db.insert_returning_id(
-            "INSERT INTO events(nation_id,ai_draft_text,gm_final_text,effects_json,status)"
-            " VALUES(?,?,?,?,?)",
-            (nat["id"], event_text, event_text, effects_json, "draft"))
+        # Recheck after AI work: collapse or a border transfer may have happened meanwhile.
+        from world_service import world_lock
+        try:
+            with db.atomic() as c:
+                world_lock(c);require_playable(c,nat['id'])
+                if linked:ruin_context(c,nat['id'],ruins)
+                event_id = db.insert_returning_id(
+                    "INSERT INTO events(nation_id,ai_draft_text,gm_final_text,effects_json,status) VALUES(?,?,?,?,?)",
+                    (nat['id'],event_text,event_text,effects_json,'draft'))
+                if linked:
+                    c.execute('INSERT INTO ruin_event_links(event_id,ruin_nation_id,context_json) VALUES(?,?,?)',(event_id,ruins,json.dumps(linked)))
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True);return
 
         effects = {}
         try:
@@ -424,6 +445,11 @@ class EventsCog(commands.Cog):
         if not nat:
             await interaction.followup.send(i18n.text('Nation not found.'), ephemeral=True)
             return
+        from nation_decay import require_playable
+        try:
+            with db.cursor() as c:require_playable(c,nat['id'])
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True);return
         lang = _event_language(nat)
         ch = None
         image = None

@@ -37,6 +37,8 @@ def lock_nation(c, nid):
     nation = c.fetchone()
     if not nation:
         raise ValueError(i18n.text('Nation not found.'))
+    from nation_decay import require_playable
+    require_playable(c,nid)
     return nation
 
 
@@ -304,7 +306,18 @@ def forecast(nid):
         with db.atomic() as c:
             run_month()
             c.execute('SELECT report_json FROM economy_months ORDER BY month_index DESC LIMIT 1')
-            result=json.loads(c.fetchone()['report_json'])[str(nid)]
+            reports=json.loads(c.fetchone()['report_json'])
+            result=reports.get(str(nid))
+            if result is None:
+                result=project(*snapshot(c,nid))
+                c.execute('SELECT * FROM nations WHERE id=?',(nid,));frozen=c.fetchone()
+                result.update(nation_ruins=True,production={},staffing=[],income=0,taxes=0,luxury_income=0,balance=0,upkeep=0,
+                              treasury=frozen['treasury'],resources=read_json(frozen['resources_json']),
+                              population=frozen['population'],stability=frozen['stability'],policy=policy(c,nid),
+                              food_change=0,food_needed=0,food_months=None,food_shortage=0,spoilage=0,
+                              labor_upkeep=0,dynasty_stability=0,company_transfers={})
+                c.execute('SELECT id,population FROM provinces WHERE owner_nation_id=? AND active=1',(nid,))
+                result['populations']={p['id']:p['population'] for p in c.fetchall()}
             raise PreviewRollback(result)
     except PreviewRollback as preview:
         return preview.result
@@ -370,12 +383,16 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
         # Match the lock order of trade acceptance, then read all balances only after locks.
         lock=' FOR UPDATE' if db.USE_POSTGRES else ''
         c.execute('SELECT id FROM trades ORDER BY id'+lock); c.fetchall()
-        c.execute('SELECT * FROM nations ORDER BY id'+lock); nations=c.fetchall()
+        c.execute('SELECT * FROM nations ORDER BY id'+lock); c.fetchall()
         c.execute('SELECT id FROM provinces ORDER BY id'+lock); c.fetchall()
         c.execute('SELECT id FROM military_units ORDER BY id'+lock); c.fetchall()
         target=current+1
         c.execute('SELECT month_index FROM economy_months WHERE month_index=?',(target,))
         if c.fetchone(): raise ValueError('This month has already been settled.')
+        from nation_decay import tick as decay_tick
+        decay_tick(c,target)
+        c.execute("SELECT * FROM nations n WHERE NOT EXISTS (SELECT 1 FROM nation_decay d WHERE d.nation_id=n.id AND d.status='ruins') ORDER BY id")
+        nations=c.fetchall()
         from economy_services import settle_contracts
         from treaty_service import tick as treaty_tick
         treaty_tick(c,target)
