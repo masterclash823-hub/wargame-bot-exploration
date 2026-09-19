@@ -365,21 +365,20 @@ def _megaprojects(c,nid):
 def run_month(expected_month=None, scheduled_at=None, hours=24):
     """Calendar, balances and journal commit together. Failed months can be retried."""
     with db.atomic() as c:
-        c.execute("INSERT INTO economy_meta(key,value) VALUES('tick_lock','1') ON CONFLICT(key) DO NOTHING")
-        c.execute("SELECT value FROM economy_meta WHERE key='tick_lock'"+(' FOR UPDATE' if db.USE_POSTGRES else ''))
-        c.fetchone()
-        from world_service import world_lock,progress_goals
-        world_lock(c)
-        month=int(_config(c,'current_month','1')); year=int(_config(c,'current_year','1'))
-        current=year*12+month-1
+        from calendar_service import lock, recover_date, speed, utc
+        from world_service import progress_goals
+        lock(c)
+        current=recover_date(c)
         if expected_month is not None and current!=expected_month: return None
         if scheduled_at is not None:
             if _config(c,'calendar_running','0')!='1': return None
-            stamp=_config(c,'last_tick_ts')
-            if not stamp: return None
-            last=datetime.fromisoformat(stamp)
-            hours=float(_config(c,'hours_per_month','24'))
-            if hours<=0 or (scheduled_at-last).total_seconds()<hours*3600: return None
+            scheduled_at=utc(scheduled_at)
+            last=utc(_config(c,'last_tick_ts'))
+            hours=speed(_config(c,'hours_per_month','24'))
+            if last is None:
+                _set(c,'last_tick_ts',scheduled_at.isoformat())
+                return None
+            if (scheduled_at-last).total_seconds()<hours*3600: return None
         # Match the lock order of trade acceptance, then read all balances only after locks.
         lock=' FOR UPDATE' if db.USE_POSTGRES else ''
         c.execute('SELECT id FROM trades ORDER BY id'+lock); c.fetchall()
@@ -444,7 +443,13 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
         year,month=target//12,target%12+1
         _set(c,'current_month',month); _set(c,'current_year',year)
         if scheduled_at is not None: _set(c,'last_tick_ts',(last+timedelta(hours=hours)).isoformat())
-        else: _set(c,'last_tick_ts',datetime.now(timezone.utc).isoformat())
+        else:
+            checkpoint=datetime.now(timezone.utc).isoformat()
+            _set(c,'last_tick_ts',checkpoint)
+            if _config(c,'calendar_running','0')!='1' and _config(c,'calendar_paused_at'):
+                _set(c,'calendar_paused_at',checkpoint)
+        _set(c,'calendar_last_error','')
+        _set(c,'calendar_error_at','')
         c.execute('INSERT INTO economy_months(month_index,report_json) VALUES(?,?)',(target,json.dumps(reports)))
         summaries=[]
         for n in nations:

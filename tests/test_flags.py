@@ -63,5 +63,8 @@ class FlagTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         for value in ('🇵🇱', '<:flag:123456789012345678>', ''):
             self.assertEqual(flag_text(value), value)
             card = flagged_embed(discord.Embed(title='Nation'), (value, 'Nation'))
-            self.assertIsNone(card.thumbnail.url)
+            if value:
+                self.assertTrue(card.thumbnail.url.startswith('https://'))
+            else:
+                self.assertIsNone(card.thumbnail.url)
         self.assertEqual(flag_text('  HTTPS://example.com/flag.png  '), '')
