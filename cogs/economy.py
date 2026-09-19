@@ -797,6 +797,7 @@ class EconomyCog(commands.Cog):
     @tasks.loop(minutes=1)
     async def calendar_loop(self):
         from economy_engine import run_month
+        from calendar_service import record_failure
         try:
             now = datetime.now(timezone.utc)
             for _ in range(3):
@@ -804,16 +805,26 @@ class EconomyCog(commands.Cog):
                 if result is None:
                     break
                 month, year, summaries = result
-                channel_id = _cfg("announce_channel_id")
-                channel = self.bot.get_channel(int(channel_id)) if channel_id else None
-                if channel:
-                    embed = discord.Embed(title=f"📅 {month}/{year}", description=i18n.text('A new month has begun. Nations have collected their income.'))
-                    try:
+                # Delivery errors must never prevent catch-up or roll back a paid month.
+                try:
+                    channel_id = await asyncio.to_thread(_cfg,"announce_channel_id")
+                    channel = self.bot.get_channel(int(channel_id)) if channel_id else None
+                    if channel is None and channel_id:
+                        channel = await self.bot.fetch_channel(int(channel_id))
+                    if channel:
+                        embed = discord.Embed(title=f"📅 {month}/{year}", description=i18n.text('A new month has begun. Nations have collected their income.'))
                         await channel.send(embed=embed)
-                    except discord.HTTPException:
-                        pass
+                except Exception as exc:
+                    print(f"[CALENDAR] Announcement failed: {type(exc).__name__}", flush=True)
         except Exception as exc:
+            import logging
+            logging.exception('Calendar settlement failed')
             print(f"[CALENDAR] Month rolled back: {type(exc).__name__}: {exc}", flush=True)
+            try: await asyncio.to_thread(record_failure,exc)
+            except Exception: pass
+
+    def ensure_calendar_loop(self):
+        if not self.calendar_loop.is_running(): self.calendar_loop.start()
 
     @calendar_loop.before_loop
     async def _before(self):
@@ -1357,24 +1368,23 @@ class EconomyCog(commands.Cog):
     @app_commands.describe(
         hours_per_month="Real hours per in-game month",
         channel="Announcement channel",
-        start_month="Starting month (1-12)",
-        start_year="Starting year",
+        start_month="Initial month; omit to keep date / Pierwszy miesiąc; puste zachowuje datę",
+        start_year="Initial year; omit to keep date / Pierwszy rok; puste zachowuje datę",
     )
     @i18n.localized
     async def calendar_set(self, interaction: discord.Interaction,
                            hours_per_month: float, channel: discord.TextChannel,
-                           start_month: int = 1, start_year: int = 1):
+                           start_month: int = None, start_year: int = None):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
-        _cfg_set("hours_per_month",    hours_per_month)
-        _cfg_set("announce_channel_id", channel.id)
-        _cfg_set("current_month",      start_month)
-        _cfg_set("current_year",       start_year)
-        await interaction.response.send_message(
-            i18n.text('✅ Calendar: **{p0}h** IRL = 1 month → {p1}\nStarting: Month {p2}, Year {p3}\nUse `/calendar start` to begin.', p0=hours_per_month, p1=channel.mention, p2=start_month, p3=start_year),
-            ephemeral=True,
-        )
+        from calendar_service import configure
+        from world_service import tr
+        await interaction.response.defer(ephemeral=True)
+        try: month,year = await asyncio.to_thread(configure,hours_per_month,channel.id,start_month,start_year)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True);return
+        await interaction.followup.send(tr('Kalendarz zapisany: ','Calendar saved: ')+f'{hours_per_month:g}h = 1 '+tr('miesiąc','month')+f' · {month}/{year} · {channel.mention}\n'+tr('Uruchom lub wznów: /calendar start.','Start or resume: /calendar start.'),ephemeral=True)
 
     @calendar_grp.command(name="start", description="[GM] Start the calendar / [GM] Uruchom kalendarz")
     @i18n.localized
@@ -1382,9 +1392,14 @@ class EconomyCog(commands.Cog):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
-        _cfg_set("calendar_running", "1")
-        _cfg_set("last_tick_ts", datetime.now(timezone.utc).isoformat())
-        await interaction.response.send_message(i18n.text('✅ Calendar started.'), ephemeral=True)
+        from calendar_service import start
+        from world_service import tr
+        await interaction.response.defer(ephemeral=True)
+        try: started = await asyncio.to_thread(start)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True);return
+        self.ensure_calendar_loop()
+        await interaction.followup.send(i18n.text('✅ Calendar started.') if started else tr('Kalendarz już działa. Odliczanie nie zostało zresetowane.','Calendar is already running. The countdown was not reset.'),ephemeral=True)
 
     @calendar_grp.command(name="stop", description="[GM] Pause the calendar / [GM] Zatrzymaj kalendarz")
     @i18n.localized
@@ -1392,16 +1407,21 @@ class EconomyCog(commands.Cog):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
-        _cfg_set("calendar_running", "0")
-        await interaction.response.send_message(i18n.text('⏸️ Calendar paused.'), ephemeral=True)
+        from calendar_service import stop
+        await interaction.response.defer(ephemeral=True)
+        await asyncio.to_thread(stop)
+        await interaction.followup.send(i18n.text('⏸️ Calendar paused.'), ephemeral=True)
 
     @calendar_grp.command(name="status", description="Current in-game date / Aktualna data w grze")
     @i18n.localized
     async def calendar_status(self, interaction: discord.Interaction):
-        month   = _cfg("current_month", "1")
-        year    = _cfg("current_year",  "1")
-        running = _cfg("calendar_running", "0") == "1"
-        hpm     = _cfg("hours_per_month", "—")
+        from calendar_service import status
+        from world_service import tr
+        await interaction.response.defer(ephemeral=True)
+        try: state = await asyncio.to_thread(status)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True);return
+        month,year,running,hpm=state['month'],state['year'],state['running'],state['hours']
         try:
             mname = _month_name(int(month), _lang(interaction))
         except (ValueError, IndexError):
@@ -1410,7 +1430,14 @@ class EconomyCog(commands.Cog):
         embed.add_field(name=i18n.text('Current Date'), value=i18n.text('{p0}, Year {p1}', p0=mname, p1=year), inline=True)
         embed.add_field(name=i18n.text('Status'),       value=i18n.text('▶️ Running') if running else i18n.text('⏸️ Paused'), inline=True)
         embed.add_field(name=i18n.text('Speed'),        value=i18n.text('{p0}h IRL = 1 month', p0=hpm), inline=True)
-        await interaction.response.send_message(embed=embed)
+        if running:
+            due=state['due']
+            value=(f'<t:{int(due.timestamp())}:R>' if due else tr('Odliczanie zostanie odtworzone w ciągu minuty.','Countdown will be restored within a minute.'))
+            if due and due<=datetime.now(timezone.utc): value=tr('Rozliczenie jest zaległe; bot ponawia próbę co minutę.','Settlement is overdue; the bot retries every minute.')
+            embed.add_field(name=tr('Następny miesiąc','Next month'),value=value,inline=False)
+        if state['error']:
+            embed.add_field(name=tr('Błąd ostatniego rozliczenia','Last settlement error'),value=tr('Miesiąc nie został naliczony. GM: sprawdź log [CALENDAR] na Renderze. Typ: ','The month was not paid. GM: check the [CALENDAR] log on Render. Type: ')+state['error'],inline=False)
+        await interaction.followup.send(embed=embed,ephemeral=True)
 
     # ======================================================================
     # ADMINECO GROUP

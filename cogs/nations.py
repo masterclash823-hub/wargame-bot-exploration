@@ -81,6 +81,16 @@ class NationCog(commands.Cog):
             embed.add_field(name=tr('Historia państwa', 'Nation lore'), value=lore[start:start+1000], inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @nation_group.command(name='flag', description='Set a flag from an upload, emoji or URL / Ustaw flagę z pliku, emoji lub URL')
+    @app_commands.describe(nation='Nation name; blank = yours / Państwo; puste = własne',
+                           flag='Emoji or image URL / Emoji lub link do obrazka',
+                           file='PNG, JPG, WebP or GIF, max 2 MB / Plik flagi do 2 MB')
+    @i18n.localized
+    async def flag(self, interaction: discord.Interaction, nation: str='', flag: str=None,
+                   file: discord.Attachment=None):
+        from flag_storage import change_flag
+        await change_flag(interaction,nation,flag,file)
+
     @nation_group.command(name='transfer', description='GM: transfer a nation to a player / GM: przekaż państwo graczowi')
     @i18n.localized
     async def transfer(self, interaction: discord.Interaction, nation: str, player: discord.Member):

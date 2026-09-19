@@ -48,6 +48,11 @@ CREATE TABLE IF NOT EXISTS nations (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS flag_assets (
+    digest TEXT PRIMARY KEY,
+    png_base64 TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS nation_history (
     id          SERIAL PRIMARY KEY,
     nation_id   INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,

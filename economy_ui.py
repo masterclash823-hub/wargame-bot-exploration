@@ -2,6 +2,8 @@
 import asyncio
 import io
 import json
+import logging
+import math
 from typing import Literal
 import discord
 from discord import app_commands
@@ -17,9 +19,54 @@ import economy_services as services
 def tr(pl,en): return pl if i18n.current_language()=='pl' else en
 
 
+def inventory_text(n):
+    try: resources=read_json(n['resources_json'])
+    except (ValueError,TypeError):
+        return tr('Nie można odczytać magazynu. GM powinien sprawdzić dane państwa.',
+                  'Cannot read the stockpile. Ask the GM to check this nation’s data.')
+    if not isinstance(resources,dict):
+        return tr('Nieprawidłowe dane magazynu. Zgłoś to GM-owi.','Invalid stockpile data. Please tell the GM.')
+    lines=[]
+    for key,value in sorted(resources.items()):
+        try:
+            amount=float(value)
+            shown=f'{amount:g}' if math.isfinite(amount) else '?'
+        except (ValueError,TypeError): shown='?'
+        lines.append(f'{i18n.term(key)}: {shown}')
+    return '\n'.join(lines) or '—'
+
+
+def safe_forecast(nid):
+    try: return forecast(nid)
+    except Exception:
+        logging.exception('Economy forecast failed for nation %s; displaying current stockpile',nid)
+        return None
+
+
+def current_nation(uid):
+    n=get_nation_by_owner(str(uid))
+    if n:
+        with db.cursor() as c:
+            c.execute('SELECT COALESCE(SUM(population),0) AS pop FROM provinces WHERE owner_nation_id=? AND active=1',(n['id'],))
+            n['population']=c.fetchone()['pop']
+    return n
+
+
 def dashboard(n,r):
-    p=r['policy']
     embed=flagged_embed(discord.Embed(title=tr('💰 Gospodarka — ','💰 Economy — ')+n['name'],color=discord.Color.gold()),(n['flag'],n['name']))
+    inventory=inventory_text(n)
+    embed.add_field(name=tr('Skarbiec teraz','Treasury now'),value=f"{n['treasury']:.1f}g")
+    embed.add_field(name=tr('Populacja','Population'),value=f"{n['population']:,}")
+    embed.add_field(name=tr('Magazyn','Stockpile'),value=inventory[:900]+(tr('\nPełna lista w załączniku.','\nFull inventory in the attachment.') if len(inventory)>900 else ''),inline=False)
+    if r is not None and r.get('stockpile_only'):
+        embed.description=tr('Aktualne zasoby państwa. „Prognoza” oblicza bilans następnego miesiąca; ustawienia gospodarki są poniżej.',
+                             'Current nation resources. Forecast calculates the next monthly balance; economy settings are below.')
+        return embed
+    if r is None:
+        embed.description=tr('Pokazuję aktualne zasoby. Prognoza miesiąca jest chwilowo niedostępna; zgłoś to GM-owi. Żadne zasoby ani czas gry nie zostały zmienione przez ten podgląd.',
+                             'Showing current resources. The monthly forecast is temporarily unavailable; please tell the GM. This preview did not change resources or game time.')
+        return embed
+    p=r['policy']
     if r.get('nation_ruins'):
         embed.description=tr('Przy następnym rozliczeniu państwo będzie już ruinami. Gospodarka zostanie zatrzymana, a gracz straci kontrolę. Przed upadkiem GM może zatrzymać rozpad przez /nation decay_stop.',
                              'At the next settlement this nation will be ruins. Its economy will stop and the player will lose control. Before collapse the GM can cancel decay with /nation decay_stop.')
@@ -27,7 +74,6 @@ def dashboard(n,r):
     embed.description=tr('Prognoza następnego miesiąca. Domyślnie pracowników przydziela automat. W „Pracownikach” możesz ustawić ręczne przydziały.',
                          'Forecast for the next month. Workers are assigned automatically by default. Open Workers for manual assignments.')
     embed.add_field(name=tr('Złoto / miesiąc','Gold / month'),value=f"{r['balance']:+.1f}g\n"+tr('Dochód','Income')+f": {r['income']:.1f}g | "+tr('Utrzymanie','Upkeep')+f": {r['upkeep']:.1f}g")
-    embed.add_field(name=tr('Skarbiec teraz','Treasury now'),value=f"{n['treasury']:.1f}g")
     from labor_regimes import label
     regime=r.get('labor',{'mode':'free','transition_months':0})
     embed.add_field(name=tr('Polityka pracy','Labor policy'),value=label(regime['mode'])+
@@ -38,8 +84,6 @@ def dashboard(n,r):
     needed=r['food_needed'];stock=read_json(n['resources_json']).get('food',0)
     cover=f'{stock/needed:.1f}' if needed else '∞'
     embed.add_field(name=tr('Żywność','Food'),value=tr('Zapas na ','Stock for ')+cover+tr(' mies.',' months')+f"\n{r['food_change']:+.1f}/"+tr('mies.','month'))
-    current=read_json(n['resources_json'])
-    embed.add_field(name=tr('Magazyn','Stockpile'),value=(i18n.resource_list(current) or '—')[:1000],inline=False)
     tips=[]
     if r['balance']<0:tips.append(tr('⚠️ Wydatki przewyższają dochody. Sprawdź rezerwy wojskowe albo zwiększ sprzedaż.',
                                     '⚠️ Spending exceeds income. Consider military reserves or increase sales.'))
@@ -71,6 +115,7 @@ class EconomyView(i18n.LocalizedView):
         super().__init__(timeout=600)
         self.owner,self.nid=owner,nid
         self.labor.label=tr('Polityka pracy','Labor policy')
+        self.preview.label=tr('Prognoza','Forecast')
         options=[('tax:low',tr('Podatki niskie','Low taxes')),('tax:normal',tr('Podatki normalne — domyślne','Normal taxes — default')),
                  ('tax:high',tr('Podatki wysokie','High taxes')),('priority:balanced',tr('Rozwój zrównoważony — domyślny','Balanced growth — default')),
                  ('priority:food',tr('Priorytet: żywność','Priority: food')),('priority:industry',tr('Priorytet: przemysł','Priority: industry')),
@@ -95,18 +140,36 @@ class EconomyView(i18n.LocalizedView):
         try:await asyncio.to_thread(set_policy,self.nid,key,value,interaction.user.id)
         except ValueError as exc:
             await interaction.followup.send(str(exc),ephemeral=True);return
-        n=get_nation_by_owner(str(interaction.user.id))
-        r=await asyncio.to_thread(forecast,self.nid)
-        await interaction.edit_original_response(embed=dashboard(n,r),view=EconomyView(self.owner,self.nid))
+        n=await asyncio.to_thread(current_nation,interaction.user.id)
+        if not n or n['id']!=self.nid:
+            await interaction.followup.send(tr('Państwo zmieniło właściciela.','Nation ownership changed.'),ephemeral=True);return
+        embed=dashboard(n,{'stockpile_only':True})
+        embed.set_footer(text=tr('Ustawienia zapisane.','Settings saved.'))
+        await interaction.edit_original_response(embed=embed,view=EconomyView(self.owner,self.nid))
+
+    @discord.ui.button(label='Forecast',row=1)
+    @i18n.localized
+    async def preview(self,interaction,button):
+        await interaction.response.defer()
+        r=await asyncio.to_thread(safe_forecast,self.nid)
+        n=await asyncio.to_thread(current_nation,interaction.user.id)
+        if not n or n['id']!=self.nid:
+            await interaction.followup.send(tr('Państwo zmieniło właściciela.','Nation ownership changed.'),ephemeral=True);return
+        await interaction.edit_original_response(embed=dashboard(n,r),view=self)
 
     @discord.ui.button(label='Details',row=1)
     @i18n.localized
     async def details(self,interaction,button):
         await interaction.response.defer(ephemeral=True)
-        r=await asyncio.to_thread(forecast,self.nid)
+        r=await asyncio.to_thread(safe_forecast,self.nid)
+        n=await asyncio.to_thread(current_nation,interaction.user.id)
+        if not n or n['id']!=self.nid:
+            await interaction.followup.send(tr('Państwo zmieniło właściciela.','Nation ownership changed.'),ephemeral=True);return
+        if r is None:
+            await interaction.followup.send(tr('Prognoza niedostępna. Poniżej pełny aktualny magazyn.','Forecast unavailable. The complete current stockpile is attached.'),file=discord.File(io.BytesIO(inventory_text(n).encode()),filename='resources.txt'),ephemeral=True);return
         lines=[tr('Obsada budynków:','Building staffing:')]
         lines += [f"#{s['cell']} {i18n.term(s['building'])} L{s['level']}: {s['staff']:.0%}" for s in r['staffing']]
-        lines += [tr('Zaległości po miesiącu: ','Arrears after this month: ')+f"{r['policy']['arrears']:.1f}g"]
+        lines += [tr('Zaległości po miesiącu: ','Arrears after this month: ')+f"{r['policy']['arrears']:.1f}g",'',inventory_text(n)]
         await interaction.followup.send(file=discord.File(io.BytesIO('\n'.join(lines).encode()),filename='economy.txt'),ephemeral=True)
 
     @discord.ui.button(label='Workers',row=1)
@@ -123,12 +186,15 @@ class EconomyView(i18n.LocalizedView):
 
 
 async def show_dashboard(interaction):
-    n=get_nation_by_owner(str(interaction.user.id))
-    if not n:
-        await interaction.response.send_message(i18n.t(i18n.current_language(),'no_nation'),ephemeral=True);return
     await interaction.response.defer(ephemeral=True)
-    result=await asyncio.to_thread(forecast,n['id'])
-    await interaction.followup.send(embed=dashboard(n,result),view=EconomyView(interaction.user.id,n['id']),ephemeral=True)
+    n=await asyncio.to_thread(current_nation,interaction.user.id)
+    if not n:
+        await interaction.followup.send(i18n.t(i18n.current_language(),'no_nation'),ephemeral=True);return
+    files={}
+    inventory=inventory_text(n)
+    if len(inventory)>900:
+        files['file']=discord.File(io.BytesIO(inventory.encode()),filename='resources.txt')
+    await interaction.followup.send(embed=dashboard(n,{'stockpile_only':True}),view=EconomyView(interaction.user.id,n['id']),ephemeral=True,**files)
 
 
 class PopulationConfirm(i18n.LocalizedView):
