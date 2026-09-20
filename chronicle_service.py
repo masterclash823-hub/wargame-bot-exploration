@@ -109,7 +109,9 @@ def render(d):
         elif kind=='building':detail=f"{i18n.term(p['building'],lang)} · {p['level']}/3 · #{p['cell']}"
         elif kind in ('colony','expansion'):detail=('Prowincja ' if pl else 'Province ')+str(p['cell'])
         elif kind=='research':detail=('Uczeni ogłosili przełom. Szczegóły pozostają prywatne.' if pl else 'Scholars report a breakthrough. Details remain private.')
-        elif kind=='goal':detail=GOALS[p['code']][0 if pl else 1]+(' · +10 prestiżu' if pl else ' · +10 prestige')
+        elif kind=='goal':
+            names=GOALS.get(p.get('code'),('Cel zatwierdzony przez GM','Goal confirmed by the GM'))
+            detail=names[0 if pl else 1]+(' · +10 prestiżu' if pl else ' · +10 prestige')
         elif kind in ('treaty','breach'):detail=KINDS[p['kind']][0 if pl else 1]+' · '+other
         elif kind in ('war','guarantee'):detail=other
         elif kind=='battle':detail=other+' · '+({'attacker':('wygrana atakującego','attacker victory'),'defender':('wygrana obrońcy','defender victory'),'draw':('remis','draw')}[p['winner']][0 if pl else 1])

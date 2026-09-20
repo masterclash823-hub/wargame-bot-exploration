@@ -163,27 +163,78 @@ def abandon_goal(nid,owner_id,goal_id):
         if not c.rowcount:raise ValueError(tr('Cel już nie jest aktywny.','The goal is no longer active.'))
 
 
+def goal_progress(c,goal,month):
+    """Read current actions without awarding rewards from a dashboard preview."""
+    progress=read_json(goal['progress_json'])
+    progress['months']=max(0,month-goal['start_month'])
+    if goal['code'] in ('development','scholarship'):
+        c.execute('SELECT kind,payload_json FROM world_activity WHERE nation_id=? AND id>?',
+                  (goal['nation_id'],goal['activity_after']))
+        entries=c.fetchall()
+        progress['count']=(sum(r['kind']=='building' for r in entries) if goal['code']=='development' else
+                           sum(r['kind']=='research' and read_json(r['payload_json']).get('completed') is True for r in entries))
+    return progress
+
+
+def finish_goal(c,goal,month,gm_id=None):
+    c.execute("UPDATE nation_goals SET status='completed',completed_month=?,last_month=? WHERE id=? AND status='active'",
+              (month,month,goal['id']))
+    if c.rowcount!=1:raise ValueError(tr('Cel już nie jest aktywny.','The goal is no longer active.'))
+    reward(c,goal['nation_id'],prestige=10)
+    activity(c,'goal',goal['nation_id'],f"goal:{goal['id']}",{'code':goal['code']})
+    c.execute('INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,?,?)',
+              (goal['nation_id'],'goal_private',json.dumps(dict(goal_id=goal['id'],completed_month=month,gm_id=str(gm_id) if gm_id is not None else None,reward_prestige=10))))
+
+
+def gm_create_goal(nid,gm_id,title,description):
+    """GM role is checked by the Discord command; one active goal per nation."""
+    title,description=title.strip(),description.strip()
+    if not 1<=len(title)<=80 or not 1<=len(description)<=1500:
+        raise ValueError(tr('Tytuł: 1–80 znaków; warunki: 1–1500 znaków.', 'Title: 1–80 characters; requirements: 1–1500 characters.'))
+    with db.atomic() as c:
+        world_lock(c);lock_nation(c,nid)
+        c.execute("SELECT id FROM nation_goals WHERE nation_id=? AND status='active'",(nid,))
+        if c.fetchone():raise ValueError(tr('Państwo ma już aktywny cel.','The nation already has an active goal.'))
+        month=month_index(c)
+        details=dict(title=title,description=description,created_by=str(gm_id))
+        gid=db.insert_returning_id("INSERT INTO nation_goals(nation_id,code,start_month,last_month,baseline_json) VALUES(?,'custom',?,?,?)",
+                                   (nid,month,month,json.dumps(details,ensure_ascii=False)))
+        c.execute('INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,?,?)',
+                  (nid,'goal_private',json.dumps(dict(goal_id=gid,title=title,created_by=str(gm_id)),ensure_ascii=False)))
+        return gid
+
+
+def gm_complete_goal(nid,goal_id,gm_id):
+    with db.atomic() as c:
+        world_lock(c);lock_nation(c,nid)
+        c.execute('SELECT * FROM nation_goals WHERE id=? AND nation_id=?',(goal_id,nid));goal=c.fetchone()
+        if not goal or goal['status']!='active':
+            raise ValueError(tr('Nie znaleziono aktywnego celu tego państwa.','No matching active goal for this nation.'))
+        month=month_index(c)
+        progress=goal_progress(c,goal,month);progress['confirmed_by']=str(gm_id)
+        c.execute('UPDATE nation_goals SET progress_json=? WHERE id=?',(json.dumps(progress),goal_id))
+        finish_goal(c,goal,month,gm_id)
+
+
 def progress_goals(c,nid,month,report):
     c.execute("SELECT * FROM nation_goals WHERE nation_id=? AND status='active' AND last_month<?",(nid,month))
     goal=c.fetchone()
     if not goal:return
-    progress=read_json(goal['progress_json']);elapsed=month-goal['start_month']
-    c.execute('SELECT kind,payload_json FROM world_activity WHERE nation_id=? AND id>?',(nid,goal['activity_after']))
-    entries=c.fetchall()
-    actions=[r['kind'] for r in entries]
+    progress=goal_progress(c,goal,month);elapsed=progress['months']
     if goal['code']=='food_security':
         qualifies=(report['food_needed']>0 and not report['food_shortage'] and report['food_months']>=2 and report['stability']>=60)
-        progress['count']=progress.get('count',0)+1 if qualifies else 0
+        consecutive=progress.get('count',0) if month==goal['last_month']+1 else 0
+        progress['count']=consecutive+1 if qualifies else 0
         complete=progress['count']>=3
     elif goal['code']=='development':
-        progress['count']=actions.count('building');complete=progress['count']>=2
-    else:
-        progress['count']=sum(r['kind']=='research' and read_json(r['payload_json']).get('completed') is True for r in entries)
+        complete=progress['count']>=2
+    elif goal['code']=='scholarship':
         complete=progress['count']>=1
+    else:
+        complete=False  # Custom objectives always need explicit GM confirmation.
     complete=complete and elapsed>=3
     progress['months']=elapsed
-    c.execute('UPDATE nation_goals SET progress_json=?,last_month=?,status=?,completed_month=? WHERE id=?',
-              (json.dumps(progress),month,'completed' if complete else 'active',month if complete else None,goal['id']))
+    c.execute('UPDATE nation_goals SET progress_json=?,last_month=? WHERE id=?',
+              (json.dumps(progress),month,goal['id']))
     if complete:
-        reward(c,nid,prestige=10)
-        activity(c,'goal',nid,f"goal:{goal['id']}",{'code':goal['code']})
+        finish_goal(c,goal,month)

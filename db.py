@@ -78,6 +78,11 @@ CREATE TABLE IF NOT EXISTS provinces (
 CREATE INDEX IF NOT EXISTS idx_provinces_owner ON provinces(owner_nation_id);
 CREATE INDEX IF NOT EXISTS idx_provinces_cell  ON provinces(azgaar_cell_id);
 
+CREATE TABLE IF NOT EXISTS province_coasts (
+    province_id INTEGER PRIMARY KEY REFERENCES provinces(id) ON DELETE CASCADE,
+    coastal INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS province_neighbors (
     cell_id          INTEGER NOT NULL REFERENCES provinces(azgaar_cell_id) ON DELETE CASCADE,
     neighbor_cell_id INTEGER NOT NULL REFERENCES provinces(azgaar_cell_id) ON DELETE CASCADE,

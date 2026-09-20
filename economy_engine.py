@@ -94,7 +94,8 @@ def snapshot(c, nid, company_plants=None):
     from dynasty import stability_bonus
     n['labor_regime'] = state(c, nid)
     n['dynasty_stability'] = stability_bonus(c, nid)
-    c.execute('SELECT p.*,d.levels_json,c.status AS colony_status,a.province_id AS algae_site,l.allocations_json FROM provinces p '
+    c.execute('SELECT p.*,d.levels_json,c.status AS colony_status,a.province_id AS algae_site,l.allocations_json,co.coastal FROM provinces p '
+              'LEFT JOIN province_coasts co ON co.province_id=p.id '
               'LEFT JOIN province_development d ON d.province_id=p.id LEFT JOIN colonies c ON c.province_id=p.id '
               'LEFT JOIN algae_sites a ON a.province_id=p.id '
               'LEFT JOIN province_labor l ON l.province_id=p.id AND l.nation_id=p.owner_nation_id '
@@ -113,7 +114,7 @@ def snapshot(c, nid, company_plants=None):
         # Only one assigned ship group per route; a functioning home port is required.
         if route['mode'] in ('reserve','mobilizing'):
             continue
-        if any('port' in read_json(by_cell.get(route[k], {}).get('buildings_json'), [])
+        if any('port' in read_json(by_cell.get(route[k], {}).get('buildings_json'), []) and by_cell[route[k]].get('coastal')!=0
                for k in ('from_cell_id','to_cell_id')):
             capacity += max(0, read_json(route['stats_json']).get('cargo', 0)) * route['quantity']
     capacity *= 1+n['research_bonuses'].get('cargo',0)
@@ -122,6 +123,17 @@ def snapshot(c, nid, company_plants=None):
 
 def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), cargo=0):
     """Pure one-month forecast. Shared unchanged by dashboard and settlement."""
+    args=(nation,provinces,definitions,prefs,military_upkeep,units,cargo)
+    full=_project(*args)
+    months=prefs.get('unpaid_months',0)
+    if months<2 or prefs.get('arrears',0)<=.01 or full['policy']['arrears']<=.01:
+        return full
+    # Two warning months, then 75%, 50%, 25%, 0%. Full repayment restores
+    # operation immediately; use the same month's income when checking funds.
+    return _project(*args,maintenance_factor=max(0,1-.25*(months-1)))
+
+
+def _project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), cargo=0,maintenance_factor=1.):
     p = dict(prefs)
     effects=nation.get('research_bonuses',{})
     economy_level=read_json(nation['tech_json']).get('economy',3)
@@ -149,13 +161,14 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
         levels = read_json(prov.get('levels_json'))
         buildings = list(dict.fromkeys(read_json(prov['buildings_json'], [])))
         blocked_algae=not prov.get('algae_site') or economy_level<3
+        blocked_coast={'port','fishing_wharf'} if prov.get('coastal')==0 else set()
         managed = prov.get('company_plants', {})
         def work_factor(key):
             return 1-managed.get(key, {}).get('bonus', {}).get('workers', 0)
         manual={k:min(max(0,v),WORKERS.get(k,200)*LEVEL_WORK[building_level(k,levels,economy_level)]*work_factor(k))
                 for k,v in read_json(prov.get('allocations_json')).items()
                 if k in buildings and k in definitions and isinstance(v,(int,float)) and math.isfinite(v)
-                and not (k=='algae_farm' and blocked_algae) and not managed.get(k, {}).get('halted')}
+                and k not in blocked_coast and not (k=='algae_farm' and blocked_algae) and not managed.get(k, {}).get('halted')}
         requested=sum(manual.values())
         scale=min(1,workforce/requested) if requested else 1
         assigned={k:v*scale for k,v in manual.items()}
@@ -169,6 +182,10 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
             bd = definitions.get(key)
             if not bd: continue
             company = managed.get(key, {})
+            if key in blocked_coast:
+                staffing.append(dict(cell=prov['azgaar_cell_id'],building=key,level=building_level(key,levels,economy_level),
+                                     staff=0,workers=0,need=WORKERS[key],blocked='inland'))
+                continue
             if company.get('halted'):
                 staffing.append(dict(cell=prov['azgaar_cell_id'],building=key,level=building_level(key,levels,economy_level),staff=0,workers=0,need=WORKERS.get(key,200),blocked='company_funds'))
                 continue
@@ -188,12 +205,15 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
             plant_upkeep = max(0, read_json(bd['upkeep_json']).get('gold',0))*LEVEL_WORK[level]*(.25+.75*ratio)*(1-company_bonus.get('maintenance',0))
             if not company.get('foreign'):
                 building_upkeep += plant_upkeep
+            funded=maintenance_factor if plant_upkeep>0 and not company.get('foreign') else 1.
+            amount *= funded
+            staffing[-1]['maintenance_factor']=funded
             if key=='market':
-                market_bonus += .15*LEVEL_OUTPUT[level]*ratio
-                market_capacity += pop/1000*ratio
+                market_bonus += .15*LEVEL_OUTPUT[level]*ratio*funded
+                market_capacity += pop/1000*ratio*funded
             if key=='port':
-                port_staff.append(ratio)
-            if key=='granary': granaries += ratio*LEVEL_OUTPUT[level]
+                port_staff.append(ratio*funded)
+            if key=='granary': granaries += ratio*LEVEL_OUTPUT[level]*funded
             outputs={k:v for k,v in read_json(bd['effect_json']).items() if isinstance(v,(int,float)) and math.isfinite(v)}
             from technology import algae_yield
             if outputs.get('algae',0)>0:
@@ -214,8 +234,9 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
         for k,v in read_json(prov['base_resources_json']).items():
             if k=='algae':continue  # A deposit needs a staffed extractor.
             if isinstance(v,(int,float)):
-                if k=='gold':output_gold+=max(0,v)*stab*col
-                else:production[k] = production.get(k,0)+max(0,v)*stab*col
+                base_factor=min(1,pop/2000)
+                if k=='gold':output_gold+=max(0,v)*stab*col*base_factor
+                else:production[k] = production.get(k,0)+max(0,v)*stab*col*base_factor
     # Extractors first; downstream producers can use this month's raw materials.
     for key,outputs,amount,company,plant_upkeep in sorted(jobs,key=lambda j: any(v<0 for v in j[1].values() if isinstance(v,(int,float)))):
         ratio = 1.
@@ -296,7 +317,7 @@ def project(nation, provinces, definitions, prefs, military_upkeep=0, units=(), 
                 food_months=res['food']/food_need if food_need else None,spoilage=spoilage,
                 luxury_income=luxury_gold,production=production,
                 labor=regime,labor_upkeep=supervision,dynasty_stability=nation.get('dynasty_stability',0),
-                company_transfers=company_transfers)
+                company_transfers=company_transfers,maintenance_factor=maintenance_factor)
 
 
 def forecast(nid):
@@ -437,9 +458,10 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
             from cogs.colonialism import tick_colonies
             with i18n.using_language(i18n.get_user_language(n['owner_id'])):
                 tick_colonies(nid,1)
-            progress_goals(c,nid,target,result)
             reports[str(nid)]=result
         finish_companies(c,reports)
+        for nid,result in reports.items():
+            progress_goals(c,int(nid),target,result)
         year,month=target//12,target%12+1
         _set(c,'current_month',month); _set(c,'current_year',year)
         if scheduled_at is not None: _set(c,'last_tick_ts',(last+timedelta(hours=hours)).isoformat())

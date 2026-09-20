@@ -31,6 +31,13 @@ def seed_buildings(defaults):
         c.execute("INSERT INTO building_defs(key,name,cost_json,effect_json,upkeep_json,description) VALUES('granary','Granary',?,?,?,?) ON CONFLICT(key) DO NOTHING",
                   ('{"gold":100,"wood":40}','{}','{"gold":1}','Reduces food spoilage; 50 workers.'))
         c.execute("INSERT INTO economy_meta(key,value) VALUES('buildings_v2','1') ON CONFLICT(key) DO NOTHING")
+        c.execute("SELECT value FROM economy_meta WHERE key='silk_upkeep_v3'")
+        if not c.fetchone():
+            c.execute("SELECT upkeep_json FROM building_defs WHERE key='silk_workshop'")
+            silk=c.fetchone()
+            if silk and json.loads(silk['upkeep_json'])=={'gold':4}:
+                c.execute("UPDATE building_defs SET upkeep_json=? WHERE key='silk_workshop'",('{"gold":2}',))
+            c.execute("INSERT INTO economy_meta(key,value) VALUES('silk_upkeep_v3','1') ON CONFLICT(key) DO NOTHING")
         c.execute("SELECT value FROM economy_meta WHERE key='algae_buildings_v1'")
         if not c.fetchone():
             c.execute("SELECT * FROM building_defs WHERE key='algae_farm'");old=c.fetchone()

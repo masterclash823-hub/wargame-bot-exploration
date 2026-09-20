@@ -216,6 +216,11 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
     if not provinces:
         return [], i18n.text('No provinces found after parsing. The file may be empty or in an unsupported format.')
 
+    from coastal import coast_cells
+    coasts=coast_cells(cells_raw)
+    for province in provinces:
+        if province['cell_id'] in coasts:province['coastal']=coasts[province['cell_id']]
+
     # Game-scale population: preserve relative settlement density, average 2000 on land.
     land = [p for p in provinces if p['terrain'] not in ('water','ocean','sea')]
     if land:
@@ -260,6 +265,12 @@ def _upsert_provinces(province_list: list[dict], resync: bool) -> dict:
                      json.dumps(p["resources"]), p["pop"]),
                 )
                 inserted += 1
+
+        for p in province_list:
+            if 'coastal' not in p:continue
+            cur.execute('INSERT INTO province_coasts(province_id,coastal) SELECT id,? FROM provinces WHERE azgaar_cell_id=? '
+                        'ON CONFLICT(province_id) DO UPDATE SET coastal=excluded.coastal',
+                        (int(p['coastal']),p['cell_id']))
 
         # Azgaar exports adjacency as ``c``. Rebuild it with every import so
         # expansion can only target a real, currently active neighbouring cell.

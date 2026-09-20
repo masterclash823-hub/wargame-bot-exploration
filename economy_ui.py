@@ -91,6 +91,16 @@ def dashboard(n,r):
                                          '⚠️ Food shortage: build/upgrade a farm or arrange regular food imports.'))
     if p['arrears']:tips.append(tr('⚠️ Brak złota na rachunki. Zmniejsz armię aktywną lub przenieś ją do rezerwy.',
                                   '⚠️ Bills exceed available gold. Reduce active forces or put units in reserve.'))
+    if r.get('maintenance_factor',1)<1:
+        factor=r['maintenance_factor']
+        tips.append(tr(f'⚠️ Zaległości ograniczają wydajność płatnych budynków do {factor:.0%}. Spłata rachunków przywraca pełne działanie.',
+                       f'⚠️ Arrears limit maintained buildings to {factor:.0%} efficiency. Paying the bills restores full operation.'))
+    elif p['arrears']:
+        tips.append(tr('Dwa pierwsze miesiące zaległości są ochronne. Od trzeciego spada wydajność budynków.',
+                       'The first two unpaid months are protected. Building efficiency falls from the third.'))
+    if any(s.get('blocked')=='inland' for s in r['staffing']):
+        tips.append(tr('⚠️ Port lub przystań rybacka leży poza wybrzeżem i jest nieaktywna.',
+                       '⚠️ An inland port or fishing wharf is inactive.'))
     blocked=sum(s.get('blocked')=='algae_site_or_tech' for s in r['staffing'])
     if blocked:tips.append(tr('🧪 Nieaktywne farmy algae: potrzebują własnego złoża i gospodarki 3. Sprawdź /algae locations.',
                               '🧪 Dormant algae farms need your own deposit and economy 3. See /algae locations.'))
@@ -102,7 +112,13 @@ def dashboard(n,r):
                                    f'ℹ️ {understaffed} buildings are understaffed. Check manual assignments; automatic staffing prioritizes food.'))
     if not tips:tips.append(tr('✅ Podstawowe potrzeby są zabezpieczone. Możesz rozwijać prowincje.',
                                '✅ Basic needs are covered. You can develop your provinces.'))
-    embed.add_field(name=tr('Co teraz?','What next?'),value='\n'.join(tips),inline=False)
+    chunk=[]
+    for tip in tips:
+        if chunk and len('\n'.join(chunk+[tip]))>1024:
+            embed.add_field(name=tr('Co teraz?','What next?'),value='\n'.join(chunk),inline=False)
+            chunk=[]
+        chunk.append(tip)
+    embed.add_field(name=tr('Co teraz?','What next?'),value='\n'.join(chunk),inline=False)
     labels={'low':tr('niskie','low'),'normal':tr('normalne','normal'),'high':tr('wysokie','high'),
             'balanced':tr('zrównoważony','balanced'),'food':tr('żywność','food'),'industry':tr('przemysł','industry'),
             'trade':tr('handel','trade'),'science':tr('nauka','science')}
