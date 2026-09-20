@@ -10,8 +10,21 @@ z pozostałymi komendami; opisy i formularze są PL/EN.
 Bot przedstawia przygodę lub przeszkodę w języku gracza. Jedyny przycisk
 odpowiedzi otwiera pole tekstowe do 4000 znaków. Nie ma gotowych wariantów
 działania ani wymogu włączenia Message Content Intent. Opis i odpowiedzi
-są prywatne. Wyprawa kończy się po najwyżej trzech odpowiedziach; może
-zakończyć się wcześniej, gdy cel osiągnięto albo stał się nieosiągalny.
+są prywatne. Wyprawa kończy się, gdy cel osiągnięto, stał się nieosiągalny
+albo gracz zdecydował o wycofaniu. Liczba odpowiedzi sama nie rozstrzyga wyniku.
+
+Po trzeciej odpowiedzi narrator skraca sceny i prowadzi rozpoczęty wątek do
+finału: rozwiązuje bieżące przeszkody, streszcza rutynową drogę i nie dodaje
+nowych wątków pobocznych. Od piątej odpowiedzi skupia się na ostatniej
+konsekwencji lub decyzji niezbędnej do rozstrzygnięcia. Jeśli taka decyzja
+nadal wymaga odpowiedzi gracza, wyprawę można kontynuować. Finał powinien
+domknąć wydarzenia i wyjaśnić wynik, bez urwania opowieści w połowie sceny.
+
+Kolejne sceny mają do 1600 znaków, od trzeciej odpowiedzi do 900, a od piątej
+do 600. Publiczne podsumowanie ma do 1600 znaków, żeby zmieścić zakończenie.
+Bot nie obcina otrzymanego tekstu; zbyt długa lub błędna odpowiedź narratora
+nie zużywa tury. W widoku wyprawy widać liczbę odpowiedzi i etap opowieści.
+Zmiana działa także dla już zapisanych aktywnych wypraw, bez migracji danych.
 
 Po zakończeniu bot publikuje **sukces lub niepowodzenie z opisem** na kanale,
 na którym rozpoczęto wyprawę, i pinguje skonfigurowaną rolę GM. Wznowienie

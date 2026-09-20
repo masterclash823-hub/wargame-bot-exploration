@@ -28,7 +28,7 @@ class ExplorationTests(Fixture,unittest.IsolatedAsyncioTestCase):
         with patch.object(exp,'_ai_json',AsyncMock(return_value=SCENE)):
             return await exp.start(1,1,100,200,99,'We provision a small expedition to explore the northern pass.')
 
-    async def test_three_text_replies_persist_and_final_is_public_pending(self):
+    async def test_story_can_resolve_after_three_replies_and_final_is_public_pending(self):
         r=await self.start()
         self.assertEqual(r['publication_status'],'waiting')
         for version,response in enumerate((SCENE,SCENE,SUCCESS)):
@@ -48,7 +48,7 @@ class ExplorationTests(Fixture,unittest.IsolatedAsyncioTestCase):
         self.assertFalse(json.loads(r['state_json'])['success'])
         self.assertEqual(self.balances(),before)
 
-    async def test_outage_and_invalid_third_reply_do_not_consume_turn(self):
+    async def test_outage_and_invalid_narration_do_not_consume_turn(self):
         r=await self.start()
         for value in (RuntimeError('offline'),{'text':'x','finished':True,'success':'yes'}):
             mock=AsyncMock(side_effect=value) if isinstance(value,Exception) else AsyncMock(return_value=value)
@@ -56,8 +56,66 @@ class ExplorationTests(Fixture,unittest.IsolatedAsyncioTestCase):
             self.assertEqual(exp.load(r['id'],1,100)['version'],0)
         with patch.object(exp,'_ai_json',AsyncMock(return_value=SCENE)):
             await exp.answer(r['id'],0,1,100,'We scout.');await exp.answer(r['id'],1,1,100,'We navigate.')
-            with self.assertRaises(ValueError):await exp.answer(r['id'],2,1,100,'We continue.')
+        with patch.object(exp,'_ai_json',AsyncMock(return_value=dict(SCENE,text='x'*901))),self.assertRaises(ValueError):
+            await exp.answer(r['id'],2,1,100,'We continue.')
         self.assertEqual(exp.load(r['id'],1,100)['version'],2)
+
+    async def test_unfinished_story_continues_beyond_three_and_resumes_saved_history(self):
+        r=await self.start();before=self.balances()
+        for version in range(7):
+            with patch.object(exp,'_ai_json',AsyncMock(return_value=SCENE)):
+                r=await exp.answer(r['id'],version,1,100,f'Our next action is to survey route {version}.')
+            self.assertEqual((r['status'],r['publication_status']),('active','waiting'))
+            # Reload persisted state just as after a restart; no new state keys are required.
+            r=exp.load(r['id'],1,100)
+            self.assertEqual(r['version'],version+1)
+            self.assertEqual(len(json.loads(r['state_json'])['history']),version+1)
+        self.assertFalse(self.query("SELECT * FROM nation_history WHERE source='exploration_private'"))
+        with patch.object(exp,'_ai_json',AsyncMock(return_value=SUCCESS)):
+            r=await exp.answer(r['id'],7,1,100,'We cross the surveyed pass and reach the destination.')
+        self.assertEqual((r['status'],r['version'],r['publication_status']),('resolved',8,'pending'))
+        state=json.loads(r['state_json'])
+        self.assertEqual(state['history'][0]['answer'],'Our next action is to survey route 0.')
+        self.assertEqual(len(state['history']),8)
+        self.assertEqual(self.balances(),before)
+        self.assertEqual(len(self.query("SELECT * FROM nation_history WHERE source='exploration_private'")),1)
+        with self.assertRaises(ValueError):await exp.answer(r['id'],8,1,100,'Again')
+
+    async def test_pacing_prompt_shortens_scenes_and_keeps_objective_and_decisions(self):
+        for count,limit in ((0,1600),(3,900),(5,600),(9,600)):
+            with self.subTest(replies=count):
+                state=dict(SCENE,nation='A',lang='pl',preparations='Find the northern pass.',
+                           history=[{'obstacle':f'Obstacle {n}','answer':f'Action {n}'} for n in range(count)])
+                mock=AsyncMock(return_value=SCENE)
+                with patch.object(exp,'_ai_json',mock):await exp.narrate(state,initial=count==0)
+                prompt=mock.call_args.args[0]
+                self.assertIn(f'at most {limit} characters',prompt)
+                self.assertIn('Polish',prompt)
+                self.assertIn('Find the northern pass.',prompt)
+                self.assertIn('no fixed reply limit',prompt)
+                if count:
+                    self.assertIn('Action 0',prompt)
+                    self.assertIn(f'Action {count-1}',prompt)
+                    self.assertNotIn('At reply 3 you MUST finish',prompt)
+                if count>=3:
+                    self.assertIn('Do not',prompt)
+                    self.assertIn('side quests' if count>=5 else 'new subplots',prompt)
+                    self.assertIn('decision',prompt)
+
+    async def test_short_late_scenes_and_full_final_summary_are_validated_without_truncation(self):
+        state=dict(SCENE,nation='A',lang='en',preparations='Find the northern pass.',
+                   history=[{'obstacle':'The route is blocked.','answer':'Scout.'}]*5)
+        with patch.object(exp,'_ai_json',AsyncMock(return_value=dict(SCENE,text='x'*600))):
+            self.assertEqual(len((await exp.narrate(state))['text']),600)
+        with patch.object(exp,'_ai_json',AsyncMock(return_value=dict(SCENE,text='x'*601))),self.assertRaises(ValueError):
+            await exp.narrate(state)
+        summary='The expedition reached the destination. '+('Its journey was difficult. '*40)
+        with patch.object(exp,'_ai_json',AsyncMock(return_value=dict(SUCCESS,text=summary))):
+            result=await exp.narrate(state)
+        self.assertEqual(result['text'],summary.strip())
+        self.assertGreater(len(result['text']),600)
+        with patch.object(exp,'_ai_json',AsyncMock(return_value=dict(SUCCESS,text='x'*1601))),self.assertRaises(ValueError):
+            await exp.narrate(state)
 
     async def test_duplicate_answers_and_owner_transfer(self):
         r=await self.start()
@@ -97,9 +155,10 @@ class ExplorationTests(Fixture,unittest.IsolatedAsyncioTestCase):
 
 class PublicationTests(Fixture,unittest.IsolatedAsyncioTestCase):
     start=ExplorationTests.start
-    async def setup_delivery(self):
+    async def setup_delivery(self,finish=True):
         r=await self.start()
-        with patch.object(exp,'_ai_json',AsyncMock(return_value=SUCCESS)):r=await exp.answer(r['id'],0,1,100,'We cross safely.')
+        if finish:
+            with patch.object(exp,'_ai_json',AsyncMock(return_value=SUCCESS)):r=await exp.answer(r['id'],0,1,100,'We cross safely.')
         role=NS(id=99,name='Game Master',mention='<@&99>',mentionable=True)
         guild=NS(id=100,roles=[role],me=NS(),get_role=lambda rid:role if rid==99 else None)
         perms=NS(view_channel=True,send_messages=True,embed_links=True,read_message_history=True,mention_everyone=False)
@@ -119,6 +178,23 @@ class PublicationTests(Fixture,unittest.IsolatedAsyncioTestCase):
         self.assertFalse(args['allowed_mentions'].users)
         self.assertEqual(args['allowed_mentions'].roles,[role])
         self.assertNotIn('rules',args['embed'].description)
+        self.assertEqual(exp.load(r['id'],1,100)['publication_status'],'sent')
+
+    async def test_long_expedition_is_published_only_when_story_actually_ends(self):
+        r,bot,channel,role=await self.setup_delivery(finish=False)
+        for version in range(5):
+            with patch.object(exp,'_ai_json',AsyncMock(return_value=SCENE)):
+                r=await exp.answer(r['id'],version,1,100,'We carefully survey the remaining route.')
+            await pub.publish(bot,r['id'])
+        channel.send.assert_not_awaited()
+        with patch.object(exp,'_ai_json',AsyncMock(return_value=SUCCESS)):
+            r=await exp.answer(r['id'],5,1,100,'We cross the pass and arrive at the destination.')
+        with patch.object(config,'GM_ROLE_ID',''),patch.object(config,'GM_ROLE_NAME','Game Master'):
+            await pub.publish(bot,r['id'])
+            await pub.publish(bot,r['id'])
+        channel.send.assert_awaited_once()
+        self.assertEqual(channel.send.call_args.kwargs['content'],'<@&99>')
+        self.assertEqual(channel.send.call_args.kwargs['embed'].description,SUCCESS['text'])
         self.assertEqual(exp.load(r['id'],1,100)['publication_status'],'sent')
 
     async def test_uncertain_send_recovers_without_duplicate_ping(self):
@@ -251,6 +327,22 @@ class CaptiveTests(Fixture,unittest.TestCase):
 
 
 class ExplorationUITests(Fixture,unittest.IsolatedAsyncioTestCase):
+    async def test_active_view_shows_pacing_instead_of_three_reply_limit(self):
+        from cogs.exploration import render,ExpeditionView
+        for lang in ('pl','en'):
+            for count in (0,3,5,9):
+                with self.subTest(lang=lang,count=count),i18n.using_language(lang):
+                    row={'id':1,'name':'A','flag':'','status':'active','version':count,
+                         'state_json':json.dumps(dict(SCENE,lang=lang,history=[{}]*count))}
+                    embed=render(row)
+                    self.assertNotIn('/3',embed.footer.text)
+                    self.assertIn(f'{count} ·',embed.footer.text)
+                    self.assertEqual(len(ExpeditionView(None,row).children),1)
+                    if count==3:
+                        self.assertIn('Droga do finału' if lang=='pl' else 'Approaching the conclusion',embed.footer.text)
+                    elif count>=5:
+                        self.assertIn('Domykanie wątku' if lang=='pl' else 'Closing the story',embed.footer.text)
+
     async def test_text_only_modal_limits_and_publication_render_both_languages(self):
         from cogs.exploration import PreparationModal,AnswerModal,ExpeditionView
         for lang in ('pl','en'):

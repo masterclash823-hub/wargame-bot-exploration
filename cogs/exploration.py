@@ -1,4 +1,4 @@
-"""Free-form, three-reply adventures and persistent public result delivery."""
+"""Free-form adventures with gradual conclusions and persistent public delivery."""
 import json
 import discord
 from discord import app_commands
@@ -20,7 +20,13 @@ def render(row):
         e.add_field(name=tr('Wynik','Outcome'),value=tr('Sukces','Success') if s['success'] else tr('Niepowodzenie','Failure'))
         e.add_field(name=tr('Ogłoszenie','Announcement'),value=f"<#{row['channel_id']}> · "+(tr('opublikowane','published') if row['publication_status']=='sent' else tr('oczekuje na publikację; bot ponawia automatycznie','pending publication; the bot retries automatically')))
     else:
-        e.set_footer(text=tr('Odpowiedzi: ','Replies: ')+f"{len(s['history'])}/3 · /exploration expedition_id:{row['id']}")
+        count=len(s['history'])
+        phase={
+            'journey':tr('W drodze','On the journey'),
+            'closing':tr('Droga do finału','Approaching the conclusion'),
+            'finale':tr('Domykanie wątku','Closing the story'),
+        }[service.narrative_phase(count)]
+        e.set_footer(text=tr('Odpowiedzi: ','Replies: ')+f"{count} · {phase} · /exploration expedition_id:{row['id']}")
     return e
 
 
