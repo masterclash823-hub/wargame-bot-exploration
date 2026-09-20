@@ -145,6 +145,10 @@ def prepare(c,target):
         if not co.unlocked(n) or s['paused']:
             continue
         key=plant['building_key']
+        c.execute('SELECT coastal FROM province_coasts WHERE province_id=?',(p['id'],))
+        coast=c.fetchone()
+        if key in ('port','fishing_wharf') and coast and not coast['coastal']:
+            continue  # No foreign escrow is charged for an inactive inland plant.
         grant=None
         if plant['concession_id']:
             c.execute('SELECT * FROM company_concessions WHERE id=?',(plant['concession_id'],))

@@ -243,12 +243,12 @@ class NationCog(commands.Cog):
 
         is_owner = nation["owner_id"] == str(interaction.user.id)
         is_gm = _gm(interaction)
-        # Private trade and event entries are visible only to nation owner and GM.
+        # Private trade, event, research and goal entries are owner/GM only.
         if is_owner or is_gm:
             source_filter = ""
             filter_params: tuple = (nation["id"],)
         else:
-            source_filter = "AND source NOT IN ('trade_private','event_private','research_private')"
+            source_filter = "AND source NOT IN ('trade_private','event_private','research_private','goal_private')"
             filter_params = (nation["id"],)
 
         page     = max(1, page)

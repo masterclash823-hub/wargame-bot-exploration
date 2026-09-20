@@ -335,6 +335,8 @@ def investment_quote(c, nid, s, cell, key, target, context=None):
         raise ValueError(tr('Budynek ma już poziom 3.', 'The building is already level 3.'))
     if not definition:
         raise ValueError(tr('Nie znaleziono typu budynku.', 'Building type not found.'))
+    from coastal import require_coast
+    require_coast(c,p,key)
     host = n if p['owner_nation_id'] == nid else lock_nation(c, p['owner_nation_id'])
     required = max(6 if old else 3, definition['requires_tech']) if key == 'algae_farm' else definition['requires_tech']
     if not _tech_ok(n, required, key) or not _tech_ok(host, required, key):

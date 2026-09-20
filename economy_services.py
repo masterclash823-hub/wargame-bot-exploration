@@ -30,6 +30,8 @@ def build(nid,cell,key,upgrade=False,uid=None):
         if not p: raise ValueError(i18n.text('Province not found or not yours.'))
         c.execute('SELECT * FROM building_defs WHERE key=?',(key,)); b=c.fetchone()
         if not b: raise ValueError(i18n.text('Unknown building.'))
+        from coastal import require_coast
+        require_coast(c,p,key)
         buildings=read_json(p['buildings_json'],[])
         c.execute('SELECT levels_json FROM province_development WHERE province_id=?',(p['id'],)); row=c.fetchone()
         levels=read_json(row['levels_json']) if row else {}
@@ -149,9 +151,10 @@ def settle_contracts(c,month):
 def create_route(nid,name,from_cell,to_cell,ship_id):
     with db.atomic() as c:
         lock_nation(c,nid)
-        c.execute('SELECT * FROM provinces WHERE azgaar_cell_id IN (?,?) AND active=1',(from_cell,to_cell)); ends=c.fetchall()
+        c.execute('SELECT p.*,co.coastal FROM provinces p LEFT JOIN province_coasts co ON co.province_id=p.id '
+                  'WHERE p.azgaar_cell_id IN (?,?) AND p.active=1',(from_cell,to_cell)); ends=c.fetchall()
         if from_cell==to_cell or len(ends)!=2:raise ValueError(i18n.text('Choose two different existing provinces.'))
-        if not any(p['owner_nation_id']==nid and 'port' in read_json(p['buildings_json'],[]) for p in ends):
+        if not any(p['owner_nation_id']==nid and p['coastal']!=0 and 'port' in read_json(p['buildings_json'],[]) for p in ends):
             raise ValueError(i18n.text('One endpoint needs your port.'))
         assert_ready(c,nid,ship_id)
         c.execute('SELECT u.quantity,b.stats_json FROM military_units u JOIN blueprints b ON b.id=u.blueprint_id '

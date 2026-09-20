@@ -46,7 +46,7 @@ DEFAULT_BUILDINGS = [
     {"key":"powder_mill",     "name":"Powder Mill",      "tier":2,"cost":{"gold":200,"stone":50,"iron":20,"coal":20,"copper":10}, "effect":{"gunpowder":4},  "upkeep":{"gold":5}, "terrain":"",                       "tech":4.0,"desc":"Gunpowder. Requires coal+copper+iron. Tech 4."},
     {"key":"cannon_foundry",  "name":"Cannon Foundry",   "tier":2,"cost":{"gold":250,"iron":40,"coal":30,"copper":20},"effect":{"gunpowder":6,"iron":-2},   "upkeep":{"gold":6}, "terrain":"",                       "tech":4.0,"desc":"More gunpowder output, consumes iron. Requires coal+copper. Tech 4."},
     {"key":"textile_mill",    "name":"Textile Mill",     "tier":2,"cost":{"gold":150,"wood":40},                      "effect":{"cloth":6},                  "upkeep":{"gold":3}, "terrain":"",                       "tech":3.0,"desc":"Cloth. Requires tech 3."},
-    {"key":"silk_workshop",   "name":"Silk Workshop",    "tier":2,"cost":{"gold":200,"wood":30,"cloth":20},           "effect":{"silk":3},                   "upkeep":{"gold":4}, "terrain":"plains,grassland",       "tech":3.0,"desc":"Silk production. Requires cloth. Tech 3."},
+    {"key":"silk_workshop",   "name":"Silk Workshop",    "tier":2,"cost":{"gold":200,"wood":30,"cloth":20},           "effect":{"silk":3},                   "upkeep":{"gold":2}, "terrain":"plains,grassland",       "tech":3.0,"desc":"Silk production. Requires cloth. Tech 3."},
     {"key":"market",          "name":"Market",           "tier":1,"cost":{"gold":100,"wood":30},                      "effect":{"gold":15},                  "upkeep":{},         "terrain":"",                       "tech":0.0,"desc":"Gold income each tick."},
     {"key":"port",            "name":"Port",             "tier":1,"cost":{"gold":150,"wood":80},                      "effect":{"gold":10},                  "upkeep":{"gold":2}, "terrain":"", "tech":0.0,"desc":"Trade gold on coastal/water provinces."},
     {"key":"fort",            "name":"Fort",             "tier":1,"cost":{"gold":200,"stone":80,"clay":40},           "effect":{},                           "upkeep":{"gold":5}, "terrain":"",                       "tech":0.0,"desc":"+1 fortification. Requires clay."},
@@ -117,6 +117,8 @@ def _building_description(row, lang):
     descriptions.add(NEW_DESCRIPTIONS.get(row['key']))
     if row['key'] == 'granary':
         descriptions.add('Reduces food spoilage; 50 workers.')
+    if lang=='en' and row['key']=='fishing_wharf' and row['description'] in descriptions:
+        return 'Produces food in coastal land provinces.'
     if lang == 'pl' and row['key'] in BUILDING_TRANSLATIONS_PL and row['description'] in descriptions:
         return BUILDING_TRANSLATIONS_PL[row['key']][1]
     return row['description'] or ''
@@ -167,6 +169,8 @@ def _building_effect_text(row, lang):
         resources.append(f'{number(value)} {i18n.term(key, lang)}/{monthly}')
     if resources:
         parts.append(', '.join(resources))
+    if row['key'] in ('port','fishing_wharf'):
+        parts.append('Wymaga prowincji lądowej na wybrzeżu.' if pl else 'Requires coastal land.')
     return '\n'.join(parts) or ('Brak automatycznego efektu gospodarczego.' if pl else 'No automatic economic effect.')
 
 
@@ -176,7 +180,7 @@ def _building_effect_summary(row, lang):
     pl = lang == 'pl'
     short = {
         'market': '+15% podatków prowincji; sprzedaż jedwabiu i przypraw.' if pl else '+15% province taxes; sells silk and spices.',
-        'port': 'Eksport jedwabiu i przypraw; limit zależy od ładowności statków.' if pl else 'Exports silk and spices; capacity depends on assigned cargo ships.',
+        'port': 'Eksport jedwabiu i przypraw przez statki. Wymaga wybrzeża.' if pl else 'Exports silk and spices by ship. Requires coastal land.',
         'fort': '+1 fortyfikacji przy budowie i każdym ulepszeniu.' if pl else '+1 fortification when built and with each upgrade.',
         'granary': 'Psucie nadwyżek żywności: 2% → 0,5% miesięcznie.' if pl else 'Monthly spoilage of surplus food: 2% → 0.5%.',
     }
@@ -496,6 +500,8 @@ HELP_SECTIONS = {
 }
 
 GM_HELP_FIELDS = [
+    ("/goals create <nation> <title> <description>", "Create a custom goal for a nation; completion awards 10 prestige."),
+    ("/goals status <nation> · /goals complete <nation> <goal_id>", "Review a goal and confirm completion with the button; rewards are granted once."),
     ("/nation found <player> <name> <history>", "Create a nation and assign it to a player. Existing nations remain unchanged."),
     ("/nation transfer <nation> <player>", "Transfer ownership after reviewing inherited obligations. Pending proposals are cancelled."),
     ("/chronicle configure <channel> [hour_utc] [language]", "Enable a daily report of up to two public actions. Default: 18:00 UTC, Polish."),
@@ -664,6 +670,8 @@ HELP_SECTIONS_PL = {
 }
 
 GM_HELP_FIELDS_PL = [
+    ("/goals create <nation> <title> <description>", "Utwórz opisowy cel dla państwa; wykonanie daje 10 prestiżu."),
+    ("/goals status <nation> · /goals complete <nation> <goal_id>", "Sprawdź cel i potwierdź wykonanie przyciskiem; nagroda jest jednorazowa."),
     ("/algae deposit_add / deposit_remove <cell_id>", "Ręcznie dodaj lub usuń złoże. Limit: 5. Import nie tworzy złóż."),
     ("/nation found <gracz> <nazwa> <historia>", "Utwórz państwo i nadaj je graczowi. Istniejące państwa pozostają bez zmian."),
     ("/nation transfer <naród> <gracz>", "Przekaż państwo po sprawdzeniu przejmowanych zobowiązań. Oczekujące propozycje zostaną anulowane."),
@@ -899,6 +907,9 @@ class EconomyCog(commands.Cog):
             bname = _building_label(b, lang)
             bdesc = _building_description(b, lang)
             terrain_label = _terrain_label(terrain)
+            if b['key'] in ('port','fishing_wharf'):
+                coast_label='ląd na wybrzeżu' if lang=='pl' else 'coastal land'
+                terrain_label=coast_label+(' · '+terrain_label if b['requires_terrain'] else '')
             cur_embed.add_field(
                 name=f"T{b['tier']} `{b['key']}` — {bname}",
                 value=(

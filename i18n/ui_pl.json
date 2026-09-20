@@ -1,4 +1,10 @@
 {
+  "[GM] Nation to inspect / Państwo do sprawdzenia": "[GM] Państwo, którego cel chcesz sprawdzić",
+  "[GM] Create a custom national goal / Utwórz cel państwowy": "[GM] Utwórz własny cel dla państwa",
+  "[GM] Review and confirm a goal / Sprawdź i potwierdź wykonanie celu": "[GM] Sprawdź i potwierdź wykonanie celu",
+  "Goal title / Tytuł celu": "Tytuł celu",
+  "Completion requirements / Warunki wykonania": "Warunki wykonania celu",
+  "Goal ID from status / ID celu z podglądu": "ID celu widoczne w podglądzie",
   "View automatic algae production and build or upgrade farms": "Sprawdź automatyczne wydobycie algae, buduj i ulepszaj farmy",
   "Own deposit required. Automatic output at economy 3/4/5/6+: 0.05/0.1/0.2/0.5 algae per month. Upgrades require economy 6.": "Wymagane własne złoże. Automatycznie przy gospodarce 3/4/5/6+: 0,05/0,1/0,2/0,5 algae miesięcznie. Ulepszenia wymagają gospodarki 6.",
   "Rare algae deposit. Automatic farm production from economy 3; see /algae production.": "Rzadkie złoże algae. Automatyczna produkcja farmy od gospodarki 3; sprawdź /algae production.",

@@ -3,6 +3,7 @@ from discord import Locale, app_commands
 import i18n
 
 PARAMETERS = {
+    'title':'tytuł', 'goal_id':'id_celu',
     'ruins':'ruiny',
     'message_link':'link_wiadomości',
     'preparations':'przygotowania','expedition_id':'id_wyprawy','claim_id':'id_uprawnienia','winner':'zwycięzca',
