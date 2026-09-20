@@ -1,6 +1,7 @@
 """
 Event commands:
   /event generate <nation>        - GM: generate an AI event based on nation history+stats
+  /event all [description]        - GM: prepare missing drafts for all playable nations
   /event edit <id> <text>         - GM: edit the draft text before posting
   /event effects <id> <json>      - GM: set stat effects for the event
   /event post <id>                - GM: open a three-decision interactive event
@@ -138,7 +139,7 @@ Use relevant past choices to continue the nation's story. Do not invent addition
 This context is private to this nation and the GM; do not expose secrets about other nations."""
 
 
-async def _generate_event(nat, ruin_context=None) -> tuple[str, str]:
+async def _generate_event(nat, ruin_context=None, *, theme='', strict=False) -> tuple[str, str]:
     """
     Call Gemini to generate a narrative event and suggested effects.
     Returns (event_text, effects_json_str).
@@ -146,6 +147,8 @@ async def _generate_event(nat, ruin_context=None) -> tuple[str, str]:
     context = _build_nation_context(nat)
     if ruin_context:
         context += "\nThis event is the discovery of neighboring nation ruins. Public historical context (story data): " + json.dumps(ruin_context,ensure_ascii=False)
+    if theme:
+        context += '\nGM theme for this event (adapt to this nation; do not expose other nations private data): '+theme
     lang = _event_language(nat)
     language = "Polish" if lang == "pl" else "English"
 
@@ -178,7 +181,7 @@ Write the event now:"""
 
     try:
         from google import genai
-        client = genai.Client(api_key=config.GEMINI_API_KEY)
+        client = genai.Client(api_key=config.GEMINI_API_KEY,http_options={'timeout':30000})
 
         def _call():
             return client.models.generate_content(
@@ -187,7 +190,6 @@ Write the event now:"""
             )
 
         # Try once, retry after 2s if rate-limited
-        import time
         try:
             response = await asyncio.get_event_loop().run_in_executor(None, _call)
         except Exception as e:
@@ -211,6 +213,8 @@ Write the event now:"""
                 if effects_raw.startswith("json"):
                     effects_raw = effects_raw[4:]
             effects_raw = effects_raw.strip()
+            if strict:
+                return event_text,json.dumps(adventure.validate_effects(effects_raw),ensure_ascii=False)
             try:
                 json.loads(effects_raw)  # validate
                 return event_text, effects_raw
@@ -221,6 +225,7 @@ Write the event now:"""
 
     except Exception as e:
         print(f"[EVENTS AI] Gemini failed: {type(e).__name__}: {e}", flush=True)
+        if strict:raise
         return (
             (f"[AI niedostępne: {type(e).__name__}] W państwie {nat['name']} miało miejsce ważne wydarzenie."
              if lang == "pl" else
@@ -281,8 +286,57 @@ def _apply_event_effects(nation_id: int, effects_json: str, lang: str = "en") ->
 class EventsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._all_running = False
 
     event_grp = app_commands.Group(name="event", description="Event commands / Eventy")
+
+    @event_grp.command(name='all',description='[GM] Prepare event drafts for every nation / Przygotuj szkice eventów dla wszystkich')
+    @app_commands.describe(description='Optional shared theme / Opcjonalny wspólny temat')
+    @i18n.localized
+    async def event_all(self,interaction:discord.Interaction,description:str=''):
+        from world_service import tr
+        if not _gm(interaction):
+            await interaction.response.send_message(i18n.t(_lang(interaction),'gm_only'),ephemeral=True);return
+        if len(description)>1000:
+            await interaction.response.send_message(tr('Temat może mieć do 1000 znaków.','The theme can have up to 1000 characters.'),ephemeral=True);return
+        if self._all_running:
+            await interaction.response.send_message(tr('Przygotowanie już trwa. Zapisane szkice zobaczysz w /event list.','Preparation is already running. Saved drafts appear in /event list.'),ephemeral=True);return
+        self._all_running=True
+        try:
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send(tr('Przygotowuję szkice dla wszystkich grywalnych państw. Istniejące szkice pozostaną bez zmian. Wyniki zapisują się na bieżąco w /event list; publikację zatwierdza GM przez /event post.',
+                                               'Preparing drafts for all playable nations. Existing drafts are kept. Results are saved as they finish in /event list; the GM publishes them with /event post.'),ephemeral=True)
+            last_update=asyncio.get_running_loop().time()
+            async def progress(done,total):
+                nonlocal last_update
+                now=asyncio.get_running_loop().time()
+                if done!=total and now-last_update<15:return
+                last_update=now
+                try:await interaction.edit_original_response(content=tr('Przygotowanie szkiców: ','Preparing drafts: ')+f'{done}/{total} · /event list')
+                except discord.HTTPException:pass  # Long batches still finish after the interaction expires.
+            from event_drafts import generate_all
+            results=await generate_all(_generate_event,description.strip(),progress)
+            if not results:
+                await interaction.followup.send(tr('Brak grywalnych państw.','No playable nations.'),ephemeral=True);return
+            counts={s:sum(r['status']==s for r in results) for s in ('created','existing','failed')}
+            summary=tr('Nowe szkice: ','New drafts: ')+str(counts['created'])+tr(' · zachowane: ',' · kept: ')+str(counts['existing'])+tr(' · nieudane: ',' · failed: ')+str(counts['failed'])
+            from utils import EmbedPager
+            pages=[]
+            for start in range(0,len(results),15):
+                embed=discord.Embed(title='/event all',description=summary,color=discord.Color.purple())
+                for r in results[start:start+15]:
+                    label=discord.utils.escape_markdown(' '.join(r['name'].split()))[:150]
+                    if r['event_id']:
+                        value=tr('Nowy szkic','New draft') if r['status']=='created' else tr('Zachowano szkic','Existing draft kept')
+                        value+=f" #{r['event_id']}"
+                    else:
+                        value=tr('Nie udało się przygotować. Ponów /event all, aby uzupełnić brakujące szkice.','Preparation failed. Run /event all again to fill missing drafts.')
+                    embed.add_field(name=label,value=value,inline=False)
+                pages.append(embed)
+            try:await interaction.followup.send(embed=pages[0],view=EmbedPager(pages,interaction.user.id),ephemeral=True,allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException:pass  # Every result is already durable; inspect via /event list.
+        finally:
+            self._all_running=False
 
     # -------------------------------------------------- /event generate
     @event_grp.command(name="generate",
@@ -536,7 +590,7 @@ class EventsCog(commands.Cog):
     @event_grp.command(name="list",
                        description="List events / Lista eventow")
     @app_commands.describe(
-        nation="Nation name (blank = all) / Nazwa narodu (puste = wszystkie)",
+        nation="Nation (blank: GM = all, player = own) / Państwo (puste: GM = wszystkie, gracz = własne)",
     )
     @i18n.localized
     async def event_list(self, interaction: discord.Interaction, nation: str = ""):
@@ -544,83 +598,30 @@ class EventsCog(commands.Cog):
         is_gm = _gm(interaction)
         nat   = _nat_owner(str(interaction.user.id))
 
-        with db.cursor() as c:
-            if nation:
-                target = _nat_name(nation)
-                if not target:
-                    await interaction.response.send_message(
-                        i18n.t(lang, "nation_not_found"), ephemeral=True)
-                    return
-                if is_gm:
-                    c.execute(
-                        "SELECT e.*,n.name as nname,n.flag as nflag"
-                        " FROM events e JOIN nations n ON e.nation_id=n.id"
-                        " WHERE e.nation_id=? ORDER BY e.id DESC LIMIT 10",
-                        (target["id"],)
-                    )
-                else:
-                    c.execute(
-                        "SELECT e.*,n.name as nname,n.flag as nflag"
-                        " FROM events e JOIN nations n ON e.nation_id=n.id"
-                        " WHERE e.nation_id=? AND e.status IN ('posted','active','resolved')"
-                        " ORDER BY e.id DESC LIMIT 10",
-                        (target["id"],)
-                    )
-            else:
-                if is_gm:
-                    c.execute(
-                        "SELECT e.*,n.name as nname,n.flag as nflag"
-                        " FROM events e JOIN nations n ON e.nation_id=n.id"
-                        " ORDER BY e.id DESC LIMIT 15"
-                    )
-                elif nat:
-                    c.execute(
-                        "SELECT e.*,n.name as nname,n.flag as nflag"
-                        " FROM events e JOIN nations n ON e.nation_id=n.id"
-                        " WHERE e.nation_id=? AND e.status IN ('posted','active','resolved')"
-                        " ORDER BY e.id DESC LIMIT 10",
-                        (nat["id"],)
-                    )
-                else:
-                    await interaction.response.send_message(
-                        i18n.t(lang, "no_nation"), ephemeral=True)
-                    return
-            rows = c.fetchall()
+        target_id = None
+        if nation:
+            target = _nat_name(nation)
+            if not target:
+                await interaction.response.send_message(i18n.t(lang, "nation_not_found"), ephemeral=True)
+                return
+            target_id = target['id']
+        elif not is_gm:
+            if not nat:
+                await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
+                return
+            target_id = nat['id']
 
-        if not is_gm:
-            with db.cursor() as c:
-                c.execute("SELECT event_id FROM event_publications WHERE visibility='private'")
-                private_ids = {r['event_id'] for r in c.fetchall()}
-            rows = [r for r in rows if r['id'] not in private_ids or (nat and r['nation_id'] == nat['id'])]
+        from event_listing import rows as list_rows, pages as list_pages
+        rows = list_rows(target_id, is_gm, nat['id'] if nat else None)
 
         if not rows:
             await interaction.response.send_message("Nie znaleziono wydarzeń." if lang == "pl" else "No events found.", ephemeral=True)
             return
 
-        STATUS_EMOJI = {"draft": "📝", "posted": "📜", "active": "🎲", "resolved": "✅"}
         from utils import EmbedPager
-        pages = []
-        embed = discord.Embed(
-            title=("📜 Wydarzenia" if lang == "pl" else "📜 Events")
-                  + ((" — Widok GM" if lang == "pl" else " — GM View") if is_gm else ""),
-            color=discord.Color.purple(),
-        )
-        for r in rows:
-            if embed.fields:
-                pages.append(embed)
-                embed = discord.Embed(title=embed.title, color=discord.Color.purple())
-            flagged_embed(embed, (r['nflag'], r['nname']))
-            text   = r["gm_final_text"] if is_gm else r["gm_final_text"]
-            status = STATUS_EMOJI.get(r["status"], "❓")
-            date   = short_date(r["posted_at"] or r["created_at"])
-            embed.add_field(
-                name=f"{status} #{r['id']} — {flag_text(r['nflag'])} {r['nname']} ({date})",
-                value=text[:200] + ("..." if len(text) > 200 else ""),
-                inline=False,
-            )
-        embed.set_footer(text="/event play <id> — " + adventure.tr(lang, "kontynuuj lub zobacz finał", "continue or view the outcome"))
-        pages.append(embed)
-        await interaction.response.send_message(embed=pages[0], view=EmbedPager(pages, interaction.user.id), ephemeral=True)
+        pages = list_pages(rows, lang, is_gm)
+        await interaction.response.send_message(embed=pages[0], view=EmbedPager(pages, interaction.user.id),
+                                                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
 async def setup(bot):
