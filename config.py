@@ -36,6 +36,7 @@ MESSAGE_CONTENT_INTENT = os.getenv("MESSAGE_CONTENT_INTENT", "false").strip().lo
 # --- Google Gemini ---
 GEMINI_API_KEY = _require("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+GEMINI_FALLBACK_MODELS = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite,gemini-2.5-flash")
 
 # --- Database ---
 DB_PATH = os.getenv("DB_PATH", "/tmp/wargame.db")

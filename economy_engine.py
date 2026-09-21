@@ -333,6 +333,7 @@ def forecast(nid):
                 result=project(*snapshot(c,nid))
                 c.execute('SELECT * FROM nations WHERE id=?',(nid,));frozen=c.fetchone()
                 result.update(nation_ruins=True,production={},staffing=[],income=0,taxes=0,luxury_income=0,balance=0,upkeep=0,
+                              opening_resources=read_json(frozen['resources_json']),opening_treasury=frozen['treasury'],
                               treasury=frozen['treasury'],resources=read_json(frozen['resources_json']),
                               population=frozen['population'],stability=frozen['stability'],policy=policy(c,nid),
                               food_change=0,food_needed=0,food_months=None,food_shortage=0,spoilage=0,
@@ -432,6 +433,8 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
             data=snapshot(c,nid,company_plants)
             transfers=data[0]['treasury']-n['treasury']
             result=project(*data)
+            result['opening_resources']=read_json(n['resources_json'])
+            result['opening_treasury']=n['treasury']
             result['income']+=transfers
             result['balance']+=transfers
             result['food_change']=result['resources']['food']-read_json(n['resources_json']).get('food',0)

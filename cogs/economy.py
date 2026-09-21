@@ -407,6 +407,8 @@ HELP_SECTIONS = {
         "color": discord.Color.gold(),
         "fields": [
             ("/resources", "View stockpile, treasury, food status, luxury income, and population."),
+            ("/buildings owned", "All built buildings with levels and province names/IDs; complete downloadable register."),
+            ("/economy income", "Every resource: production after inputs, net monthly balance and forecast closing stock."),
             ("/build <cell_id> <key>", "Construct one of each building type per province. Workers are assigned automatically."),
             ("/economy status", "Monthly balance, warnings and optional settings. Also available from the panel."),
             ("/economy workers [cell_id]", "Reserve workers for buildings; leave a field empty to restore automatic staffing."),
@@ -577,6 +579,8 @@ HELP_SECTIONS_PL = {
         "color": discord.Color.gold(),
         "fields": [
             ("/resources", "Zasoby, skarbiec, status żywności i populacja."),
+            ("/buildings owned", "Wszystkie zbudowane budynki z poziomami i nazwami/ID prowincji; pełny wykaz do pobrania."),
+            ("/economy income", "Każdy surowiec: produkcja po materiałach, bilans netto miesiąca i przewidywany zapas."),
             ("/build <id> <klucz>", "Wybuduj budynek w prowincji."),
             ("/economy status", "Bilans miesiąca, podpowiedzi i opcjonalne ustawienia. Dostępne też w panelu."),
             ("/economy workers [cell_id]", "Przydziel ludzi do budynków; puste pole przywraca automat."),
@@ -936,6 +940,12 @@ class EconomyCog(commands.Cog):
             ))
         view = PageView(pages)
         await interaction.response.send_message(embed=pages[0], view=view, ephemeral=True)
+
+    @buildings_grp.command(name='owned',description='List all built buildings and provinces / Wszystkie zbudowane budynki i prowincje')
+    @i18n.localized
+    async def buildings_owned(self,interaction:discord.Interaction):
+        from economy_reports import show
+        await show(interaction,'buildings')
 
     @buildings_grp.command(name="province", description="Buildings in a province / Budynki w prowincji")
     @app_commands.describe(cell_id="Province cell ID")

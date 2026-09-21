@@ -27,6 +27,7 @@ PL = {
     "diplomacy": "Dyplomacja i bitwy", "events": "Wydarzenia", "settings": "Ustawienia",
     "choose": "Wybierz kategorię", "refresh": "Odśwież", "stats": "Statystyki państwa",
     "resources": "Zasoby", "calendar": "Kalendarz", "found": "Załóż państwo",
+    "owned_buildings":"Zbudowane budynki", "income":"Bilans surowców",
     "build": "Zbuduj budynek", "buildings": "Katalog budynków", "yield": "Produkcja prowincji",
     "trades": "Wymiany", "new_trade": "Nowa wymiana", "projects": "Projekty",
     "new_project": "Zaproponuj projekt", "start_project": "Rozpocznij projekt",
@@ -60,6 +61,7 @@ def tr(lang: str, key: str) -> str:
         "military":"Military", "technology":"Technology", "algae_locations":"Algae deposits", "algae_programs":"Algae programs","territory":"Territory","diplomacy":"Diplomacy & battles",
         "events":"Events","settings":"Settings","choose":"Choose a category","refresh":"Refresh",
         "stats":"Nation stats","resources":"Resources","calendar":"Calendar","found":"Found a nation",
+        "owned_buildings":"Built buildings", "income":"Resource balance",
         "build":"Construct building","buildings":"Building catalogue","yield":"Province yield",
         "trades":"Trades","new_trade":"New trade","projects":"Projects","new_project":"Propose project",
         "start_project":"Start project","forces":"Armed forces","blueprints":"Unit blueprints",
@@ -224,7 +226,8 @@ SECTIONS = [
 ACTIONS = {
     "home": [("stats","📊"),("resources","📦"),("calendar","📅"),("goals","🎯"),("refresh","🔄")],
     "economy": [("resources","💰"),("build","🏗️"),("buildings","📚"),("yield","🌾"),("trades","🔁"),("new_trade","➕"),
-                ("projects","🏛️"),("new_project","📝"),("start_project","▶️"),("contracts","📆"),("workers","👥"),("labor","⚖️")],
+                ("projects","🏛️"),("new_project","📝"),("start_project","▶️"),("contracts","📆"),("workers","👥"),("labor","⚖️"),
+                ("owned_buildings","🏘️"),("income","📈")],
     "technology": [("research","🔬"),("algae_locations","🧪"),("algae_programs","⚙️"),("algae_production","🧫")],
     "military": [("forces","🛡️"),("blueprints","📐"),("recruit","➕"),("move","➡️"),
                  ("new_blueprint","🧰"),("posture","⏳"),("captives","⛓️")],
@@ -344,6 +347,7 @@ class PlayerPanel(OwnedView):
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
+            'owned_buildings':('EconomyCog','buildings_owned',[]), 'income':('EconomyControlCog','income',[]),
             'ruins':('RuinsCog','ruins_list',[]), 'company':('CompanyCog','company',[]), 'company_offers':('CompanyCog','company_offers',[]),
             'exploration':('ExplorationCog','exploration',[]),'captives':('CaptivesCog','list_claims',[]),
             'labor':('EconomyControlCog','labor',[]),

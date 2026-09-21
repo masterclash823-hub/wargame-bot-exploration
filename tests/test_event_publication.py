@@ -7,6 +7,8 @@ import config
 from cogs.events import EventsCog
 from cogs.combat import CombatCog
 from event_images import pick_image, search_topic
+from event_ui import render_event, render_public_event
+from flags import flag_url
 
 
 class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
@@ -26,6 +28,7 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
                       'credit':'Painter', 'license':'Public domain'}
 
     async def test_public_is_only_opening_and_image(self):
+        with db.cursor() as c:c.execute('UPDATE nations SET flag=? WHERE id=2',('🇵🇱',))
         with patch('cogs.events.find_event_image', AsyncMock(return_value=self.image)):
             await self.cog.event_post.callback(self.cog, self.gm, self.eid, 'public', self.channel)
         sent = self.channel.send.call_args.kwargs
@@ -33,7 +36,46 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent['embed'].description, 'A fire in the town.')
         self.assertEqual(len(sent['embed'].fields), 0)
         self.assertEqual(sent['embed'].image.url, self.image['url'])
+        owner_embed=self.owner.send.call_args.kwargs['embed']
+        self.assertEqual(owner_embed.image.url,self.image['url'])
+        self.assertEqual(owner_embed.thumbnail.url,flag_url('🇵🇱'))
         self.assertEqual(len(self.owner.send.call_args.kwargs['view'].children), 4)
+
+    async def test_illustration_is_large_with_any_flag_or_no_flag(self):
+        import event_adventure as flow
+        with patch('cogs.events.find_event_image', AsyncMock(return_value=self.image)):
+            await self.cog.event_post.callback(self.cog,self.gm,self.eid,'public',self.channel)
+        state=flow.load_run(self.eid)
+        for flag in ('','🇵🇱','https://example.com/flag.png','invalid flag','flag:'+'a'*64):
+            state['flag']=flag
+            for render in (render_event,render_public_event):
+                embed=render(state)
+                self.assertEqual(embed.image.url,self.image['url'])
+                self.assertNotEqual(embed.thumbnail.url,self.image['url'])
+                self.assertIn(self.image['credit'],embed.footer.text)
+                self.assertIn(self.image['license'],embed.footer.text)
+                self.assertEqual(embed.url,self.image['source'])
+        state['public_image']=None
+        self.assertIsNone(render_event(state).image.url)
+
+    async def test_resumed_decisions_and_final_result_keep_image_and_progress_footer(self):
+        import event_adventure as flow
+        with patch('cogs.events.find_event_image', AsyncMock(return_value=self.image)):
+            await self.cog.event_post.callback(self.cog,self.gm,self.eid,'public',self.channel)
+        async def consequence(state,action,choice):
+            return flow.fallback_consequence(state,choice),'Baseline',False
+        with patch.object(flow,'assess_consequence',side_effect=consequence):
+            for version in range(3):
+                await flow.decide(self.eid,version,2,choice=0)
+                db.init_db()
+                player=interaction(2)
+                await self.cog.event_play.callback(self.cog,player,self.eid)
+                sent=player.followup.send.call_args.kwargs
+                self.assertTrue(sent['ephemeral'])
+                self.assertEqual(sent['embed'].image.url,self.image['url'])
+                self.assertIn(self.image['credit'],sent['embed'].footer.text)
+                self.assertIn('3/3' if version==2 else f'{version+2}/3',sent['embed'].footer.text)
+                if version==2:self.assertIn('Finished',sent['embed'].footer.text)
 
     async def test_private_never_searches_or_sends_publicly_and_is_hidden(self):
         with patch('cogs.events.find_event_image', AsyncMock()) as search:

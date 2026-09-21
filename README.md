@@ -33,6 +33,11 @@ gry pozostaje zachowana; GM dostaje `/economy population` z podglądem zmian.
 Szczegółowe zasady, stawki i aktualizacja Rendera:
 [Gospodarka v2](docs/economy-v2.md).
 
+Przyciski **Zbudowane budynki** i **Bilans surowców** pokazują wszystkie
+budynki wraz z prowincjami oraz miesięczny bilans każdego surowca i złota.
+Te same raporty otwierają `/buildings owned` i `/economy income`; można
+przeglądać strony lub pobrać całość w TXT. [Opis raportów](docs/economy-reports.md).
+
 ## Podział strat w bitwie
 
 AI ocenia narażenie każdego oddziału na podstawie obu planów, terenu i jednostek
@@ -64,6 +69,15 @@ państwa oraz GM. Państwo wskazuje się wcześniej przy `/event generate`.
 Decyzje w obu trybach trafiają do gracza przez DM; przy zamkniętych DM można
 użyć `/event play`. Publiczna wiadomość nie zawiera opcji ani efektów liczbowych.
 Prywatne eventy i ich historia nie są widoczne dla innych graczy.
+
+Ilustracja pojawia się w dużym formacie pod tekstem eventu, a flaga państwa
+pozostaje osobną miniaturą. Zapisany obraz jest też widoczny w DM, `/event play`,
+kolejnych scenach i podsumowaniu; nie wymaga ponownego wyszukiwania.
+
+Po wyczerpaniu limitu modelu eventy próbują modeli zapasowych. Domyślna kolejność
+to `GEMINI_MODEL`, `gemini-2.5-flash-lite`, `gemini-2.5-flash`.
+Listę zapasową można zmienić przez `GEMINI_FALLBACK_MODELS` w Renderze.
+[Przełączanie modeli i zachowanie przy awarii](docs/event-ai-fallback.md).
 
 Plan bitwy bez przypisanych jednostek nadal można zapisać, ale autor oraz GM
 przeglądający `/battle plans_pending` otrzymają ostrzeżenie. Wpisanie jednostek

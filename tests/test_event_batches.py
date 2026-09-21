@@ -1,10 +1,9 @@
 import asyncio
 import json
 import re
-import sys
 import unittest
 from types import SimpleNamespace as NS
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import discord
 from test_regressions import DatabaseFixture, interaction
@@ -252,15 +251,14 @@ class EventBatchTests(EventFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_strict_generation_uses_theme_and_rejects_fallback(self):
         n, _ = event_drafts.candidate(1)
-        generate = Mock(return_value=NS(text='Narrative\nEFFECTS: {"stability":1}'))
-        google = NS(genai=NS(Client=Mock(return_value=NS(models=NS(generate_content=generate)))))
-        with patch.dict(sys.modules, {'google': google}):
+        generate = AsyncMock(return_value='Narrative\nEFFECTS: {"stability":1}')
+        with patch('event_ai.generate_text',generate):
             text, effects = await events._generate_event(n, theme='A harsh winter', strict=True)
         self.assertEqual(text, 'Narrative')
         self.assertEqual(json.loads(effects), {'stability': 1})
-        self.assertIn('A harsh winter', generate.call_args.kwargs['contents'])
-        google.genai.Client.side_effect = RuntimeError('offline')
-        with patch.dict(sys.modules, {'google': google}), self.assertRaises(RuntimeError):
+        self.assertIn('A harsh winter', generate.call_args.args[0])
+        generate.side_effect = RuntimeError('offline')
+        with patch('event_ai.generate_text',generate), self.assertRaises(RuntimeError):
             await events._generate_event(n, strict=True)
 
 
