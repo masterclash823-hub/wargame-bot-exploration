@@ -130,6 +130,8 @@ class EconomyView(i18n.LocalizedView):
     def __init__(self,owner,nid):
         super().__init__(timeout=600)
         self.owner,self.nid=owner,nid
+        self.built.label=tr('Zbudowane budynki','Built buildings')
+        self.income.label=tr('Bilans surowców','Resource balance')
         self.labor.label=tr('Polityka pracy','Labor policy')
         self.preview.label=tr('Prognoza','Forecast')
         options=[('tax:low',tr('Podatki niskie','Low taxes')),('tax:normal',tr('Podatki normalne — domyślne','Normal taxes — default')),
@@ -147,6 +149,18 @@ class EconomyView(i18n.LocalizedView):
         if interaction.user.id==self.owner and nation and nation['id']==self.nid:return True
         await interaction.response.send_message(tr('To nie jest Twój panel.','This is not your panel.'),ephemeral=True)
         return False
+
+    @discord.ui.button(label='Built buildings',row=2)
+    @i18n.localized
+    async def built(self,interaction,button):
+        from economy_reports import show
+        await show(interaction,'buildings')
+
+    @discord.ui.button(label='Resource balance',row=2)
+    @i18n.localized
+    async def income(self,interaction,button):
+        from economy_reports import show
+        await show(interaction,'income')
 
     @discord.ui.select(row=0)
     @i18n.localized
@@ -228,6 +242,12 @@ class PopulationConfirm(i18n.LocalizedView):
 
 class EconomyControlCog(commands.Cog):
     economy=app_commands.Group(name='economy',description='Economy dashboard / Panel gospodarki')
+
+    @economy.command(name='income',description='Monthly balance of every resource / Miesięczny bilans wszystkich surowców')
+    @i18n.localized
+    async def income(self,interaction:discord.Interaction):
+        from economy_reports import show
+        await show(interaction,'income')
 
     @economy.command(name='labor',description='Labor policy, slavery and emancipation / Polityka pracy')
     @i18n.localized

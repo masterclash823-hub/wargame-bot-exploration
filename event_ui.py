@@ -7,16 +7,27 @@ import event_adventure as adventure
 from flags import flagged_embed
 
 
-def render_public_event(state):
-    """Only the approved opening and sourced illustration are public."""
+def illustrate_event(embed, state):
+    """The illustration occupies the large image slot; flags use thumbnails.
+
+    Keep the persisted public_image key so existing events can recover their
+    illustration in DMs, resumed decisions and the final result as well.
+    """
     image = state.get('public_image')
-    embed = discord.Embed(title=f"{state['nation'][:150]} — #{state['event_id']}",
-                          description=state['opening'][:4096], color=discord.Color.purple())
     if image:
         embed.set_image(url=image['url'])
         embed.url = image['source']
-        embed.set_footer(text=f"{image['credit']} · {image['license']} · Wikimedia Commons")
+        credit = f"{image['credit']} · {image['license']} · Wikimedia Commons"
+        footer = embed.footer.text
+        embed.set_footer(text=(f'{footer}\n{credit}' if footer else credit)[:2048])
     return embed
+
+
+def render_public_event(state):
+    """Only the approved opening and sourced illustration are public."""
+    embed = discord.Embed(title=f"{state['nation'][:150]} — #{state['event_id']}",
+                          description=state['opening'][:4096], color=discord.Color.purple())
+    return illustrate_event(embed, state)
 
 
 def render_event(state):
@@ -48,7 +59,7 @@ def render_event(state):
         if note:
             embed.add_field(name=adventure.tr(lang, "Uwaga GM (fabularna)", "GM note (narrative)"), value=note, inline=False)
         embed.set_footer(text=adventure.tr(lang, "Koniec • 3/3 decyzji • efekty naliczone raz", "Finished • 3/3 decisions • effects applied once"))
-        return embed
+        return illustrate_event(embed, state)
     for i, label in enumerate(state["choices"]):
         embed.add_field(name=f"{i + 1}. {label}"[:256], value=
                         adventure.tr(lang, "Skutek zależy od sensu decyzji. Limit: ",
@@ -62,7 +73,7 @@ def render_event(state):
     embed.set_footer(text=adventure.tr(lang, "Decyzja", "Decision")
                      + f" {len(history) + 1}/3 • /event play {state['event_id']} • "
                      + adventure.tr(lang, "wznów także po restarcie", "resume even after restart"))
-    return embed
+    return illustrate_event(embed, state)
 
 
 @i18n.localized

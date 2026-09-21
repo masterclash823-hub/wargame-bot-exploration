@@ -1,10 +1,8 @@
 """Three-decision event state machine with bounded, per-axis AI consequence direction."""
-import asyncio
 import copy
 import json
 import math
 
-import config
 import db
 import i18n
 
@@ -54,15 +52,11 @@ def load_run(event_id):
 
 
 async def _ai_json(prompt):
-    from google import genai
-    client = genai.Client(api_key=config.GEMINI_API_KEY)
-    def call():
-        response = client.models.generate_content(model=config.GEMINI_MODEL, contents=prompt)
-        raw = response.text.strip()
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
-        return json.loads(raw)
-    return await asyncio.wait_for(asyncio.to_thread(call), timeout=20)
+    from event_ai import generate_text
+    raw=await generate_text(prompt)
+    if raw.startswith("```"):
+        raw=raw.split("\n",1)[1].rsplit("```",1)[0]
+    return json.loads(raw)
 
 
 async def scene(state):

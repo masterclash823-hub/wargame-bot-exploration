@@ -180,27 +180,8 @@ The example above illustrates the structure only, not the required output langua
 Write the event now:"""
 
     try:
-        from google import genai
-        client = genai.Client(api_key=config.GEMINI_API_KEY,http_options={'timeout':30000})
-
-        def _call():
-            return client.models.generate_content(
-                model=config.GEMINI_MODEL,
-                contents=prompt,
-            )
-
-        # Try once, retry after 2s if rate-limited
-        try:
-            response = await asyncio.get_event_loop().run_in_executor(None, _call)
-        except Exception as e:
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                print(f"[EVENTS AI] 429 rate limit, retrying in 2s...", flush=True)
-                await asyncio.sleep(2)
-                response = await asyncio.get_event_loop().run_in_executor(None, _call)
-            else:
-                raise
-
-        raw = response.text.strip()
+        from event_ai import generate_text
+        raw = await generate_text(prompt)
 
         # Split on EFFECTS:
         if "EFFECTS:" in raw:

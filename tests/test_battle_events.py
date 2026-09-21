@@ -1,9 +1,8 @@
 import json
-import sys
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace as NS
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 from test_regressions import DatabaseFixture, interaction
 import config
@@ -72,12 +71,10 @@ class BattleEventTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         for language, expected in (("pl", "Polish"), ("en", "English")):
             i18n.set_user_language(2, language)
             i18n.set_user_language(999, "en" if language == "pl" else "pl")
-            generate = Mock(return_value=NS(text='Narrative\nEFFECTS: {"stability":1}'))
-            client = NS(models=NS(generate_content=generate))
-            google = NS(genai=NS(Client=Mock(return_value=client)))
-            with patch.dict(sys.modules, {"google": google}):
+            generate = AsyncMock(return_value='Narrative\nEFFECTS: {"stability":1}')
+            with patch('event_ai.generate_text',generate):
                 text, effects = await events._generate_event(self.nation())
-            prompt = generate.call_args.kwargs["contents"]
+            prompt = generate.call_args.args[0]
             self.assertIn(f"special_note in {expected}", prompt)
             self.assertIn("all JSON keys/resource identifiers in English", prompt)
             self.assertEqual(json.loads(effects), {"stability":1})
@@ -85,7 +82,7 @@ class BattleEventTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
     async def test_event_fallback_and_default_language(self):
         self.assertEqual(events._event_language(self.nation()), config.DEFAULT_LANGUAGE)
         i18n.set_user_language(2, "pl")
-        with patch.dict(sys.modules, {"google": NS(genai=NS(Client=Mock(side_effect=RuntimeError("offline"))))}):
+        with patch('event_ai.generate_text',AsyncMock(side_effect=RuntimeError('offline'))):
             text, effects = await events._generate_event(self.nation())
         self.assertIn("AI niedostępne", text)
         self.assertEqual(effects, "{}")
