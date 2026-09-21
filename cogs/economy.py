@@ -502,6 +502,7 @@ HELP_SECTIONS = {
 }
 
 GM_HELP_FIELDS = [
+    ("/ranking [category] [limit] [channel]", "Preview a nation ranking; choose a channel to publish. Full ranking attached as TXT."),
     ("/goals create <nation> <title> <description>", "Create a custom goal for a nation; completion awards 10 prestige."),
     ("/goals status <nation> · /goals complete <nation> <goal_id>", "Review a goal and confirm completion with the button; rewards are granted once."),
     ("/nation found <player> <name> <history>", "Create a nation and assign it to a player. Existing nations remain unchanged."),
@@ -674,6 +675,7 @@ HELP_SECTIONS_PL = {
 }
 
 GM_HELP_FIELDS_PL = [
+    ("/ranking [category] [limit] [channel]", "Podgląd rankingu państw; wskaż kanał, aby opublikować. Pełna lista w pliku TXT."),
     ("/goals create <nation> <title> <description>", "Utwórz opisowy cel dla państwa; wykonanie daje 10 prestiżu."),
     ("/goals status <nation> · /goals complete <nation> <goal_id>", "Sprawdź cel i potwierdź wykonanie przyciskiem; nagroda jest jednorazowa."),
     ("/algae deposit_add / deposit_remove <cell_id>", "Ręcznie dodaj lub usuń złoże. Limit: 5. Import nie tworzy złóż."),

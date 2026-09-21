@@ -146,13 +146,13 @@ def force_snapshot(plan, nation):
     return rows
 
 
-def _power(c, plan, nation):
+def _power(c, plan, nation, *, lock_units=True):
     tech = json.loads(nation["tech_json"] or "{}")
     from technology import bonuses
     effects=bonuses(c,nation['id'])
     attack = defense = 0.0
     committed = []
-    lock = " FOR UPDATE OF u" if db.USE_POSTGRES else ""
+    lock = " FOR UPDATE OF u" if db.USE_POSTGRES and lock_units else ""
     for unit_id, requested in _entries(plan["forces_json"]):
         from economy_services import assert_ready
         assert_ready(c,nation['id'],unit_id)

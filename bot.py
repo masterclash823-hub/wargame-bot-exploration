@@ -32,6 +32,7 @@ COGS = [
     "cogs.treaties",
     "cogs.world",
     "cogs.chronicle",
+    "cogs.rankings",
     "cogs.panel",
 ]
 

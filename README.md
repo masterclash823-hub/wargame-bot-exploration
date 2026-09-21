@@ -21,6 +21,14 @@ i może przekazać je przez `/nation transfer`.
 publicznych akcji graczy. Szczegółowe zasady, wpływ podatków i konfiguracja:
 [Aktualizacja świata](docs/world-update.md).
 
+## Rankingi państw
+
+GM tworzy ranking przez `/ranking category:prestige`. Bez `channel` wynik jest
+prywatny; `/ranking category:population channel:#rankingi limit:20` publikuje go
+na wskazanym kanale. Dostępne są prestiż, ludność, liczba prowincji, skarbiec,
+miesięczny bilans złota, technologia, siła armii i siła floty. Wiadomość pokazuje
+do 25 państw, a plik TXT zawiera wszystkie. [Zasady obliczeń](docs/rankings.md).
+
 ## Gospodarka z prostym panelem
 
 **Panel → Gospodarka → Zasoby** pokazuje bilans najbliższego miesiąca,
