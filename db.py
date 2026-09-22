@@ -248,6 +248,11 @@ CREATE TABLE IF NOT EXISTS explorations (
     publication_started TEXT, message_id TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_active_exploration ON explorations(nation_id) WHERE status='active';
+CREATE TABLE IF NOT EXISTS exploration_starts (
+    nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    month_index INTEGER NOT NULL,
+    PRIMARY KEY(nation_id,month_index)
+);
 CREATE TABLE IF NOT EXISTS captive_opportunities (
     id SERIAL PRIMARY KEY, source_type TEXT NOT NULL, source_id INTEGER NOT NULL,
     winner_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,

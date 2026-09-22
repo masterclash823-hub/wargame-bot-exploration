@@ -4,7 +4,7 @@ import json
 import db
 import i18n
 from event_adventure import _ai_json
-from world_service import world_lock, owned, tr
+from world_service import world_lock, owned, month_index, tr
 
 
 def narrative_phase(replies):
@@ -85,21 +85,41 @@ async def narrate(state, initial=False):
                             'The narrator is temporarily unavailable. No reply was consumed; try again.')) from exc
 
 
+def _check_start(c,nid):
+    c.execute("SELECT id FROM explorations WHERE nation_id=? AND status='active'",(nid,))
+    active=c.fetchone()
+    if active:
+        raise ValueError(tr('Masz aktywną wyprawę. Wznów /exploration expedition_id:',
+                            'You have an active expedition. Resume /exploration expedition_id:')+str(active['id']))
+    month=month_index(c)
+    c.execute('SELECT 1 FROM exploration_starts WHERE nation_id=? AND month_index=?',(nid,month))
+    if c.fetchone():
+        raise ValueError(tr('Twoje państwo rozpoczęło już wyprawę w tym ticku. Kolejną możesz rozpocząć po następnym ticku (miesiącu gry).',
+                            'Your nation has already started an expedition this tick. You can start another after the next tick (game month).'))
+    return month
+
+
+def check_start(nid,uid):
+    """Preflight for both the command and panel; start rechecks under the world lock."""
+    with db.cursor() as c:
+        n=owned(c,nid,uid)
+        _check_start(c,nid)
+        return n
+
+
 async def start(nid,uid,guild_id,channel_id,role_id,preparations):
     preparations=preparations.strip()
     if not 20<=len(preparations)<=4000:
         raise ValueError(tr('Opisz przygotowania w 20–4000 znakach.','Describe preparations in 20–4000 characters.'))
-    with db.cursor() as c:
-        n=owned(c,nid,uid)
-        c.execute("SELECT id FROM explorations WHERE nation_id=? AND status='active'",(nid,))
-        active=c.fetchone()
-    if active:raise ValueError(tr('Masz aktywną wyprawę. Wznów /exploration expedition_id:', 'You have an active expedition. Resume /exploration expedition_id:')+str(active['id']))
+    n=check_start(nid,uid)
     state={'nation':n['name'],'preparations':preparations,'history':[],'lang':i18n.get_user_language(uid)}
     state.update(await narrate(state,True))
     with db.atomic() as c:
         world_lock(c);owned(c,nid,uid)
-        c.execute("SELECT id FROM explorations WHERE nation_id=? AND status='active'",(nid,))
-        if c.fetchone():raise ValueError(tr('Inna wyprawa została już rozpoczęta.','Another expedition has already started.'))
+        month=_check_start(c,nid)
+        # Count the successful save, using its current month if a tick passed during AI generation.
+        # The quota and expedition commit together; a failed start never consumes the allowance.
+        c.execute('INSERT INTO exploration_starts(nation_id,month_index) VALUES(?,?)',(nid,month))
         eid=db.insert_returning_id('INSERT INTO explorations(nation_id,guild_id,channel_id,role_id,state_json) VALUES(?,?,?,?,?)',
                                   (nid,str(guild_id),str(channel_id),str(role_id),json.dumps(state,ensure_ascii=False)))
     return load(eid,uid,guild_id)

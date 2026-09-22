@@ -32,10 +32,17 @@ na innym kanale nie zmienia miejsca ogłoszenia. Wynik jest fabularny:
 nie przyznaje samodzielnie prowincji, zasobów czy jednostek. GM rozstrzyga
 ewentualne skutki dla mapy i gospodarki.
 
-- Jedna aktywna wyprawa na państwo. `/exploration` bez przygotowań wznawia
+- **Jedna nowa wyprawa na państwo na tick (miesiąc gry)**, wspólnie dla komendy
+  i panelu. Sukces, porażka lub wycofanie nie zwracają limitu. Kolejny tick
+  pozwala rozpocząć nową wyprawę; niewykorzystane limity nie kumulują się.
+  Restart bota, zmiana kanału lub przekazanie państwa nie odnawiają limitu.
+- Jedna aktywna wyprawa na państwo, także po zmianie ticka. `/exploration` bez przygotowań wznawia
   aktywną wyprawę; `expedition_id` pozwala otworzyć wskazany zapis także po restarcie.
+  Wznowienie i kolejne odpowiedzi nie zużywają limitu nowego ticka.
 - Aktualny właściciel państwa może kontynuować; stary właściciel traci dostęp.
 - Błąd AI nie zużywa odpowiedzi ani nie losuje zastępczego wyniku.
+  Błąd rozpoczęcia nie zużywa limitu wypraw. Limit jest zapisywany razem
+  z nową wyprawą, w ticku, w którym udało się ją zapisać.
 - Historia i wynik są zapisane; późniejsze eventy znają ostatnie zakończenia.
 - Publiczne ogłoszenie nie zawiera przycisków, zasad ani pełnych przygotowań.
 - Bot potrzebuje wysyłania wiadomości, osadzeń i odczytu historii kanału.
@@ -91,3 +98,8 @@ własność, limit i dostępność ludności są ponownie sprawdzane przy zatwie
 Aktualizacja dodaje trzy tabele i indeks. `db.init_db()` tworzy je przy starcie;
 brak nowych zmiennych środowiskowych lub ręcznego SQL. Nie migruje dawnych
 bitew do nowych uprawnień. Rejestracja dwóch cogów odbywa się w `bot.py`.
+
+Limit wypraw dodaje tabelę `exploration_starts`, również tworzoną automatycznie
+przy starcie na SQLite i PostgreSQL. Obejmuje wyprawy rozpoczęte po aktualizacji;
+dawne zapisy można nadal wznawiać, bez przypisywania im nieznanej daty rozpoczęcia
+w kalendarzu gry.
