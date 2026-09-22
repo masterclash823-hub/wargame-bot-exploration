@@ -320,7 +320,8 @@ def _project(nation, provinces, definitions, prefs, military_upkeep=0, units=(),
                 company_transfers=company_transfers,maintenance_factor=maintenance_factor)
 
 
-def forecast(nid):
+def forecast(nid=None):
+    """Preview one nation, or all monthly reports when nid is None; always roll back."""
     class PreviewRollback(Exception):
         def __init__(self,result):self.result=result
     try:
@@ -328,6 +329,8 @@ def forecast(nid):
             run_month()
             c.execute('SELECT report_json FROM economy_months ORDER BY month_index DESC LIMIT 1')
             reports=json.loads(c.fetchone()['report_json'])
+            if nid is None:
+                raise PreviewRollback(reports)
             result=reports.get(str(nid))
             if result is None:
                 result=project(*snapshot(c,nid))
