@@ -5,6 +5,7 @@ import logging
 
 import db
 import i18n
+import event_variety
 from event_adventure import validate_effects
 from nation_decay import require_playable
 from world_service import world_lock
@@ -19,6 +20,7 @@ def candidate(nid):
         c.execute("SELECT id FROM events WHERE nation_id=? AND status='draft' ORDER BY id DESC LIMIT 1",(nid,))
         existing=c.fetchone()
         n['event_language']=i18n.get_user_language(n['owner_id'])
+        if not existing:n['event_brief']=event_variety.plan(nid)
         return n,existing['id'] if existing else None
 
 
@@ -39,6 +41,7 @@ def save_missing(nation,text,effects):
         if existing:return existing['id'],'existing'
         eid=db.insert_returning_id("INSERT INTO events(nation_id,ai_draft_text,gm_final_text,effects_json,status) VALUES(?,?,?,?,'draft')",
                                    (nation['id'],text.strip(),text.strip(),effects))
+        event_variety.record(c,eid,nation['id'],nation.get('event_brief'))
         return eid,'created'
 
 
