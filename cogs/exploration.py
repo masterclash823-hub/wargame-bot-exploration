@@ -76,7 +76,10 @@ class ExpeditionView(i18n.LocalizedView):
 class PreparationModal(discord.ui.Modal):
     def __init__(self):
         super().__init__(title=tr('Przygotowania wyprawy','Expedition preparations'))
-        self.text=discord.ui.TextInput(label=tr('Cel, ludzie, zapasy, trasa i zabezpieczenia','Objective, supplies, route and precautions'),style=discord.TextStyle.paragraph,min_length=20,max_length=4000)
+        self.text=discord.ui.TextInput(label=tr('Cel, ludzie, zapasy, trasa i zabezpieczenia','Objective, supplies, route and precautions'),
+                                       placeholder=tr('1 nowa wyprawa na państwo na tick. Opisz przygotowania.',
+                                                      '1 new expedition per nation per tick. Describe your preparations.'),
+                                       style=discord.TextStyle.paragraph,min_length=20,max_length=4000)
         self.add_item(self.text)
 
     @i18n.localized
@@ -128,7 +131,9 @@ class ExplorationCog(commands.Cog):
             await after_answer(i,row)
         elif preparations:await begin(i,preparations)
         else:
-            try:check_channel(i.channel,i.guild)
+            try:
+                service.check_start(n['id'],i.user.id)
+                check_channel(i.channel,i.guild)
             except ValueError as exc:await i.response.send_message(str(exc),ephemeral=True);return
             await i.response.send_modal(PreparationModal())
 
