@@ -4,7 +4,6 @@ import logging
 import i18n
 
 import event_adventure as adventure
-import event_media
 from flags import flagged_embed
 
 
@@ -14,11 +13,11 @@ def illustrate_event(embed, state):
     Keep the persisted public_image key so existing events can recover their
     illustration in DMs, resumed decisions and the final result as well.
     """
-    image = event_media.metadata(state['event_id']) or state.get('public_image')
+    image = state.get('public_image')
     if image:
-        embed.set_image(url='attachment://'+image['attachment'] if image.get('attachment') else image['url'])
-        embed.url = image.get('source') or None
-        credit = ' · '.join(filter(None,(image['credit'],image.get('license'),image.get('provider','Wikimedia Commons'))))
+        embed.set_image(url=image['url'])
+        embed.url = image['source']
+        credit = f"{image['credit']} · {image['license']} · Wikimedia Commons"
         footer = embed.footer.text
         embed.set_footer(text=(f'{footer}\n{credit}' if footer else credit)[:2048])
     return embed
@@ -77,18 +76,6 @@ def render_event(state):
     return illustrate_event(embed, state)
 
 
-async def send_event(sender,state,*,public=False,editing=False,**kwargs):
-    """Each message gets a fresh attachment, including DMs and resumed decisions."""
-    embed=render_public_event(state) if public else render_event(state)
-    file=event_media.attachment(state['event_id'])
-    try:
-        if editing:kwargs['attachments']=[file] if file else []
-        elif file:kwargs['file']=file
-        return await sender(embed=embed,allowed_mentions=discord.AllowedMentions.none(),**kwargs)
-    finally:
-        if file:file.close()
-
-
 @i18n.localized
 async def respond(interaction, state, choice=None, answer=None):
     await interaction.response.defer(ephemeral=True)
@@ -103,7 +90,9 @@ async def respond(interaction, state, choice=None, answer=None):
             "Błąd zapisu. Sprawdź aktualny stan przez /event play przed ponownym wyborem.",
             "Save failed. Check the current state with /event play before choosing again."), ephemeral=True)
         return
-    await send_event(interaction.followup.send,updated,view=EventView(updated),ephemeral=True)
+    await interaction.followup.send(embed=render_event(updated),
+                                    view=EventView(updated), ephemeral=True,
+                                    allowed_mentions=discord.AllowedMentions.none())
 
 
 class CustomAnswer(discord.ui.Modal):

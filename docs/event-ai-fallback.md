@@ -38,8 +38,7 @@ Wybrane modele muszą być dostępne w projekcie Google użytkownika.
 
 W logach przełączenia znajdują się nazwa modelu i kod błędu, bez klucza,
 polecenia gracza i treści odpowiedzi dostawcy. Przełączenie modeli dotyczy
-tekstu: ilustracje pochodzą z Wikimedia Commons lub Art Institute of Chicago,
-ewentualnie z pliku wskazanego przez GM, nie z generatora AI.
+tekstu: ilustracje nadal pochodzą z Wikimedia Commons, nie z generatora AI.
 Mechanizm nie zmienia wywołań AI rozstrzygających bitwy.
 
 Limity Google zależą od modelu, ale obowiązują na poziomie projektu.
