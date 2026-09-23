@@ -113,7 +113,7 @@ class BattleEventTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         with patch.object(events, "_generate_event", AsyncMock(return_value=("Polskie wydarzenie.", '{"stability":2}'))):
             await cog.event_generate.callback(cog, gm, "B")
         self.assertIn("Szkic wydarzenia #1", gm.followup.send.call_args.kwargs["embed"].title)
-        with patch.object(event_adventure, "scene", AsyncMock(return_value=("Polskie wydarzenie.", ["A", "B", "C"]))), patch('cogs.events.find_event_image',AsyncMock(return_value=None)):
+        with patch.object(event_adventure, "scene", AsyncMock(return_value=("Polskie wydarzenie.", ["A", "B", "C"]))):
             await cog.event_post.callback(cog, gm, 1)
         channel.send.assert_not_awaited()
         embed = owner.send.call_args.kwargs["embed"]

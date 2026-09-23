@@ -18,14 +18,12 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
                                         (2, 'A fire in the town.', '{"treasury":-30}'))
         self.owner = NS(send=AsyncMock())
         self.channel = NS(id=12, guild=NS(id=1), send=AsyncMock(),
-            permissions_for=lambda _: NS(view_channel=True, send_messages=True, embed_links=True, attach_files=True))
+            permissions_for=lambda _: NS(view_channel=True, send_messages=True, embed_links=True))
         self.gm = interaction(999, [NS(id=10, name=config.GM_ROLE_NAME)])
         self.gm.guild = NS(id=1, me=NS(), default_role=NS(), get_member=lambda _: self.owner)
         self.cog = EventsCog(NS(get_channel=lambda _: self.channel))
         scene = patch('event_adventure.scene', AsyncMock(return_value=('Private scene', ['A', 'B', 'C'])))
         scene.start(); self.addCleanup(scene.stop)
-        images=patch('cogs.events.find_event_image',AsyncMock(return_value=None))
-        images.start();self.addCleanup(images.stop)
         self.image = {'url':'https://upload.wikimedia.org/test.jpg', 'source':'https://commons.wikimedia.org/wiki/File:Fire.jpg',
                       'credit':'Painter', 'license':'Public domain'}
 
@@ -58,7 +56,6 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
                 self.assertIn(self.image['license'],embed.footer.text)
                 self.assertEqual(embed.url,self.image['source'])
         state['public_image']=None
-        with db.cursor() as c:c.execute('DELETE FROM event_media WHERE event_id=?',(self.eid,))
         self.assertIsNone(render_event(state).image.url)
 
     async def test_resumed_decisions_and_final_result_keep_image_and_progress_footer(self):
@@ -80,11 +77,10 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
                 self.assertIn('3/3' if version==2 else f'{version+2}/3',sent['embed'].footer.text)
                 if version==2:self.assertIn('Finished',sent['embed'].footer.text)
 
-    async def test_private_can_search_but_never_sends_publicly_and_is_hidden(self):
-        with patch('cogs.events.find_event_image', AsyncMock(return_value=self.image)) as search:
+    async def test_private_never_searches_or_sends_publicly_and_is_hidden(self):
+        with patch('cogs.events.find_event_image', AsyncMock()) as search:
             await self.cog.event_post.callback(self.cog, self.gm, self.eid, 'private', self.channel)
-        search.assert_awaited_once()
-        self.assertEqual(self.owner.send.call_args.kwargs['embed'].image.url,self.image['url'])
+            search.assert_not_awaited()
         self.channel.send.assert_not_awaited()
         outsider = interaction(1)
         await self.cog.event_list.callback(self.cog, outsider, 'B')
@@ -113,7 +109,7 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
             search.assert_not_awaited()
         self.channel.send.assert_awaited_once()
         self.assertIsNone(self.channel.send.call_args.kwargs['embed'].image.url)
-        self.assertNotIn('illustration', self.gm.followup.send.call_args.kwargs['content'])
+        self.assertNotIn('illustration', self.gm.followup.send.call_args.args[0])
         self.owner.send.assert_awaited_once()
 
     async def test_private_resolution_history_is_private(self):

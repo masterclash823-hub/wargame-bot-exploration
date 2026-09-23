@@ -293,14 +293,6 @@ CREATE TABLE IF NOT EXISTS event_runs (
     state_json TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS event_media (
-    event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
-    image_json TEXT NOT NULL DEFAULT '{}',
-    data_base64 TEXT NOT NULL DEFAULT '',
-    filename TEXT NOT NULL DEFAULT '',
-    public_message_id TEXT
-);
-
 CREATE TABLE IF NOT EXISTS game_config (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL DEFAULT ''

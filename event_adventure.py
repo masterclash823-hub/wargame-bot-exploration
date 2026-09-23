@@ -209,9 +209,6 @@ def start_run(state):
             raise ValueError(i18n.text('Event already published or missing. / Event już opublikowany lub nie istnieje.'))
         if event["gm_final_text"] != state["opening"] or validate_effects(event["effects_json"]) != state["base_effects"]:
             raise ValueError(i18n.text('Draft changed. Run /event post again. / Szkic zmieniony. Powtórz /event post.'))
-        if state.get('public_image'):
-            from event_media import save
-            state['public_image']=save(c,state['event_id'],state['public_image'])
         c.execute("INSERT INTO event_runs(event_id,version,state_json) VALUES(?,?,?)",
                   (state["event_id"], 0, json.dumps(state, ensure_ascii=False)))
         c.execute('INSERT INTO event_publications(event_id,visibility,channel_id) VALUES(?,?,?)',
