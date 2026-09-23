@@ -1,85 +1,52 @@
-# AI eventów: dostawcy zapasowi i darmowe limity
+# Zapasowe modele eventów
 
-Szkice, `/event all`, sceny, własne odpowiedzi, ocena skutków i ekspedycje
-korzystają ze wspólnego mechanizmu przełączania AI. Obok Gemini można włączyć
-Groq, Mistral i darmowe modele OpenRouter. Bitwy nadal używają dotychczasowego
-wywołania Gemini. Ilustracje eventów są wyszukiwane w internecie.
+Eventy korzystają ze wspólnej kolejki modeli dla tworzenia szkiców, `/event all`,
+kolejnych scen, interpretacji własnej odpowiedzi gracza i oceny skutków.
+Ekspedycje korzystają z tego samego mechanizmu. Wcześniej bot próbował tylko
+jednego modelu, po czym stosował opis lub skutki awaryjne.
 
-## Konfiguracja Rendera
+## Ustawienia Rendera
 
-W Render → usługa bota → Environment dodaj dowolne z poniższych kluczy.
-Każdy dostawca jest opcjonalny; brak klucza powoduje jego pominięcie.
+| Zmienna | Domyślna wartość | Znaczenie |
+| --- | --- | --- |
+| `GEMINI_MODEL` | `gemini-3.1-flash-lite` | Pierwszy model; istniejąca konfiguracja pozostaje w użyciu. |
+| `GEMINI_FALLBACK_MODELS` | `gemini-2.5-flash-lite,gemini-2.5-flash` | Modele zapasowe, oddzielone przecinkami, w kolejności prób. |
 
-| Zmienna | Gdzie uzyskać klucz / domyślna wartość |
-| --- | --- |
-| `GROQ_API_KEY` | [Groq Console → API Keys](https://console.groq.com/keys), konto Free |
-| `MISTRAL_API_KEY` | [Mistral Studio → API Keys](https://console.mistral.ai/), tryb Free |
-| `OPENROUTER_API_KEY` | [OpenRouter → Keys](https://openrouter.ai/settings/keys) |
-| `GROQ_EVENT_MODEL` | `openai/gpt-oss-120b` |
-| `MISTRAL_EVENT_MODEL` | `mistral-small-latest` |
-| `OPENROUTER_EVENT_MODEL` | `openrouter/free` |
-| `EVENT_AI_PROVIDERS` | `gemini,groq,mistral,openrouter` |
-| `GEMINI_MODEL` | `gemini-3.1-flash-lite`, zgodnie z dotychczasowym ustawieniem |
-| `GEMINI_FALLBACK_MODELS` | `gemini-2.5-flash-lite,gemini-2.5-flash` |
+Nie trzeba dodawać nowej zmiennej, żeby włączyć domyślne modele zapasowe.
+Jawnie pusta lista wyłącza zapasowe modele. Powtórzenia i puste wpisy są pomijane.
+Wszystkie żądania korzystają z dotychczasowego `GEMINI_API_KEY`.
+Wybrane modele muszą być dostępne w projekcie Google użytkownika.
 
-Nie wklejaj kluczy do kodu ani Discorda. Po zapisaniu zmiennych uruchom nową
-wersję usługi. Dotychczasowy `GEMINI_API_KEY` pozostaje wymagany przez bota,
-ponieważ Gemini obsługuje również inne funkcje.
+## Przebieg awarii
 
-Domyślne próby przy dodaniu wszystkich kluczy:
-Gemini główny → Groq → Mistral → OpenRouter → pozostałe modele Gemini.
-Najpierw próbowane są niezależne konta, a dopiero potem kolejny model tego
-samego dostawcy. Możesz ustawić np. `EVENT_AI_PROVIDERS=groq,mistral,gemini,openrouter`,
-aby oszczędzać limit Google dla bitew. Jawnie pusta lista wyłącza AI eventów;
-powtórzenia, nieznane nazwy dostawców i brakujące klucze są pomijane.
+- Po limicie HTTP 429, niedostępnym modelu 404, błędzie serwera 500/502/503/504
+  lub błędzie połączenia bot próbuje następnego modelu z tym samym poleceniem.
+- Jedna próba trwa najwyżej 20 sekund, a całe wywołanie ma budżet 60 sekund.
+  Każdy model jest próbowany najwyżej raz w danym wywołaniu.
+- Niedostępny model jest pomijany przez co najmniej 60 sekund; dłuższy czas
+  wskazany przez serwer w sekundach (`Retry-After` / `RetryInfo`) wydłuża przerwę.
+  Dzięki temu następna scena i masowe tworzenie eventów nie ponawiają od razu
+  żądań do modelu z wyczerpanym limitem. Po przerwie kolejna operacja ponownie
+  zaczyna od pierwszego dostępnego modelu. Pamięć przerw znika po restarcie.
+- Błędny klucz, brak uprawnień, niepoprawne żądanie oraz odrzucona lub pusta
+  odpowiedź nie powodują prób na kolejnych modelach.
+- Gdy żaden model nie odpowie, istniejący event nadal ma trzy opcje i obsługuje
+  własną odpowiedź gracza przez reguły awaryjne. Ocena skutków zachowuje
+  dotychczasowe ograniczenia liczbowe i listę zasobów ustaloną przez GM.
+  `/event all` oznacza nieudane generowanie jako błąd i nie zapisuje pustego
+  szkicu; ponowienie dla brakujących państw pozostaje dostępne.
 
-OpenRouter przyjmuje tu wyłącznie `openrouter/free` lub identyfikator z `:free`.
-Konfiguracja płatnego modelu wyłącza tego dostawcę i zapisuje ostrzeżenie w logu.
-Nie ma automatycznego przejścia z darmowej wersji na płatną. Router `openrouter/free`
-sam dobiera dostępny darmowy model, więc jakość i dostępność mogą się różnić.
+W logach przełączenia znajdują się nazwa modelu i kod błędu, bez klucza,
+polecenia gracza i treści odpowiedzi dostawcy. Przełączenie modeli dotyczy
+tekstu: ilustracje nadal pochodzą z Wikimedia Commons, nie z generatora AI.
+Mechanizm nie zmienia wywołań AI rozstrzygających bitwy.
 
-## Co oznacza darmowy dostęp
+Limity Google zależą od modelu, ale obowiązują na poziomie projektu.
+Model zapasowy pomaga, gdy ma własny dostępny limit; wspólny limit wydatków,
+brak środków lub wyczerpanie wszystkich modeli nadal może uniemożliwić
+generowanie. Bot nie zmienia kluczy ani nie omija ograniczeń projektu.
 
-Stan dokumentacji sprawdzony 22 września 2026 r.:
-
-- Groq udostępnia GPT-OSS 120B w planie Free z limitami żądań i tokenów.
-  Dokładny przydział konta widać w panelu [Limits](https://console.groq.com/settings/limits);
-  zobacz [zasady limitów](https://console.groq.com/docs/rate-limits).
-- Mistral oferuje API w trybie Free bez karty, z ograniczeniami użycia.
-  [Instrukcja aktywacji i utworzenia klucza](https://docs.mistral.ai/getting-started/quickstarts/studio/activate-and-generate-api-key).
-- OpenRouter oferuje [darmowe warianty](https://openrouter.ai/docs/guides/routing/model-variants/free)
-  i [router darmowych modeli](https://openrouter.ai/docs/cookbook/get-started/free-models-router-playground),
-  objęte [limitami konta](https://openrouter.ai/docs/api_reference/limits).
-
-Zostaw konta Groq i Mistral w trybie Free, jeśli chcesz korzystać bez opłat.
-Bot nie zmienia planu ani ustawień rozliczeń dostawcy. Darmowe API nie oznaczają
-nielimitowanego użycia, a samo dodanie integracji nie tworzy kont i kluczy.
-
-## Awarie i zużycie limitów
-
-- Limit 429, brak modelu 404, błędy 500/502/503/504 i problemy połączenia
-  uruchamiają kolejny dostępny model. Każdy cel jest próbowany raz na wywołanie.
-- Jedna próba ma maksymalnie 20 sekund, całe wywołanie maksymalnie 60.
-  Budżet dzielony jest pomiędzy dostępne cele, aby zawieszony pierwszy model
-  nie pozbawił szansy pozostałych dostawców. Nie ma ukrytych ponowień SDK.
-- Wyczerpany model odpoczywa co najmniej 60 sekund. `Retry-After`, Google
-  `RetryInfo` i reset limitu konta OpenRouter mogą wydłużyć przerwę.
-  Przerwy współdzielą eventy, masowe generowanie i ekspedycje; pamięć znika po restarcie.
-- Błąd konfiguracji lub autoryzacji 400/401/402/403 pomija danego dostawcę na
-  co najmniej 15 minut; pozostali nadal działają. Zmiana klucza rozpoczyna nowe próby.
-- Niepoprawny JSON, niewłaściwy znak bazowych efektów, bliska kopia poprzedniego
-  eventu lub ucięta odpowiedź powodują próbę kolejnego modelu. Odrzucenie treści
-  przez dostawcę kończy wywołanie. Wyniki nadal przechodzą walidację gry.
-- Odpowiedzi mają limit 2400 tokenów. GPT-OSS używa niskiego poziomu rozumowania;
-  narrator otrzymuje krótszą historię i najwyżej dwa zapamiętane eventy.
-- Jeśli wszystkie próby zawiodą, `/event generate` i `/event all` nie zapisują
-  fikcyjnego szkicu ani nie zużywają pozycji w rotacji. Istniejący event zachowuje
-  trzy opcje i reguły awaryjne oceny skutków. Nie zmieniają się granice zatwierdzone przez GM.
-
-Logi przełączania podają dostawcę, model i klasę/kod błędu, bez kluczy,
-treści promptu lub odpowiedzi dostawcy. Integracje są sprawdzane testami HTTP
-z odpowiedziami zastępczymi; faktyczny dostęp wymaga kluczy właściciela bota.
-
-Protokoły: [Groq](https://console.groq.com/docs/openai),
-[GPT-OSS i rozumowanie](https://console.groq.com/docs/reasoning),
-[Gemini](https://ai.google.dev/gemini-api/docs/rate-limits).
+Dokumentacja dostawcy: [limity](https://ai.google.dev/gemini-api/docs/rate-limits),
+[modele](https://ai.google.dev/gemini-api/docs/models),
+[terminy wycofania modeli](https://ai.google.dev/gemini-api/docs/deprecations).
+Nazwy domyślnych modeli zapasowych sprawdzono 21 września 2026 r.

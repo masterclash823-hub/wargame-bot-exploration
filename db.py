@@ -281,12 +281,6 @@ CREATE TABLE IF NOT EXISTS ruin_event_links (
     context_json TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS event_generation (
-    event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
-    topic TEXT NOT NULL,
-    mood TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS event_publications (
     event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
     visibility TEXT NOT NULL DEFAULT 'private',

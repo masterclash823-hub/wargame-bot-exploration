@@ -82,14 +82,10 @@ Ilustracja pojawia się w dużym formacie pod tekstem eventu, a flaga państwa
 pozostaje osobną miniaturą. Zapisany obraz jest też widoczny w DM, `/event play`,
 kolejnych scenach i podsumowaniu; nie wymaga ponownego wyszukiwania.
 
-Eventy rotują dziesięć tematów; na każde pięć nowych szkiców dla państwa
-przypadają dwie szanse, dwa zagrożenia i jedno wydarzenie mieszane.
-Decyzje graczy nadal rozstrzygają wynik. [Zasady różnorodności](docs/event-variety.md).
-
-Po wyczerpaniu limitu bot może przejść z Gemini do Groq, Mistral i darmowych
-modeli OpenRouter. W Renderze dodaj opcjonalne `GROQ_API_KEY`, `MISTRAL_API_KEY`
-i `OPENROUTER_API_KEY`. Bez nowych kluczy pozostają modele zapasowe Gemini.
-[Darmowe plany, konfiguracja i zachowanie przy awarii](docs/event-ai-fallback.md).
+Po wyczerpaniu limitu modelu eventy próbują modeli zapasowych. Domyślna kolejność
+to `GEMINI_MODEL`, `gemini-2.5-flash-lite`, `gemini-2.5-flash`.
+Listę zapasową można zmienić przez `GEMINI_FALLBACK_MODELS` w Renderze.
+[Przełączanie modeli i zachowanie przy awarii](docs/event-ai-fallback.md).
 
 Plan bitwy bez przypisanych jednostek nadal można zapisać, ale autor oraz GM
 przeglądający `/battle plans_pending` otrzymają ostrzeżenie. Wpisanie jednostek

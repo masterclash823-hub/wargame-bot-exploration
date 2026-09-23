@@ -251,7 +251,6 @@ class EventBatchTests(EventFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_strict_generation_uses_theme_and_rejects_fallback(self):
         n, _ = event_drafts.candidate(1)
-        n['event_brief']['mood']='positive'
         generate = AsyncMock(return_value='Narrative\nEFFECTS: {"stability":1}')
         with patch('event_ai.generate_text',generate):
             text, effects = await events._generate_event(n, theme='A harsh winter', strict=True)

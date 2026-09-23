@@ -19,8 +19,7 @@ class ModelFixture:
     def setUp(self):
         super().setUp()
         ai._unavailable_until.clear();self.addCleanup(ai._unavailable_until.clear)
-        for name,value in [('GEMINI_MODEL','primary'),('GEMINI_FALLBACK_MODELS','backup,final'),
-                           ('EVENT_AI_PROVIDERS','gemini'),('GROQ_API_KEY',''),('MISTRAL_API_KEY',''),('OPENROUTER_API_KEY','')]:
+        for name,value in [('GEMINI_MODEL','primary'),('GEMINI_FALLBACK_MODELS','backup,final')]:
             setting=patch.object(config,name,value);setting.start();self.addCleanup(setting.stop)
 
 
@@ -75,9 +74,7 @@ class FailoverTests(ModelFixture,unittest.IsolatedAsyncioTestCase):
         async def hung(*args):await asyncio.Future()
         with patch.object(ai,'TOTAL_TIMEOUT',.01),patch.object(ai,'_request',AsyncMock(side_effect=hung)) as call:
             with self.assertRaises(ai.EventAIError):await ai.generate_text('Prompt')
-            self.assertGreaterEqual(call.await_count,1)
-            self.assertLessEqual(call.await_count,3)
-            self.assertTrue(all(c.args[2]<=.01 for c in call.call_args_list))
+            self.assertEqual(call.await_count,1)
 
     async def test_caller_cancellation_never_requests_another_model(self):
         request=AsyncMock(side_effect=asyncio.CancelledError)
@@ -113,10 +110,9 @@ class EventFallbackTests(ModelFixture,DatabaseFixture,unittest.IsolatedAsyncioTe
 
     async def test_draft_batch_and_owner_language_use_backup_without_placeholder(self):
         i18n.set_user_language(2,'pl')
-        brief=dict(topic='culture',mood='positive',previous_event_id=0,recent=[])
         request=AsyncMock(side_effect=[ai.EventAIError(429),'Opowieść.\nEFFECTS: {"stability":1}',
-                                     'Story A.\nEFFECTS: {"stability":1}','Opowieść B.\nEFFECTS: {"stability":1}'])
-        with patch.object(ai,'_request',request),patch('event_variety.plan',return_value=brief):
+                                     'Story A.\nEFFECTS: {}','Opowieść B.\nEFFECTS: {}'])
+        with patch.object(ai,'_request',request):
             text,effects=await events._generate_event(self.nation(),strict=True)
             self.assertEqual(text,'Opowieść.');self.assertEqual(json.loads(effects),{'stability':1})
             self.assertIn('special_note in Polish',request.call_args_list[1].args[1])
