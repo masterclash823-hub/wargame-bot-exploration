@@ -38,6 +38,15 @@ GEMINI_API_KEY = _require("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 GEMINI_FALLBACK_MODELS = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite,gemini-2.5-flash")
 
+# Optional independent event providers. Use free-tier accounts; never put keys in code.
+EVENT_AI_PROVIDERS = os.getenv("EVENT_AI_PROVIDERS", "gemini,groq,mistral,openrouter")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+GROQ_EVENT_MODEL = os.getenv("GROQ_EVENT_MODEL", "openai/gpt-oss-120b").strip()
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "").strip()
+MISTRAL_EVENT_MODEL = os.getenv("MISTRAL_EVENT_MODEL", "mistral-small-latest").strip()
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_EVENT_MODEL = os.getenv("OPENROUTER_EVENT_MODEL", "openrouter/free").strip()
+
 # --- Database ---
 DB_PATH = os.getenv("DB_PATH", "/tmp/wargame.db")
 

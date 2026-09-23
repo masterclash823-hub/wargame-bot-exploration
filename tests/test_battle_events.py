@@ -72,7 +72,8 @@ class BattleEventTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
             i18n.set_user_language(2, language)
             i18n.set_user_language(999, "en" if language == "pl" else "pl")
             generate = AsyncMock(return_value='Narrative\nEFFECTS: {"stability":1}')
-            with patch('event_ai.generate_text',generate):
+            with patch('event_ai.generate_text',generate), patch('event_variety.plan',return_value={
+                    'topic':'culture','mood':'positive','recent':[],'previous_event_id':0}):
                 text, effects = await events._generate_event(self.nation())
             prompt = generate.call_args.args[0]
             self.assertIn(f"special_note in {expected}", prompt)
