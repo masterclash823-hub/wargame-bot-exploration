@@ -64,11 +64,15 @@ podział pozostaje symulacją. Zmiana dotyczy nowych rozstrzygnięć.
 
 GM ustawia kanał przez `/event channel channel:#wydarzenia`. Przy publikacji
 `/event post event_id:12 visibility:public` pokazuje wszystkim narrację i ilustrację
-wyszukaną w Wikimedia Commons. Opcjonalne `channel` zmienia kanał dla jednego
-eventu, a `image_query` pozwala podać hasła wyszukiwania ilustracji.
+wyszukaną w Wikimedia Commons lub zapasowo w Art Institute of Chicago.
+Opcjonalne `channel` zmienia kanał dla jednego eventu, a `image_query` pozwala
+podać hasła wyszukiwania ilustracji.
 Bot wybiera obrazy domeny publicznej/CC0 i odrzuca oznaczone jako wygenerowane AI.
-Jeżeli nie znajdzie ilustracji lub wyszukiwarka jest niedostępna, rozpoczyna event
-bez obrazka. `include_image:False` wyłącza wyszukiwanie, również gdy podano
+Sprawdza pobrany plik i wysyła go jako załącznik, niezależnie od zewnętrznego linku.
+Bot potrzebuje prawa **Załączanie plików** na kanale eventów. Można również
+podać własną ilustrację przez opcję `file` (JPG, PNG lub WebP do 6 MB).
+Jeżeli oba źródła zawiodą, rozpoczyna event bez obrazka i podaje GM sposób naprawy.
+`include_image:False` wyłącza ilustrację, również gdy podano plik lub
 `image_query`. Puste `image_query` przy włączonym obrazku oznacza automatyczny
 dobór tematu, a nie wyłączenie ilustracji.
 
@@ -77,10 +81,15 @@ państwa oraz GM. Państwo wskazuje się wcześniej przy `/event generate`.
 Decyzje w obu trybach trafiają do gracza przez DM; przy zamkniętych DM można
 użyć `/event play`. Publiczna wiadomość nie zawiera opcji ani efektów liczbowych.
 Prywatne eventy i ich historia nie są widoczne dla innych graczy.
+Ilustracje są domyślnie wyszukiwane także dla prywatnych eventów.
 
 Ilustracja pojawia się w dużym formacie pod tekstem eventu, a flaga państwa
 pozostaje osobną miniaturą. Zapisany obraz jest też widoczny w DM, `/event play`,
 kolejnych scenach i podsumowaniu; nie wymaga ponownego wyszukiwania.
+Plik jest przechowywany w bazie gry i dołączany ponownie po restarcie.
+`/event image event_id:12` ponawia wyszukiwanie lub przyjmuje opcję `file`,
+nie resetując decyzji. Dla dawnych publicznych postów można podać ich
+`message_link`, aby poprawić tę samą wiadomość. [Szczegóły](docs/event-images.md).
 
 Po wyczerpaniu limitu modelu eventy próbują modeli zapasowych. Domyślna kolejność
 to `GEMINI_MODEL`, `gemini-2.5-flash-lite`, `gemini-2.5-flash`.

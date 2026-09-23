@@ -23,7 +23,7 @@ import db
 import i18n
 from utils import short_date
 import event_adventure as adventure
-from event_ui import EventView, render_event, render_public_event
+from event_ui import EventView, send_event
 from event_images import find_event_image
 
 
@@ -459,11 +459,13 @@ class EventsCog(commands.Cog):
     @app_commands.describe(event_id="Event ID / ID eventu", channel="Public event channel / Kanał publicznego eventu",
                            visibility="public = everyone, private = nation owner / Widoczność",
                            image_query="Optional image search keywords / Opcjonalne hasła wyszukiwania obrazka",
-                           include_image="Search for an illustration (optional) / Szukaj ilustracji (opcjonalne)")
+                           include_image="Search for an illustration (optional) / Szukaj ilustracji (opcjonalne)",
+                           file="Optional JPG, PNG or WebP illustration / Opcjonalny plik ilustracji")
     @i18n.localized
     async def event_post(self, interaction: discord.Interaction, event_id: int,
                          visibility: Literal['public', 'private'] = 'private',
-                         channel: discord.TextChannel = None, image_query: str = '', include_image: bool = True):
+                         channel: discord.TextChannel = None, image_query: str = '', include_image: bool = True,
+                         file: discord.Attachment = None):
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
@@ -504,8 +506,20 @@ class EventsCog(commands.Cog):
                     'Kanał musi być widoczny dla @everyone, a bot musi móc go czytać i wysyłać osadzone wiadomości.',
                     'The channel must be visible to @everyone and the bot must be able to view it and send embeds.'), ephemeral=True)
                 return
-            if include_image:
-                image = await find_event_image(ev['gm_final_text'], image_query)
+            if include_image and not permissions.attach_files:
+                await interaction.followup.send(adventure.tr(_lang(interaction),
+                    'Włącz botowi uprawnienie „Załączanie plików” na kanale eventów. Ilustracje są wysyłane jako pliki.',
+                    'Enable Attach Files for the bot in the event channel. Illustrations are sent as files.'),ephemeral=True)
+                return
+        if include_image:
+            if file:
+                from event_images import from_upload
+                try:image=await from_upload(file)
+                except (ValueError,discord.HTTPException):
+                    await interaction.followup.send(adventure.tr(_lang(interaction),
+                        'Wgraj prawidłowy JPG, PNG lub WebP do 6 MB i 12 mln pikseli.',
+                        'Upload a valid JPG, PNG or WebP up to 6 MB and 12 million pixels.'),ephemeral=True);return
+            else:image = await find_event_image(ev['gm_final_text'], image_query)
         try:
             prepared = await adventure.prepare_run(ev, nat)
             prepared.update(visibility=visibility, channel_id=str(ch.id) if ch else None, public_image=image)
@@ -514,18 +528,19 @@ class EventsCog(commands.Cog):
             await interaction.followup.send(str(exc), ephemeral=True)
             return
         # Publishing opens the first decision. No nation balances change here.
-        embed = render_event(state)
         failures = []
         if ch:
             try:
-                await ch.send(embed=render_public_event(state), allowed_mentions=discord.AllowedMentions.none())
+                sent=await send_event(ch.send,state,public=True)
+                from event_media import remember_message
+                remember_message(event_id,getattr(sent,'id',None))
             except discord.HTTPException:
                 failures.append("channel")
         try:
             owner = interaction.guild.get_member(int(nat["owner_id"])) if interaction.guild else None
             if owner is None:
                 owner = await self.bot.fetch_user(int(nat["owner_id"]))
-            await owner.send(embed=embed, view=EventView(state), allowed_mentions=discord.AllowedMentions.none())
+            await send_event(owner.send,state,view=EventView(state))
         except (discord.HTTPException, ValueError):
             failures.append("DM")
         notice = adventure.tr(state["lang"],
@@ -533,11 +548,22 @@ class EventsCog(commands.Cog):
             f"✅ Event #{event_id} started. The player can use /event play {event_id}. Effects apply after decision three.")
         if failures:
             notice += "\n" + adventure.tr(state["lang"], "Nie udało się wysłać: ", "Delivery failed: ") + ", ".join(failures)
-        if visibility == 'public' and include_image and not image:
+        if include_image and not image:
             notice += "\n" + adventure.tr(_lang(interaction),
-                'Ilustracja jest niedostępna — event rozpoczęto bez obrazka.',
-                'An illustration is unavailable — the event started without an image.')
-        await interaction.followup.send(notice, embed=embed, view=EventView(state), ephemeral=True)
+                'Nie udało się pobrać ilustracji z obu źródeł. Dodaj ją przez /event image — możesz podać własny plik.',
+                'Neither source returned a downloadable illustration. Use /event image to retry or upload a file.')
+        await send_event(interaction.followup.send,state,content=notice,view=EventView(state),ephemeral=True)
+
+    @event_grp.command(name='image',description='[GM] Add or replace an event illustration / Dodaj lub zmień ilustrację eventu')
+    @app_commands.describe(event_id='Event ID / ID eventu',
+                           image_query='Optional image search keywords / Opcjonalne hasła wyszukiwania obrazka',
+                           file='Optional JPG, PNG or WebP illustration / Opcjonalny plik ilustracji',
+                           message_link='Old public event message link (optional) / Link do starego publicznego eventu')
+    @i18n.localized
+    async def event_image(self,interaction:discord.Interaction,event_id:int,image_query:str='',
+                          file:discord.Attachment=None,message_link:str=''):
+        from event_image_repair import repair
+        await repair(self.bot,interaction,event_id,image_query,file,message_link)
 
     @event_grp.command(name='channel', description='[GM] Default public event channel / Kanał eventów')
     @i18n.localized
@@ -564,8 +590,7 @@ class EventsCog(commands.Cog):
         except ValueError as exc:
             await interaction.followup.send(str(exc), ephemeral=True)
             return
-        await interaction.followup.send(embed=render_event(state), view=EventView(state),
-                                        ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+        await send_event(interaction.followup.send,state,view=EventView(state),ephemeral=True)
 
     # -------------------------------------------------- /event list
     @event_grp.command(name="list",
