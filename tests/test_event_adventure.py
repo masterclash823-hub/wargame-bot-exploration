@@ -124,6 +124,25 @@ class InteractiveTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
             await flow.decide(state["event_id"], 0, 2, choice=1)
         self.assertEqual(flow.load_run(state["event_id"])["version"], 1)
 
+    async def test_fallback_choices_can_be_regenerated_without_consuming_turn(self):
+        state=await self.start()
+        state['choices']=['Cautious action','Balanced action','Decisive action']
+        state['scene_fallback']=True
+        with db.cursor() as c:
+            c.execute('UPDATE event_runs SET state_json=? WHERE event_id=?',(json.dumps(state),state['event_id']))
+        before=self.balances()
+        async def regenerated(current):
+            current['scene_fallback']=False
+            return 'A specific new situation',['Scout the road','Negotiate passage','Force a crossing']
+        with patch.object(flow,'scene',side_effect=regenerated):
+            updated=await flow.retry_scene(state['event_id'],0,2)
+        self.assertEqual(updated['version'],1)
+        self.assertEqual(updated['history'],[])
+        self.assertEqual(before,self.balances())
+        self.assertEqual(len(EventView(updated).children),4)
+        with self.assertRaises(ValueError):
+            await flow.retry_scene(state['event_id'],0,2)
+
     async def test_concurrent_final_and_rollback(self):
         state = await self.start()
         for i in range(2):

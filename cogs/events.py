@@ -63,23 +63,22 @@ def _cfg(key, default=""):
 
 
 def _build_nation_context(nat, topic=None) -> str:
-    """Bound context and include optional institutions only when relevant to the topic."""
+    """Build authoritative current context, including a non-mutating monthly forecast."""
     tech      = json.loads(nat["tech_json"])
     resources = json.loads(nat["resources_json"])
     tech_str  = ", ".join(f"{i18n.term(k)} {v:.1f}" for k, v in tech.items())
-    res_str   = ", ".join(f"{k}: {v:.0f}" for k, v in resources.items() if v > 0)[:400]
+    res_str   = ", ".join(f"{k}: {v:.2f}" for k, v in resources.items() if v != 0)
 
-    # Avoid flooding every event with the same history and monthly reports.
     with db.cursor() as c:
         c.execute(
             "SELECT timestamp, source, entry_text FROM nation_history "
             "WHERE nation_id=? AND source IN ('system','gm','player','ai','lore') "
-            "ORDER BY timestamp DESC, id DESC LIMIT 6",
+            "ORDER BY timestamp DESC, id DESC LIMIT 15",
             (nat["id"],)
         )
         history = c.fetchall()
     history_str = "\n".join(
-        f"[{short_date(r['timestamp'])} {r['source'].upper()}] {r['entry_text'][:400]}"
+        f"[{short_date(r['timestamp'])} {r['source'].upper()}] {r['entry_text'][:1200]}"
         for r in reversed(history)
     ) or "No recorded history yet."
 
@@ -93,7 +92,7 @@ def _build_nation_context(nat, topic=None) -> str:
             (nat["id"], nat["id"], nat["id"])
         )
         relations = c.fetchall()
-    rel_str = ", ".join(f"{r['other']} ({r['status']})" for r in relations)[:600] or "None on record."
+    rel_str = ", ".join(f"{r['other']} ({r['status']})" for r in relations) or "None on record."
 
     # Current in-game date
     month = _cfg("current_month", "?")
@@ -106,10 +105,7 @@ def _build_nation_context(nat, topic=None) -> str:
         mname = i18n.text('Month {p0}', p0=month)
 
     from world_service import memories
-    remembered=json.dumps([
-        dict(opening=m['opening'][:250],decisions=[s[:120] for s in m['decisions'][-2:]],outcome=m['outcome'])
-        for m in memories(nat['id'],event_variety.TOPICS.get(topic,''),limit=2)
-    ],ensure_ascii=False)
+    remembered=json.dumps(memories(nat['id'],event_variety.TOPICS.get(topic,''),limit=6),ensure_ascii=False)
     from labor_regimes import state as labor_state
     with db.cursor() as c:
         labor=labor_state(c,nat['id'])
@@ -119,14 +115,30 @@ def _build_nation_context(nat, topic=None) -> str:
         marriages=json.dumps(c.fetchall(),ensure_ascii=False)
         c.execute("SELECT state_json FROM explorations WHERE nation_id=? AND status='resolved' ORDER BY id DESC LIMIT 3",(nat['id'],))
         expeditions=[{k:s[k] for k in ('text','success')} for row in c.fetchall() for s in [json.loads(row['state_json'])]]
-    institutions=[]
-    if topic in (None,'society','military'):
-        institutions.append(f"Labor policy: {labor['mode']}; emancipation transition remaining: {labor['transition_months']} months. "
-                            f"Enslaved war captives already included in population: {labor.get('captives',0)}.")
-    if topic in (None,'diplomacy','society'):
-        institutions.append('Active dynastic bonds (all participants are adult fictional characters): '+marriages[:700])
-    if topic in (None,'exploration','ruins'):
-        institutions.append('Recent expedition outcomes: '+json.dumps(expeditions,ensure_ascii=False)[:1000])
+    institutions=[
+        f"Labor policy: {labor['mode']}; emancipation transition remaining: {labor['transition_months']} months. "
+        f"Enslaved war captives already included in population: {labor.get('captives',0)}.",
+        'Active dynastic bonds (all participants are adult fictional characters): '+marriages,
+        'Recent expedition outcomes: '+json.dumps(expeditions,ensure_ascii=False),
+    ]
+    try:
+        from economy_engine import forecast
+        projection=forecast(nat['id'])
+        food_now=float(resources.get('food',0))
+        produced=float(projection.get('production',{}).get('food',0))
+        needed=float(projection.get('food_needed',0))
+        net=float(projection.get('food_change',0))
+        ending=float(projection.get('resources',{}).get('food',food_now+net))
+        shortage=float(projection.get('food_shortage',0))
+        spoilage=float(projection.get('spoilage',0))
+        food_context=(f"Food economy for the next monthly tick (authoritative forecast): current stock {food_now:.2f}; "
+                      f"domestic production {produced:.2f}; consumption need {needed:.2f}; net stock change {net:+.2f}; "
+                      f"ending stock {ending:.2f}; unmet need {shortage:.2f}; spoilage {spoilage:.2f}. "
+                      "Net change already includes consumption, trade and spoilage. A low stock is not a shortage when "
+                      "the forecast covers demand; a large stock is not a surplus when the monthly balance is negative.")
+    except Exception:
+        food_context=(f"Food economy: current stock {float(resources.get('food',0)):.2f}; monthly production, "
+                      "consumption and shortage forecast unavailable. Do not infer famine or surplus from stock alone.")
     return f"""Nation: {nat['name']}
 Government: {nat['government_type']}
 Stability: {nat['stability']:.0f}/100
@@ -134,9 +146,12 @@ Treasury: {nat['treasury']:.0f} gold
 Population: {nat['population']:,}
 Tech levels: {tech_str}
 Resources (non-zero): {res_str or 'none'}
+{food_context}
 Diplomatic relations: {rel_str}
 {' '.join(institutions)}
 These are background facts, not mandatory plot hooks. Do not invent people as tradable resources or new mechanical effects.
+Food effects in an event change the stock once. Do not describe them as a permanent change to production, consumption,
+population, taxes or buildings unless that mechanism is explicitly present in the approved effects.
 Current in-game date: {mname}, Year {year}
 
 Recent history:

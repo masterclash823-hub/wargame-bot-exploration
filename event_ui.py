@@ -65,6 +65,10 @@ def render_event(state):
                         adventure.tr(lang, "Skutek zależy od sensu decyzji. Limit: ",
                                      "Outcome depends on the decision. Limit: ")
                         + adventure.effect_limits_text(state)[:750], inline=False)
+    if adventure.needs_scene_retry(state):
+        embed.add_field(name=adventure.tr(lang,"Wybory awaryjne","Fallback choices"), value=adventure.tr(lang,
+            "AI nie przygotowało poprawnych wyborów. Użyj przycisku poniżej, aby wygenerować je ponownie bez zużywania decyzji.",
+            "AI did not prepare valid choices. Use the button below to regenerate them without consuming a decision."), inline=False)
     embed.add_field(name=adventure.tr(lang, "Zasady", "Rules"), value=adventure.tr(lang,
         "Każda decyzja wnosi ⅓ końcowego skutku. AI ocenia osobno wpływ na złoto, stabilność i zasoby, więc znak może się odwrócić. "
         "GM nadal ustala dozwolone rodzaje oraz maksymalną skalę efektów; AI nie może stworzyć nowych nagród.",
@@ -120,6 +124,11 @@ class EventView(discord.ui.View):
         other = discord.ui.Button(label=adventure.tr(state["lang"], "Własna odpowiedź", "Custom response"))
         other.callback = self._custom
         self.add_item(other)
+        if adventure.needs_scene_retry(state):
+            retry=discord.ui.Button(label=adventure.tr(state['lang'],'Wygeneruj wybory ponownie','Regenerate choices'),
+                                    style=discord.ButtonStyle.secondary,row=1)
+            retry.callback=self._retry
+            self.add_item(retry)
 
     async def interaction_check(self, interaction):
         if str(interaction.user.id) == self.state["owner_id"]:
@@ -135,3 +144,19 @@ class EventView(discord.ui.View):
 
     async def _custom(self, interaction):
         await interaction.response.send_modal(CustomAnswer(self.state))
+
+    async def _retry(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            updated=await adventure.retry_scene(self.state['event_id'],self.state['version'],interaction.user.id)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True)
+            return
+        except Exception:
+            logging.exception('Failed to regenerate event %s choices',self.state['event_id'])
+            await interaction.followup.send(adventure.tr(self.state['lang'],
+                'Nie udało się zapisać nowych wyborów. Użyj /event play.',
+                'Could not save new choices. Use /event play.'),ephemeral=True)
+            return
+        await interaction.followup.send(embed=render_event(updated),view=EventView(updated),ephemeral=True,
+                                        allowed_mentions=discord.AllowedMentions.none())

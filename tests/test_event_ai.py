@@ -136,7 +136,7 @@ class EventFallbackTests(ModelFixture,DatabaseFixture,unittest.IsolatedAsyncioTe
             self.assertEqual(impact['treasury'],-1);self.assertFalse(fallback)
             impact,_,fallback=await flow.assess_consequence(state,'Atak',2)
             self.assertTrue(fallback);self.assertLessEqual(abs(impact['treasury']),1.5)
-        self.assertEqual([c.args[0] for c in request.call_args_list],['primary','backup','backup','backup','backup'])
+        self.assertEqual([c.args[0] for c in request.call_args_list],['primary','backup','backup','backup','backup','final'])
 
     async def test_all_models_failed_preserves_playable_event_and_batch_does_not_save_placeholder(self):
         before=self.balances()
