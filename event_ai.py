@@ -51,15 +51,20 @@ class Target:
 
 
 def targets():
-    """Try independent providers before a second model on the same account."""
+    """Prefer every configured Gemini model, then use the free provider fallbacks."""
     configured = {
         'gemini': (config.GEMINI_API_KEY, models()),
         'groq': (config.GROQ_API_KEY, [config.GROQ_EVENT_MODEL]),
         'mistral': (config.MISTRAL_API_KEY, [config.MISTRAL_EVENT_MODEL]),
         'openrouter': (config.OPENROUTER_API_KEY, [config.OPENROUTER_EVENT_MODEL]),
     }
-    groups = []
-    for provider in dict.fromkeys(s.strip().lower() for s in config.EVENT_AI_PROVIDERS.split(',')):
+    requested = list(dict.fromkeys(s.strip().lower() for s in config.EVENT_AI_PROVIDERS.split(',') if s.strip()))
+    if not requested:
+        return []
+    # Gemini is the canonical event model and is always first when AI is enabled.
+    order = ['gemini', *[provider for provider in requested if provider != 'gemini']]
+    result = []
+    for provider in order:
         if provider not in configured:
             continue
         key, names = configured[provider]
@@ -69,10 +74,8 @@ def targets():
             names = [name for name in names if name == 'openrouter/free' or name.endswith(':free')]
             if not names:
                 log.warning('Event AI: OpenRouter requires openrouter/free or a :free model; provider skipped')
-        group = [Target(provider, name, key) for name in names if name]
-        if group:
-            groups.append(group)
-    return [group[i] for i in range(max(map(len, groups), default=0)) for group in groups if i < len(group)]
+        result.extend(Target(provider, name, key) for name in names if name)
+    return result
 
 
 def retry_delay(headers, payload):
@@ -101,13 +104,16 @@ def retry_delay(headers, payload):
     return delay
 
 
-async def _request(model,prompt,timeout):
+async def _request(model,prompt,timeout, *, json_mode=False):
     """One HTTP request, with cancellation and no hidden SDK retries."""
     url='https://generativelanguage.googleapis.com/v1beta/models/'+quote(model,safe='')+':generateContent'
+    generation_config={'maxOutputTokens':MAX_OUTPUT_TOKENS}
+    if json_mode:
+        generation_config['responseMimeType']='application/json'
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
         async with session.post(url,headers={'x-goog-api-key':config.GEMINI_API_KEY},
                                 json={'contents':[{'role':'user','parts':[{'text':prompt}]}],
-                                      'generationConfig':{'maxOutputTokens':MAX_OUTPUT_TOKENS}},
+                                      'generationConfig':generation_config},
                                 allow_redirects=False) as response:
             try:payload=await response.json(content_type=None)
             except ValueError:payload={}
@@ -130,7 +136,7 @@ async def _request(model,prompt,timeout):
     return text
 
 
-async def _chat_request(target,prompt,timeout):
+async def _chat_request(target,prompt,timeout, *, json_mode=False):
     body={'model':target.model,'messages':[{'role':'user','content':prompt}],'stream':False}
     if target.provider=='groq':
         body['max_completion_tokens']=MAX_OUTPUT_TOKENS
@@ -138,6 +144,8 @@ async def _chat_request(target,prompt,timeout):
             body.update(reasoning_effort='low',include_reasoning=False)
     else:
         body['max_tokens']=MAX_OUTPUT_TOKENS
+    if json_mode:
+        body['response_format']={'type':'json_object'}
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
         async with session.post(CHAT_ENDPOINTS[target.provider],
                                 headers={'Authorization':'Bearer '+target.api_key},
@@ -163,7 +171,7 @@ async def _chat_request(target,prompt,timeout):
     return text.strip()
 
 
-async def generate_text(prompt, *, validate=None):
+async def generate_text(prompt, *, validate=None, json_mode=False):
     """Bound the whole operation; optional validation retries malformed game output."""
     deadline=time.monotonic()+TOTAL_TIMEOUT
     candidates=targets()
@@ -180,7 +188,12 @@ async def generate_text(prompt, *, validate=None):
                       _unavailable_until.get((t.provider,t.api_key,'*'),0))<=now for t in candidates[index:])
         timeout=min(REQUEST_TIMEOUT,remaining/max(1,slots))
         try:
-            request=_request(target.model,prompt,timeout) if target.provider=='gemini' else _chat_request(target,prompt,timeout)
+            if target.provider=='gemini':
+                request=(_request(target.model,prompt,timeout,json_mode=True) if json_mode
+                         else _request(target.model,prompt,timeout))
+            else:
+                request=(_chat_request(target,prompt,timeout,json_mode=True) if json_mode
+                         else _chat_request(target,prompt,timeout))
             text=await asyncio.wait_for(request,timeout=timeout)
             if validate:
                 try:validate(text)

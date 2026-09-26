@@ -93,9 +93,10 @@ class VarietyTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         self.assertIn('Assigned opening mood: positive', prompt)
         self.assertIn('A recent flood.', prompt)
         self.assertNotIn('A drought has struck', prompt)
-        self.assertNotIn('Labor policy:', prompt)
-        self.assertNotIn('Recent expedition outcomes:', prompt)
-        self.assertNotIn('Active dynastic bonds', prompt)
+        self.assertIn('Labor policy:', prompt)
+        self.assertIn('Recent expedition outcomes:', prompt)
+        self.assertIn('Active dynastic bonds', prompt)
+        self.assertIn('Food economy for the next monthly tick',prompt)
         with self.assertRaises(ValueError):
             ai.call_args.kwargs['validate']('A benefit.\nEFFECTS: {"treasury":-5}')
 
@@ -108,8 +109,26 @@ class VarietyTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
             for _ in range(20):
                 c.execute('INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,?,?)', (1, 'gm', 'x' * 4000))
         context = events._build_nation_context(n, 'craft')
-        self.assertLess(len(context), 5000)
+        self.assertLess(len(context), 25000)
+        self.assertGreater(len(context), 10000)
         self.assertIn('Private remembered decisions', context)
+
+    async def test_context_uses_exact_food_forecast_without_advancing_economy(self):
+        before=self.balances()
+        with db.cursor() as c:
+            c.execute("SELECT value FROM game_config WHERE key='current_month'")
+            row=c.fetchone();month=row['value'] if row else None
+        context=events._build_nation_context(before[0],'society')
+        self.assertIn('domestic production',context)
+        self.assertIn('consumption need',context)
+        self.assertIn('net stock change',context)
+        self.assertIn('A low stock is not a shortage',context)
+        self.assertIn('a large stock is not a surplus',context)
+        self.assertEqual(before,self.balances())
+        with db.cursor() as c:
+            c.execute("SELECT value FROM game_config WHERE key='current_month'")
+            after=c.fetchone()
+        self.assertEqual(month,after['value'] if after else None)
 
     async def test_real_batch_saves_each_brief_and_preserves_balances(self):
         before = self.balances()

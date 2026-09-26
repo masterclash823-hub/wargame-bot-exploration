@@ -20,12 +20,12 @@ class ProviderTests(ModelFixture, unittest.IsolatedAsyncioTestCase):
             setting = patch.object(config, name, value)
             setting.start(); self.addCleanup(setting.stop)
 
-    async def test_independent_accounts_are_tried_before_more_gemini_models(self):
+    async def test_all_gemini_models_are_tried_before_other_providers(self):
         google = AsyncMock(side_effect=ai.EventAIError(429))
         chat = AsyncMock(side_effect=[ai.EventAIError(429), ai.EventAIError(503), 'Recovered'])
         with patch.object(ai, '_request', google), patch.object(ai, '_chat_request', chat):
             self.assertEqual(await ai.generate_text('private prompt'), 'Recovered')
-        google.assert_awaited_once()
+        self.assertEqual(google.await_count,3)
         self.assertEqual([c.args[0].provider for c in chat.call_args_list], ['groq', 'mistral', 'openrouter'])
         self.assertTrue(all(c.args[1] == 'private prompt' for c in chat.call_args_list))
 
@@ -37,7 +37,7 @@ class ProviderTests(ModelFixture, unittest.IsolatedAsyncioTestCase):
         with patch.object(config, 'OPENROUTER_EVENT_MODEL', 'vendor/model:free'):
             self.assertIn('vendor/model:free', [t.model for t in ai.targets()])
         with patch.object(config, 'EVENT_AI_PROVIDERS', 'unknown,groq,groq, gemini'):
-            self.assertEqual([t.provider for t in ai.targets()], ['groq', 'gemini', 'gemini', 'gemini'])
+            self.assertEqual([t.provider for t in ai.targets()], ['gemini', 'gemini', 'gemini', 'groq'])
 
     async def test_auth_failure_skips_whole_provider_and_retries_with_changed_key(self):
         google = AsyncMock(side_effect=[ai.EventAIError(401), 'Google recovered'])
@@ -76,7 +76,7 @@ class ProviderTests(ModelFixture, unittest.IsolatedAsyncioTestCase):
         with patch.object(ai, 'TOTAL_TIMEOUT', .12), patch.object(ai, '_request', side_effect=hung), \
                 patch.object(ai, '_chat_request', chat):
             self.assertEqual(await ai.generate_text('Prompt'), 'Fast backup')
-        self.assertEqual(cancelled, [True])
+        self.assertEqual(cancelled, [True,True,True])
         self.assertLess(time.monotonic() - start, .5)
         self.assertEqual(chat.call_args.args[0].provider, 'groq')
 
@@ -89,6 +89,15 @@ class ProviderTests(ModelFixture, unittest.IsolatedAsyncioTestCase):
                 patch.object(ai, '_chat_request', chat), self.assertRaises(ai.EventAIError):
             await ai.generate_text('Prompt')
         chat.assert_not_awaited()
+
+    async def test_valid_json_with_missing_choices_uses_next_model(self):
+        replies=[json.dumps({'text':'Scene','choices':['Only one']}),
+                 json.dumps({'text':'Scene','choices':['Careful','Practical','Bold']})]
+        with patch.object(ai,'_request',AsyncMock(side_effect=replies)) as request:
+            result=await event_adventure._ai_json('JSON please',validate=event_adventure._validate_scene)
+        self.assertEqual(result['choices'],['Careful','Practical','Bold'])
+        self.assertEqual(request.await_count,2)
+        self.assertTrue(all(call.kwargs['json_mode'] for call in request.call_args_list))
 
     async def test_truncated_response_can_use_another_provider(self):
         with patch.object(ai, '_request', AsyncMock(side_effect=ai.EventAIOutputError())), \
@@ -125,19 +134,26 @@ class ProviderTests(ModelFixture, unittest.IsolatedAsyncioTestCase):
                 ctx.__aexit__.assert_awaited_once(); response.__aexit__.assert_awaited_once()
                 self.assertNotIn(target.api_key, repr(target))
 
+    async def test_json_mode_is_sent_to_chat_provider(self):
+        target=next(t for t in ai.targets() if t.provider=='groq')
+        session,ctx,_=self.session({'choices':[{'finish_reason':'stop','message':{'content':'{}'}}]})
+        with patch.object(ai.aiohttp,'ClientSession',return_value=ctx):
+            await ai._chat_request(target,'Prompt',3,json_mode=True)
+        self.assertEqual(session.post.call_args.kwargs['json']['response_format'],{'type':'json_object'})
+
     async def test_refusal_truncation_and_empty_content_are_not_game_data(self):
         for message, reason in (({'content': 'Partial'}, 'length'), ({'content': 'Blocked'}, 'content_filter'),
                                 ({'content': '', 'reasoning': 'Thinking only'}, 'stop'),
                                 ({'content': 'No', 'refusal': 'No'}, 'stop')):
             _, ctx, _ = self.session({'choices': [{'finish_reason': reason, 'message': message}]})
             with patch.object(ai.aiohttp, 'ClientSession', return_value=ctx), self.assertRaises(ai.EventAIError):
-                await ai._chat_request(ai.targets()[1], 'Prompt', 3)
+                await ai._chat_request(next(t for t in ai.targets() if t.provider=='groq'), 'Prompt', 3)
 
     async def test_quota_error_does_not_expose_payload_and_honors_retry_time(self):
         _, ctx, _ = self.session({'error': {'message': 'secret and private narrative'}}, 429, {'retry-after': '180'})
         with patch.object(ai.aiohttp, 'ClientSession', return_value=ctx):
             with self.assertRaises(ai.EventAIError) as caught:
-                await ai._chat_request(ai.targets()[1], 'private narrative', 3)
+                await ai._chat_request(next(t for t in ai.targets() if t.provider=='groq'), 'private narrative', 3)
         self.assertEqual((caught.exception.status, caught.exception.retry_after), (429, 180))
         self.assertNotIn('secret', str(caught.exception))
         with patch.object(ai.time, 'time', return_value=0):
