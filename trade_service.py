@@ -3,6 +3,7 @@ import json
 import math
 
 import db
+from nation_access import can_manage
 import i18n
 
 
@@ -41,7 +42,7 @@ def accept_trade(trade_id, owner_id, is_gm=False, monthly=False):
         tn = nations.get(trade["to_nation_id"])
         if not fn or not tn or fn["id"] == tn["id"]:
             raise ValueError(i18n.text('Trade needs two different existing nations.'))
-        if not is_gm and tn["owner_id"] != str(owner_id):
+        if not is_gm and not can_manage(tn['id'],owner_id,c):
             raise ValueError(i18n.text('This trade is not addressed to your nation.'))
         if trade["status"] != "pending":
             raise ValueError(i18n.text('Trade #{p0} is already {p1}.', p0=trade_id, p1=i18n.term(trade['status'])))

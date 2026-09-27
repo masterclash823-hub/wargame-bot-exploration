@@ -52,9 +52,12 @@ class EmbedPager(i18n.LocalizedView):
 
 
 def gm_only(interaction: discord.Interaction) -> bool:
-    """Recognize only the configured GM role; an explicit ID takes precedence."""
+    """Server administrators and the configured GM role can administer the game."""
     if not interaction.guild:
         return False
+    permissions=getattr(interaction.user,'guild_permissions',None)
+    if permissions is not None and permissions.administrator is True:
+        return True
     roles = getattr(interaction.user, "roles", ())
     if config.GM_ROLE_ID:
         return any(str(r.id) == config.GM_ROLE_ID for r in roles)
@@ -79,13 +82,9 @@ def get_nation_by_name(name: str):
 
 
 def get_nation_by_owner(owner_id: str):
-    """Return a nation row by Discord owner user ID, or None."""
-    with db.cursor() as cur:
-        cur.execute(
-            "SELECT * FROM nations WHERE owner_id = ?",
-            (owner_id,),
-        )
-        return cur.fetchone()
+    """Return the nation controlled by this owner or cooperative player."""
+    from nation_access import find_nation
+    return find_nation(owner_id)
 
 
 def log_history(nation_id: int, source: str, text: str) -> None:

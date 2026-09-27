@@ -10,6 +10,7 @@ Province commands:
 """
 from flags import flag_text, flagged_embed
 import json
+import asyncio
 import aiohttp
 import discord
 from discord import app_commands
@@ -67,9 +68,11 @@ def _parse_ids(id_string: str) -> list[int]:
         part = part.strip()
         if "-" in part:
             a, b = part.split("-", 1)
+            if int(a)<0 or int(b)<int(a) or int(b)-int(a)>10000:raise ValueError('Invalid range')
             ids.extend(range(int(a), int(b) + 1))
         else:
             ids.append(int(part))
+        if len(ids)>10000 or ids[-1]<0:raise ValueError('Invalid IDs')
     return ids
 
 def _lang(interaction: discord.Interaction) -> str:
@@ -310,6 +313,42 @@ class ProvincesCog(commands.Cog):
     admin_grp    = app_commands.Group(name="admin",    description="GM admin commands")
     province_grp = app_commands.Group(name="province", description="Province commands")
 
+    @admin_grp.command(name='panel',description='Admin dashboard / Panel administratora')
+    @i18n.localized
+    async def admin_panel(self,interaction:discord.Interaction):
+        if not _gm(interaction):
+            await interaction.response.send_message(i18n.t(_lang(interaction),'gm_only'),ephemeral=True);return
+        from admin_panel import AdminPanel
+        view=AdminPanel(self.bot,interaction.user.id)
+        await interaction.response.send_message(embed=view.embed(),view=view,ephemeral=True)
+
+    @province_grp.command(name='population',description='[GM] Set province population / Ustaw populację prowincji')
+    @i18n.localized
+    async def population(self,interaction:discord.Interaction,cell_id:int,population:app_commands.Range[int,0,1000000000]):
+        await self.edit_province(interaction,cell_id,population=population)
+
+    @province_grp.command(name='biome',description='[GM] Change province biome / Zmień biom prowincji')
+    @app_commands.choices(biome=[app_commands.Choice(name=k,value=k) for k in BIOME_RESOURCES])
+    @i18n.localized
+    async def biome(self,interaction:discord.Interaction,cell_id:int,biome:str):
+        await self.edit_province(interaction,cell_id,biome=biome)
+
+    @province_grp.command(name='coast',description='[GM] Correct coastline for ports and fishing / Popraw wybrzeże')
+    @i18n.localized
+    async def coast(self,interaction:discord.Interaction,cell_id:int,coastal:bool):
+        await self.edit_province(interaction,cell_id,coastal=coastal)
+
+    async def edit_province(self,interaction,cell_id,**changes):
+        if not _gm(interaction):
+            await interaction.response.send_message(i18n.t(_lang(interaction),'gm_only'),ephemeral=True);return
+        await interaction.response.defer(ephemeral=True)
+        from province_admin import edit
+        try:
+            p=await asyncio.to_thread(edit,cell_id,**changes)
+            text=f"#{cell_id}: {p['name']} · {p['population']:,} · {p['biome']} · {p['terrain']}"
+            await interaction.followup.send(text,ephemeral=True)
+        except ValueError as exc:await interaction.followup.send(str(exc),ephemeral=True)
+
     # -------------------------------------------------- /admin map_import
     @admin_grp.command(name="map_import",
                        description="[GM] Import Azgaar JSON / [GM] Importuj mape Azgaar")
@@ -507,9 +546,10 @@ class ProvincesCog(commands.Cog):
     @app_commands.describe(
         nation="Nation name / Nazwa narodu",
         ids="Cell IDs, e.g. 1,2,5-10 / ID komorek np. 1,2,5-10",
+        normalize_population="Normalize the receiving nation to 2000/province / Uśrednij państwo do 2000/prowincję",
     )
     @i18n.localized
-    async def claim(self, interaction: discord.Interaction, nation: str, ids: str):
+    async def claim(self, interaction: discord.Interaction, nation: str, ids: str, normalize_population:bool=False):
         lang = _lang(interaction)
         if not _gm(interaction):
             await interaction.response.send_message(i18n.t(lang, "gm_only"), ephemeral=True)
@@ -524,25 +564,15 @@ class ProvincesCog(commands.Cog):
             await interaction.response.send_message(i18n.t(lang, "province_bad_ids"), ephemeral=True)
             return
 
-        claimed = not_found = 0
-        with db.cursor() as cur:
-            for cid in cell_ids:
-                cur.execute(
-                    "UPDATE provinces SET owner_nation_id=? WHERE azgaar_cell_id=? AND active=1",
-                    (nation_row["id"], cid),
-                )
-                if cur.rowcount:
-                    claimed += 1
-                else:
-                    not_found += 1
-            cur.execute(
-                "INSERT INTO nation_history (nation_id,source,entry_text) VALUES (?,?,?)",
-                (nation_row["id"], "system", i18n.text('Claimed {p0} province(s) (cells: {p1}).', p0=claimed, p1=ids)),
-            )
-
-        await interaction.response.send_message(
+        from province_admin import claim
+        await interaction.response.defer(ephemeral=True)
+        try:claimed,not_found,normalized=await asyncio.to_thread(claim,nation_row['id'],ids,normalize_population)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True);return
+        await interaction.followup.send(
             i18n.t(lang, "province_claimed",
-                   nation=nation_row["name"], claimed=claimed, not_found=not_found),
+                   nation=nation_row["name"], claimed=claimed, not_found=not_found)
+            +((f'\nPopulacja uśredniona w {normalized} prowincjach.' if lang=='pl' else f'\nPopulation normalized in {normalized} provinces.') if normalized else ''),
             ephemeral=True,
         )
 
@@ -561,14 +591,8 @@ class ProvincesCog(commands.Cog):
         except ValueError:
             await interaction.response.send_message(i18n.t(lang, "province_bad_ids"), ephemeral=True)
             return
-        cleared = 0
-        with db.cursor() as cur:
-            for cid in cell_ids:
-                cur.execute(
-                    "UPDATE provinces SET owner_nation_id=NULL WHERE azgaar_cell_id=? AND active=1", (cid,)
-                )
-                if cur.rowcount:
-                    cleared += 1
+        from province_admin import claim
+        cleared,_,_=claim(None,ids)
         await interaction.response.send_message(
             i18n.t(lang, "province_unclaimed", count=cleared), ephemeral=True
         )
@@ -588,9 +612,8 @@ class ProvincesCog(commands.Cog):
         if nation:
             nat = _get_nation(nation)
         else:
-            with db.cursor() as c:
-                c.execute("SELECT * FROM nations WHERE owner_id=?", (str(interaction.user.id),))
-                nat = c.fetchone()
+            from nation_access import find_nation
+            nat=find_nation(interaction.user.id)
         if not nat:
             await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
             return

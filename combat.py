@@ -28,6 +28,7 @@ from discord.ext import commands
 
 import config
 import db
+from nation_access import find_nation,can_manage
 import i18n
 
 
@@ -41,9 +42,7 @@ def _gm(i):
     return bool(i.guild) and any(r.name == config.GM_ROLE_NAME for r in i.user.roles)
 
 def _nat_owner(uid):
-    with db.cursor() as c:
-        c.execute("SELECT * FROM nations WHERE owner_id=?", (str(uid),))
-        return c.fetchone()
+    return find_nation(str(uid))
 
 def _nat_name(name):
     with db.cursor() as c:

@@ -48,6 +48,12 @@ CREATE TABLE IF NOT EXISTS nations (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS nation_coops (
+    user_id TEXT PRIMARY KEY,
+    nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_nation_coops_nation ON nation_coops(nation_id);
+
 CREATE TABLE IF NOT EXISTS flag_assets (
     digest TEXT PRIMARY KEY,
     png_base64 TEXT NOT NULL
@@ -297,6 +303,14 @@ CREATE TABLE IF NOT EXISTS event_runs (
     event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
     version INTEGER NOT NULL DEFAULT 0,
     state_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS event_media (
+    event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+    image_json TEXT NOT NULL DEFAULT '{}',
+    data_base64 TEXT NOT NULL DEFAULT '',
+    filename TEXT NOT NULL DEFAULT '',
+    public_message_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS game_config (

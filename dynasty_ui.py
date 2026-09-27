@@ -30,7 +30,8 @@ class MarriageView(i18n.LocalizedView):
         self.decline.label = tr('Odrzuć / wycofaj','Decline / withdraw')
         if m:
             for item in (self.own,self.other,self.send):self.remove_item(item)
-            self.accept.disabled = m['status']!='proposed' or str(uid)!=m['recipient_owner']
+            from nation_access import can_manage
+            self.accept.disabled = m['status']!='proposed' or not can_manage(m['recipient_id'],uid)
             self.decline.disabled = m['status']!='proposed'
         else:
             self.remove_item(self.accept);self.remove_item(self.decline)

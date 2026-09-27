@@ -17,6 +17,7 @@ from discord.ext import commands
 
 import config
 import db
+from nation_access import find_nation,can_manage
 import i18n
 import os
 
@@ -36,9 +37,7 @@ def _get_by_name(name: str):
 
 
 def _get_by_owner(owner_id: str):
-    with db.cursor() as cur:
-        cur.execute("SELECT * FROM nations WHERE owner_id = ?", (owner_id,))
-        return cur.fetchone()
+    return find_nation(owner_id)
 
 
 def _log(nation_id: int, source: str, text: str) -> None:
@@ -57,6 +56,36 @@ class NationCog(commands.Cog):
         name="nation",
         description="Nation commands / Komendy narodów",
     )
+
+    @nation_group.command(name='coop_add',description='Add a cooperative player / Dodaj gracza współdzielącego państwo')
+    @i18n.localized
+    async def coop_add(self,interaction:discord.Interaction,player:discord.Member,nation:str=''):
+        await self.change_coop(interaction,player,nation,False)
+
+    @nation_group.command(name='coop_remove',description='Remove cooperative access / Usuń współdzielenie państwa')
+    @i18n.localized
+    async def coop_remove(self,interaction:discord.Interaction,player:discord.Member,nation:str=''):
+        await self.change_coop(interaction,player,nation,True)
+
+    async def change_coop(self,interaction,player,nation,remove):
+        from nation_access import set_coop
+        from world_service import tr
+        n=_get_by_name(nation) if nation else _get_by_owner(str(interaction.user.id))
+        if not n or player.bot:
+            await interaction.response.send_message(tr('Wybierz istniejące państwo i konto gracza.', 'Choose an existing nation and a player account.'),ephemeral=True);return
+        await interaction.response.defer(ephemeral=True)
+        try:await asyncio.to_thread(set_coop,n['id'],interaction.user.id,player.id,remove=remove,gm=_gm(interaction))
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True);return
+        await interaction.followup.send(tr('Coop usunięty.','Co-op removed.') if remove else tr(
+            'Coop dodany. Gracz może otworzyć /panel i współzarządzać państwem. Zasoby, decyzje i limity są wspólne.',
+            'Co-op added. The player can open /panel and manage the nation. Resources, decisions and limits are shared.'),ephemeral=True)
+
+    @nation_group.command(name='coop',description='Manage cooperative access / Panel współdzielenia państwa')
+    @i18n.localized
+    async def coop(self,interaction:discord.Interaction,nation:str=''):
+        from coop_ui import show
+        await show(interaction,nation)
 
     @nation_group.command(name="found", description="GM: create and assign a nation / GM: utwórz i nadaj państwo")
     @app_commands.describe(player="Player who will own the nation / Gracz otrzymujący państwo",
@@ -101,7 +130,8 @@ class NationCog(commands.Cog):
         n = _get_by_name(nation)
         if not n:
             await interaction.response.send_message(i18n.t(_lang(interaction), 'nation_not_found'), ephemeral=True); return
-        if player.bot or _get_by_owner(str(player.id)):
+        assigned=_get_by_owner(str(player.id))
+        if player.bot or (assigned and assigned['id']!=n['id']):
             await interaction.response.send_message(tr('Wybierz gracza, który nie ma państwa.', 'Choose a player without a nation.'), ephemeral=True); return
         from nation_decay import require_playable
         try:
@@ -111,6 +141,8 @@ class NationCog(commands.Cog):
         text = f"**{n['name']}**: <@{n['owner_id']}> → <@{player.id}>\n\n" + tr(
             'Zasoby, wojsko, historia, cele i pamięć decyzji pozostaną przy państwie. Nowy właściciel przejmie aktywne traktaty i umowy, w tym reparacje. Oczekujące propozycje traktatów i wymian zostaną anulowane.',
             'Resources, forces, history, goals and decision memory remain with the nation. The new owner inherits active treaties and contracts, including reparations. Pending treaty and trade proposals will be cancelled.')
+        text+='\n'+tr('Dotychczasowi coopowie utracą dostęp; nowy właściciel może nadać go ponownie.',
+                       'Existing co-op access will be removed; the new owner can grant it again.')
         embed = flagged_embed(discord.Embed(title=tr('Potwierdź przekazanie państwa', 'Confirm nation transfer'), description=text), (n['flag'],n['name']))
         await interaction.response.send_message(embed=embed, view=TransferView(interaction.user.id,n,player.id), ephemeral=True)
 
@@ -241,7 +273,7 @@ class NationCog(commands.Cog):
             await interaction.response.send_message(i18n.t(lang, "nation_not_found"), ephemeral=True)
             return
 
-        is_owner = nation["owner_id"] == str(interaction.user.id)
+        is_owner = can_manage(nation['id'],interaction.user.id)
         is_gm = _gm(interaction)
         # Private trade, event, research and goal entries are owner/GM only.
         if is_owner or is_gm:

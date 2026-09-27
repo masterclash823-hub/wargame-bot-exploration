@@ -2,8 +2,8 @@
 import json
 import db
 
-NEW_EFFECTS={'farm':{'food':20},'pasture':{'food':8,'horses':1},
-             'fishing_wharf':{'food':15},'plantation':{'food':6,'spices':3},
+NEW_EFFECTS={'farm':{'food':21},'pasture':{'food':8.4,'horses':1},
+             'fishing_wharf':{'food':15.75},'plantation':{'food':6.3,'spices':3},
              'powder_mill':{'gunpowder':4,'coal':-2,'copper':-1},
              'silk_workshop':{'silk':2,'cloth':-2},'market':{},'port':{}}
 NEW_DESCRIPTIONS={
@@ -31,6 +31,19 @@ def seed_buildings(defaults):
         c.execute("INSERT INTO building_defs(key,name,cost_json,effect_json,upkeep_json,description) VALUES('granary','Granary',?,?,?,?) ON CONFLICT(key) DO NOTHING",
                   ('{"gold":100,"wood":40}','{}','{"gold":1}','Reduces food spoilage; 50 workers.'))
         c.execute("INSERT INTO economy_meta(key,value) VALUES('buildings_v2','1') ON CONFLICT(key) DO NOTHING")
+        c.execute("SELECT value FROM economy_meta WHERE key='food_taiga_v4'")
+        if not c.fetchone():
+            old_food={'farm':{'food':20},'pasture':{'food':8,'horses':1},
+                      'fishing_wharf':{'food':15},'plantation':{'food':6,'spices':3}}
+            for key,effect in old_food.items():
+                c.execute('SELECT effect_json FROM building_defs WHERE key=?',(key,));row=c.fetchone()
+                if row and json.loads(row['effect_json'])==effect:
+                    c.execute('UPDATE building_defs SET effect_json=? WHERE key=?',(json.dumps(NEW_EFFECTS[key]),key))
+            c.execute("SELECT requires_terrain FROM building_defs WHERE key='lumber_camp'");row=c.fetchone()
+            default=next(b['terrain'] for b in defaults if b['key']=='lumber_camp')
+            if row and set(row['requires_terrain'].split(',')) in ({'forest'},set(default.split(','))-{'taiga'}):
+                c.execute("UPDATE building_defs SET requires_terrain=? WHERE key='lumber_camp'",(default,))
+            c.execute("INSERT INTO economy_meta(key,value) VALUES('food_taiga_v4','1')")
         c.execute("SELECT value FROM economy_meta WHERE key='silk_upkeep_v3'")
         if not c.fetchone():
             c.execute("SELECT upkeep_json FROM building_defs WHERE key='silk_workshop'")

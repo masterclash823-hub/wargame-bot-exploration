@@ -4,6 +4,7 @@ import math
 import uuid
 
 import db
+from nation_access import can_manage
 from economy_engine import read_json
 from world_service import world_lock, owned, month_index, activity, reward, tr
 
@@ -100,9 +101,9 @@ def get_treaty(tid,owner_id,is_gm=False):
                   'b.name AS b_name,b.owner_id AS b_owner,b.flag AS b_flag FROM treaties t '
                   'JOIN nations a ON a.id=t.proposer_id JOIN nations b ON b.id=t.recipient_id WHERE t.id=?',(tid,))
         t=c.fetchone()
-    if not t or (not is_gm and str(owner_id) not in (t['a_owner'],t['b_owner'])):
+    if not t or (not is_gm and not any(can_manage(nid,owner_id) for nid in (t['proposer_id'],t['recipient_id']))):
         raise ValueError(tr('Traktat jest dostępny wyłącznie jego stronom i GM-owi.','Only the treaty parties and GM can inspect it.'))
-    if t['submitted_month'] is None and not is_gm and str(owner_id)!=t['a_owner']:
+    if t['submitted_month'] is None and not is_gm and not can_manage(t['proposer_id'],owner_id):
         raise ValueError(tr('Autor nie wysłał jeszcze tej propozycji.','The author has not sent this proposal yet.'))
     return t
 
@@ -216,7 +217,7 @@ def end(tid,owner_id,expected_status,expected_version=None):
             raise ValueError(tr('Status traktatu zmienił się. Otwórz go ponownie.',
                                 'Treaty status changed. Open it again.'))
         a,b=_parties(c,t['proposer_id'],t['recipient_id'])
-        n=next((n for n in (a,b) if n['owner_id']==str(owner_id)),None)
+        n=next((n for n in (a,b) if can_manage(n['id'],owner_id,c)),None)
         if not n:raise ValueError(tr('Nie jesteś stroną traktatu.','You are not a treaty party.'))
         if t['status']=='draft' and n['id']!=a['id']:
             raise ValueError(tr('Tylko autor może usunąć szkic.','Only the author can discard a draft.'))

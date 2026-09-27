@@ -2,6 +2,7 @@
 import copy
 import json
 import db
+from nation_access import can_manage
 import i18n
 from event_adventure import _ai_json
 from world_service import world_lock, owned, month_index, tr
@@ -40,7 +41,7 @@ def load(eid, uid, guild_id):
     with db.cursor() as c:
         c.execute('SELECT e.*,n.owner_id,n.name,n.flag FROM explorations e JOIN nations n ON n.id=e.nation_id WHERE e.id=?',(eid,))
         r=c.fetchone()
-    if not r or r['owner_id']!=str(uid) or r['guild_id']!=str(guild_id):
+    if not r or not can_manage(r['nation_id'],uid) or r['guild_id']!=str(guild_id):
         raise ValueError(tr('Nie znaleziono Twojej wyprawy na tym serwerze.','Your expedition was not found on this server.'))
     return r
 

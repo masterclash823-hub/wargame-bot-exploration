@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 import db
 import i18n
+from nation_access import can_manage,find_nation
 from economy_engine import read_json, _config, lock_nation
 
 
@@ -25,7 +26,7 @@ def month_index(c):
 
 def owned(c, nid, owner_id):
     n=lock_nation(c,nid)
-    if n['owner_id'] != str(owner_id):
+    if not can_manage(nid,owner_id,c):
         raise ValueError(tr('Państwo zmieniło właściciela. Otwórz panel ponownie.',
                             'Nation ownership changed. Open the panel again.'))
     return n
@@ -106,8 +107,7 @@ def create_nation(player_id,name,history,flag,government,gm_id):
                             'Name: 1–80 characters; lore: 1–4000; flag: up to 512; government: up to 80.'))
     with db.atomic() as c:
         world_lock(c)
-        c.execute('SELECT id FROM nations WHERE owner_id=?',(str(player_id),))
-        if c.fetchone():raise ValueError(tr('Ten gracz ma już państwo.','This player already owns a nation.'))
+        if find_nation(player_id,c):raise ValueError(tr('Ten gracz ma już państwo.','This player already owns a nation.'))
         c.execute('SELECT id FROM nations WHERE LOWER(name)=LOWER(?)',(name,))
         if c.fetchone():raise ValueError(tr('Ta nazwa państwa jest zajęta.','This nation name is already taken.'))
         nid=db.insert_returning_id('INSERT INTO nations(owner_id,name,flag,government_type) VALUES(?,?,?,?)',
@@ -126,8 +126,10 @@ def transfer_nation(nid,new_owner,expected_owner,gm_id):
         c.execute('SELECT id FROM trades ORDER BY id'+(' FOR UPDATE' if db.USE_POSTGRES else ''));c.fetchall()
         n=lock_nation(c,nid)
         if n['owner_id']!=str(expected_owner):raise ValueError(tr('Właściciel zmienił się. Otwórz przekazanie ponownie.','Owner changed. Open the transfer again.'))
-        c.execute('SELECT id FROM nations WHERE owner_id=?',(str(new_owner),))
-        if c.fetchone():raise ValueError(tr('Ten gracz ma już państwo.','This player already owns a nation.'))
+        if n['owner_id']==str(new_owner):raise ValueError(tr('Ten gracz już jest głównym właścicielem.', 'This player is already the primary owner.'))
+        assigned=find_nation(new_owner,c)
+        if assigned and assigned['id']!=nid:raise ValueError(tr('Ten gracz ma już państwo.','This player already owns a nation.'))
+        c.execute('DELETE FROM nation_coops WHERE nation_id=?',(nid,))
         c.execute('UPDATE nations SET owner_id=? WHERE id=?',(str(new_owner),nid))
         c.execute('INSERT INTO ownership_changes(nation_id,previous_owner,new_owner,gm_id) VALUES(?,?,?,?)',
                   (nid,n['owner_id'],str(new_owner),str(gm_id)))
