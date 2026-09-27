@@ -3,6 +3,7 @@ Economy cog: resources, buildings, calendar, projects, trades, admineco.
 All slash commands use @app_commands.command or group subcommands — no hybrid.
 """
 from flags import flag_text, flagged_embed
+from nation_access import find_nation,can_manage
 import psycopg2
 import psycopg2.extras
 
@@ -85,9 +86,7 @@ def _gm(interaction):
     return gm_only(interaction)
 
 def _nation_owner(uid):
-    with db.cursor() as c:
-        c.execute("SELECT * FROM nations WHERE owner_id=?", (str(uid),))
-        return c.fetchone()
+    return find_nation(str(uid))
 
 def _nation_name(name):
     with db.cursor() as c:
@@ -234,6 +233,11 @@ def _terrain_ok(terrain, req):
     if not req:
         return True
     return terrain.lower() in [t.strip().lower() for t in req.split(",")]
+
+
+def _building_terrain_ok(province,definition):
+    return (_terrain_ok(province['terrain'],definition['requires_terrain']) or
+            (definition['key']=='lumber_camp' and _terrain_ok(province.get('biome',''),definition['requires_terrain'])))
 
 def _tech_ok(nation: dict, req_tech: float, building_key: str = "") -> bool:
     if not req_tech or req_tech <= 0:

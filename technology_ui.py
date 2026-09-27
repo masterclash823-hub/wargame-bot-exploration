@@ -7,6 +7,7 @@ import logging
 import discord
 
 import db
+from nation_access import can_manage
 import i18n
 import technology as tech
 from flags import flagged_embed
@@ -91,7 +92,7 @@ class PrivateView(discord.ui.View):
     async def interaction_check(self,interaction):
         with db.cursor() as c:
             c.execute('SELECT owner_id FROM nations WHERE id=?',(self.nid,));n=c.fetchone()
-        if str(interaction.user.id)!=self.uid or not n or n['owner_id']!=self.uid:
+        if str(interaction.user.id)!=self.uid or not n or not can_manage(self.nid,self.uid):
             lang=i18n.get_user_language(interaction.user.id)
             await interaction.response.send_message(i18n.text('This is not your menu.',lang=lang),ephemeral=True)
             return False
@@ -163,7 +164,7 @@ class ResearchView(PrivateView):
 
 async def show(interaction,nid,*,code=None,catalogue=False,edit=False):
     n,_,_=state(nid)
-    if not n or n['owner_id']!=str(interaction.user.id):
+    if not n or not can_manage(nid,interaction.user.id):
         raise ValueError(i18n.text('This is not your menu.'))
     e=detail(nid,code) if code else overview(nid)
     view=ResearchView(nid,interaction.user.id,code,catalogue)
@@ -217,7 +218,7 @@ async def show_production(interaction,nid,*,edit=False,notice=None):
     from economy_engine import forecast,read_json,building_level,LEVEL_OUTPUT
     from economy_services import build
     n,_,_=state(nid)
-    if not n or n['owner_id']!=str(interaction.user.id):raise ValueError(i18n.text('This is not your menu.'))
+    if not n or not can_manage(nid,interaction.user.id):raise ValueError(i18n.text('This is not your menu.'))
     if not response_done(interaction):await interaction.response.defer(ephemeral=True)
     with db.cursor() as c:
         c.execute('SELECT p.*,d.levels_json FROM provinces p JOIN algae_sites a ON a.province_id=p.id '
@@ -226,7 +227,7 @@ async def show_production(interaction,nid,*,edit=False,notice=None):
         c.execute("SELECT * FROM building_defs WHERE key='algae_farm'");definition=c.fetchone()
     result=await asyncio.to_thread(forecast,nid)
     n,_,_=state(nid)
-    if not n or n['owner_id']!=str(interaction.user.id):raise ValueError(i18n.text('This is not your menu.'))
+    if not n or not can_manage(nid,interaction.user.id):raise ValueError(i18n.text('This is not your menu.'))
     economy=read_json(n['tech_json']).get('economy',3)
     e=flagged_embed(discord.Embed(title='🧪 '+tech.tr('Wydobycie algae','Algae production'),color=discord.Color.dark_green()),(n['flag'],n['name']))
     e.description=tech.tr('Zbuduj farmę na własnym złożu. Od następnego rozliczenia produkuje co miesiąc automatycznie. Poziom 1: gospodarka 3 → 0,05; 4 → 0,1; 5 → 0,2; 6+ → 0,5 algae/miesiąc. Ulepszenia do poziomu 2 (0,85) i 3 (1,2) wymagają gospodarki 6. Obsada, stabilność i etap kolonii wpływają na wynik.',
@@ -270,7 +271,7 @@ async def show_production(interaction,nid,*,edit=False,notice=None):
 
 async def show_programs(interaction,nid,*,edit=False):
     n,_,known=state(nid)
-    if not n or n['owner_id']!=str(interaction.user.id):raise ValueError(i18n.text('This is not your menu.'))
+    if not n or not can_manage(nid,interaction.user.id):raise ValueError(i18n.text('This is not your menu.'))
     with db.cursor() as c:
         c.execute('SELECT * FROM algae_programs WHERE nation_id=?',(nid,));programs={r['category']:r for r in c.fetchall()}
     e=discord.Embed(title='🧪 '+tech.tr('Programy algae','Algae programs'),color=discord.Color.dark_green())

@@ -3,6 +3,7 @@ import json
 import math
 import uuid
 import db
+from nation_access import can_manage
 from economy_engine import read_json, lock_nation, LEVEL_WORK, WORKERS
 from world_service import world_lock, owned, month_index, tr
 from economy_services import spend
@@ -237,7 +238,7 @@ def respond_concession(identifier, uid, action):
             raise ValueError(tr('Nie znaleziono koncesji.', 'Concession not found.'))
         terms = read_json(grant['terms_json'])
         a, b = lock_nation(c, grant['company_nation_id']), lock_nation(c, grant['host_nation_id'])
-        me = next((n for n in (a,b) if n['owner_id'] == str(uid)), None)
+        me = next((n for n in (a,b) if can_manage(n['id'],uid,c)), None)
         if me is None:
             raise ValueError(tr('To nie jest twoja umowa.', 'This is not your agreement.'))
         if action == 'accept':
@@ -301,7 +302,7 @@ def investment_context(c, nid, s):
 
 
 def investment_quote(c, nid, s, cell, key, target, context=None):
-    from cogs.economy import _terrain_ok, _tech_ok
+    from cogs.economy import _building_terrain_ok, _tech_ok
     n = context['data'][0] if context else lock_nation(c, nid)
     require_tech(n)
     if s['paused'] or key not in s['types']:
@@ -349,7 +350,7 @@ def investment_quote(c, nid, s, cell, key, target, context=None):
             site = c.fetchone()
         if not site:
             raise ValueError(tr('Farma algae wymaga złoża.', 'An algae farm requires a deposit.'))
-    elif not _terrain_ok(p['terrain'], definition['requires_terrain']):
+    elif not _building_terrain_ok(p,definition):
         raise ValueError(tr('Nieodpowiedni teren.', 'Unsuitable terrain.'))
     extra = WORKERS[key] * (LEVEL_WORK[old+1] - (LEVEL_WORK[old] if old else 0))
     used = sum(WORKERS.get(k, 200)*LEVEL_WORK[min(3, max(1, int(levels.get(k, 1))))] for k in set(buildings))

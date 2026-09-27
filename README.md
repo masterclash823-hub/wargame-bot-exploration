@@ -1,5 +1,13 @@
 # Wargame Bot
 
+## Panel administratora i coop
+
+`/admin panel` udostępnia wybór państwa i prowincji, zmianę populacji i biomu,
+przyznawanie prowincji z opcjonalnym uśrednianiem oraz skróty do eventów,
+kalendarza i bitew. Główny właściciel lub GM dodaje współgracza przez
+`/nation coop_add`; obaj korzystają z jednego państwa i wspólnych limitów.
+[Nowe komendy, zasady współdzielenia i poprawki budynków](docs/admin-coop-update.md).
+
 ## Pierwsza rada państwa — przewodnik gracza
 
 `/tutorial` oraz **Panel → Ustawienia → Poradnik** otwierają ten sam przewodnik
@@ -64,7 +72,7 @@ podział pozostaje symulacją. Zmiana dotyczy nowych rozstrzygnięć.
 
 GM ustawia kanał przez `/event channel channel:#wydarzenia`. Przy publikacji
 `/event post event_id:12 visibility:public` pokazuje wszystkim narrację i ilustrację
-wyszukaną w Wikimedia Commons. Opcjonalne `channel` zmienia kanał dla jednego
+wyszukaną w Wikimedia Commons lub Art Institute of Chicago. Opcjonalne `channel` zmienia kanał dla jednego
 eventu, a `image_query` pozwala podać hasła wyszukiwania ilustracji.
 Bot wybiera obrazy domeny publicznej/CC0 i odrzuca oznaczone jako wygenerowane AI.
 Jeżeli nie znajdzie ilustracji lub wyszukiwarka jest niedostępna, rozpoczyna event
@@ -72,15 +80,19 @@ bez obrazka. `include_image:False` wyłącza wyszukiwanie, również gdy podano
 `image_query`. Puste `image_query` przy włączonym obrazku oznacza automatyczny
 dobór tematu, a nie wyłączenie ilustracji.
 
-`visibility:private` (domyślnie) udostępnia event tylko właścicielowi wybranego
+`visibility:private` (domyślnie) udostępnia event właścicielowi i coopom wybranego
 państwa oraz GM. Państwo wskazuje się wcześniej przy `/event generate`.
-Decyzje w obu trybach trafiają do gracza przez DM; przy zamkniętych DM można
-użyć `/event play`. Publiczna wiadomość nie zawiera opcji ani efektów liczbowych.
+Decyzje w obu trybach trafiają do głównego właściciela przez DM; coopowie oraz
+właściciel z zamkniętymi DM używają panelu lub `/event play`.
+Publiczna wiadomość nie zawiera opcji ani efektów liczbowych.
 Prywatne eventy i ich historia nie są widoczne dla innych graczy.
 
 Ilustracja pojawia się w dużym formacie pod tekstem eventu, a flaga państwa
 pozostaje osobną miniaturą. Zapisany obraz jest też widoczny w DM, `/event play`,
 kolejnych scenach i podsumowaniu; nie wymaga ponownego wyszukiwania.
+Bot zapisuje plik w bazie i wysyła go jako załącznik. `/event image` pozwala
+naprawić ilustrację istniejącego eventu lub wgrać własny plik.
+[Ilustracje, naprawa postów i wymagane uprawnienia](docs/event-images.md).
 
 Eventy rotują dziesięć tematów; na każde pięć nowych szkiców dla państwa
 przypadają dwie szanse, dwa zagrożenia i jedno wydarzenie mieszane.
@@ -129,7 +141,7 @@ New event workflow:
    latest saved state after a timeout, missed DM or a Render restart.
 4. After exactly three accepted decisions, the event ends and applies effects
    once. Old buttons/repeated submissions cannot pay out again. GM can inspect
-   with `/event play`, but only the nation owner can make choices.
+   with `/event play`; the nation owner and co-op members can make choices.
 
 The three mechanical strategies scale the GM-approved base gains **and losses**
 by 0.5, 1, or 1.5. The final multiplier is their average, not three full payouts.
@@ -184,8 +196,8 @@ The `/help` GM tab and GM commands use the same role check. Set `GM_ROLE_ID`
 to the Discord role ID (recommended; it survives role renaming). If unset,
 `GM_ROLE_NAME` defaults to `Game Master` and ignores outer whitespace and case.
 For a role named `GM`, set `GM_ROLE_NAME=GM`. An explicit ID overrides the name.
-Restart the bot after changing environment variables. Administrator permission
-alone does not grant GM access.
+Restart the bot after changing environment variables. Server Administrator
+permission also grants GM access.
 
 Run offline regression tests after installing `requirements.txt`:
 

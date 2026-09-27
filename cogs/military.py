@@ -15,6 +15,7 @@ Units are floating by default - province assignment is optional.
 Upkeep: peace rate per unit, 3x in wartime.
 """
 from flags import flag_text, flagged_embed
+from nation_access import find_nation,can_manage
 import json
 import asyncio
 from copy import deepcopy
@@ -84,9 +85,7 @@ def _gm(i):
     return gm_only(i)
 
 def _nat_owner(uid):
-    with db.cursor() as c:
-        c.execute("SELECT * FROM nations WHERE owner_id=?", (str(uid),))
-        return c.fetchone()
+    return find_nation(str(uid))
 
 def _nat_name(name):
     with db.cursor() as c:
@@ -164,7 +163,7 @@ class ShipDesignerView(i18n.LocalizedView):
         with db.cursor() as c:
             c.execute('SELECT owner_id FROM nations WHERE id=?', (self.nation_id,))
             n = c.fetchone()
-        if n and n['owner_id'] == str(interaction.user.id) and not self.saved: return True
+        if n and can_manage(self.nation_id,interaction.user.id) and not self.saved: return True
         from world_service import tr
         await interaction.response.send_message(tr('Projekt nie jest już dostępny dla tego gracza.', 'This design is no longer available to this player.'), ephemeral=True)
         return False

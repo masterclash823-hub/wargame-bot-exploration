@@ -5,6 +5,7 @@ Trade routes export surplus luxuries using exclusively assigned cargo ships.
 """
 from technology import colony_requirements
 from flags import flag_text, flagged_embed
+from nation_access import find_nation
 import json
 import discord
 from discord import app_commands
@@ -24,7 +25,7 @@ STAGE_EMOJI = {"outpost":"🏕️","settlement":"🏘️","colony":"🏙️","pr
 def _lang(i): return i18n.get_user_language(i.user.id, i.locale.value if i.locale else None)
 from utils import gm_only as _gm
 def _nat_owner(uid):
-    with db.cursor() as c: c.execute("SELECT * FROM nations WHERE owner_id=?", (str(uid),)); return c.fetchone()
+    return find_nation(str(uid))
 def _nat_name(name):
     with db.cursor() as c: c.execute("SELECT * FROM nations WHERE LOWER(name)=LOWER(?)", (name,)); return c.fetchone()
 def _log(nid, src, txt):

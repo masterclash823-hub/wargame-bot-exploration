@@ -39,7 +39,7 @@ PL = {
     "routes": "Szlaki handlowe", "relations": "Relacje",
     "war": "Wypowiedz wojnę", "peace": "Zawrzyj pokój", "alliance": "Zawrzyj sojusz",
     "battle_plan": "Wyślij plan bitwy", "battles": "Raporty bitew", "event_list": "Lista wydarzeń",
-    "event_play": "Rozegraj wydarzenie", "help": "Pomoc", "tutorial": "Poradnik",
+    "event_play": "Rozegraj wydarzenie", "help": "Pomoc", "tutorial": "Poradnik", "coop":"Współdzielenie państwa",
     "no_nation": "Nie masz jeszcze państwa. Poproś Game Mastera o utworzenie i nadanie go Tobie.",
     "private": "Ten panel jest prywatny. Publiczne wydarzenia, wojny i osiągnięcia mogą trafić do kroniki.",
     "not_yours": "To nie jest Twój panel.", "empty": "Brak dostępnych pozycji.",
@@ -72,7 +72,7 @@ def tr(lang: str, key: str) -> str:
         "routes":"Trade routes","relations":"Relations",
         "war":"Declare war","peace":"Make peace","alliance":"Form alliance",
         "battle_plan":"Submit battle plan","battles":"Battle reports","event_list":"Event list",
-        "event_play":"Play event","help":"Help","tutorial":"Tutorial",
+        "event_play":"Play event","help":"Help","tutorial":"Tutorial","coop":"Co-op access",
         "no_nation":"You do not have a nation yet. Ask the Game Master to create and assign one to you.",
         "private":"This panel is private. Public events, wars and milestones may appear in the chronicle.","not_yours":"This is not your panel.",
         "empty":"There are no available items.","shortened":"Only the first 25 items are shown.",
@@ -236,14 +236,15 @@ ACTIONS = {
     "diplomacy": [("relations","📜"),("war","⚔️"),("peace","🕊️"),("alliance","🤝"),
                   ("battle_plan","🗒️"),("battles","📖"),("treaties","📜"),("new_treaty","📝"),("calls","🛡️")],
     "events": [("ruins","🏚️"),("event_list","📋"),("event_play","🎭"),("memories","🧠"),("exploration","🧭")],
-    "settings": [("help","❓"),("tutorial","📘"),("language_pl","🇵🇱"),("language_en","🇬🇧")],
+    "settings": [("help","❓"),("tutorial","📘"),("language_pl","🇵🇱"),("language_en","🇬🇧"),("coop","🤝")],
 }
 
 
 class PlayerPanel(OwnedView):
-    def __init__(self, bot: commands.Bot, owner_id: int, lang: str, section="home"):
+    def __init__(self, bot: commands.Bot, owner_id: int, lang: str, section="home", *, admin=False):
         super().__init__(owner_id, timeout=900)
         self.bot, self.lang, self.section = bot, lang, section
+        self.admin = admin
         self.rebuild()
 
     def rebuild(self):
@@ -277,6 +278,17 @@ class PlayerPanel(OwnedView):
                     await self.dispatch(interaction, name)
             button.callback = clicked
             self.add_item(button)
+
+        if self.admin:
+            button=discord.ui.Button(label='Panel administratora' if self.lang=='pl' else 'Admin panel',emoji='🛠️',row=4)
+            @i18n.localized
+            async def admin(interaction):
+                if interaction.user.id!=self.owner_id or not gm_only(interaction):
+                    await interaction.response.send_message(i18n.t(language(interaction),'gm_only'),ephemeral=True);return
+                from admin_panel import AdminPanel
+                view=AdminPanel(self.bot,self.owner_id)
+                await interaction.response.send_message(embed=view.embed(),view=view,ephemeral=True)
+            button.callback=admin;self.add_item(button)
 
     def embed(self):
         nation = get_nation_by_owner(str(self.owner_id))
@@ -329,6 +341,9 @@ class PlayerPanel(OwnedView):
         await reply(interaction, content=note, view=ChoiceView(self.owner_id, self.lang, options, handler, multiple=multiple))
 
     async def dispatch(self, interaction: discord.Interaction, action: str):
+        if action=='coop':
+            from coop_ui import show
+            await show(interaction);return
         nation = get_nation_by_owner(str(self.owner_id))
         if action == "refresh":
             self.lang = language(interaction); self.rebuild()
@@ -605,7 +620,7 @@ class PlayerPanel(OwnedView):
 async def send_panel(bot, interaction, *, section="home"):
     if not active_guild(interaction.guild_id):
         await reply(interaction, content=i18n.text("⛔ Bot not activated on this server. The GM must run `/activate <auth_key>` first.", lang=language(interaction))); return
-    lang=language(interaction); view=PlayerPanel(bot,interaction.user.id,lang,section=section)
+    lang=language(interaction); view=PlayerPanel(bot,interaction.user.id,lang,section=section,admin=gm_only(interaction))
     await reply(interaction,embed=view.embed(),view=view)
 
 

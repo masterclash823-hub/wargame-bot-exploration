@@ -61,17 +61,20 @@ class TreatyView(i18n.LocalizedView):
     def __init__(self,viewer,t):
         super().__init__(timeout=600);self.viewer,self.t=viewer,t
         self.accept.label=tr('Akceptuj wszystkie warunki','Accept all terms')
-        self.accept.disabled=t['status']!='proposed' or str(viewer)!=t['b_owner']
+        from nation_access import can_manage
+        proposer=can_manage(t['proposer_id'],viewer)
+        recipient=can_manage(t['recipient_id'],viewer)
+        self.accept.disabled=t['status']!='proposed' or not recipient
         self.end.label=tr('Zerwij (−10 reputacji)','Break (−10 reputation)') if t['status']=='active' else tr('Odrzuć / wycofaj','Decline / withdraw')
-        self.end.disabled=t['status'] not in ('draft','proposed','active') or str(viewer) not in (t['a_owner'],t['b_owner'])
+        self.end.disabled=t['status'] not in ('draft','proposed','active') or not (proposer or recipient)
         self.edit_terms.label=tr('Raty, opis i widoczność','Installments, note & visibility')
-        self.edit_terms.disabled=t['status'] not in ('draft','proposed') or str(viewer)!=t['a_owner']
+        self.edit_terms.disabled=t['status'] not in ('draft','proposed') or not proposer
         self.submit.label=tr('Wyślij propozycję','Send proposal')
-        self.submit.disabled=t['status']!='draft' or str(viewer)!=t['a_owner']
+        self.submit.disabled=t['status']!='draft' or not proposer
         self.marriage.label=tr('Mariaż dynastyczny','Dynastic marriage')
-        self.marriage.disabled=t['kind']!='alliance' or t['status']!='active' or str(viewer) not in (t['a_owner'],t['b_owner'])
+        self.marriage.disabled=t['kind']!='alliance' or t['status']!='active' or not (proposer or recipient)
         self.outcome.label=tr('Wynik wojny','War outcome')
-        self.outcome.disabled=t['kind']!='peace' or t['status'] not in ('draft','proposed') or str(viewer)!=t['a_owner']
+        self.outcome.disabled=t['kind']!='peace' or t['status'] not in ('draft','proposed') or not proposer
         from dynasty import current
         with db.cursor() as c:m=current(c,t['id'])
         if m and m['status']=='active':self.end.label=tr('Zerwij (−20 rep., −5 stab.)','Break (−20 rep., −5 stab.)')
@@ -122,7 +125,8 @@ class TreatyView(i18n.LocalizedView):
     async def edit_terms(self,interaction,button):
         try:t=service.get_treaty(self.t['id'],interaction.user.id)
         except ValueError as exc:await interaction.response.send_message(str(exc),ephemeral=True);return
-        if t['status'] not in ('draft','proposed') or str(interaction.user.id)!=t['a_owner']:
+        from nation_access import can_manage
+        if t['status'] not in ('draft','proposed') or not can_manage(t['proposer_id'],interaction.user.id):
             await interaction.response.send_message(tr('Tylko autor oczekującej propozycji może ją zmienić.','Only the author of a pending proposal can amend it.'),ephemeral=True);return
         from cogs.panel import FieldsModal
         terms=json.loads(t['terms_json'])

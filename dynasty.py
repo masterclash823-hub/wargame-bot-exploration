@@ -1,5 +1,6 @@
 """Consensual diplomatic proposals concerning adult fictional dynasty members."""
 import db
+from nation_access import can_manage
 import i18n
 from world_service import world_lock, owned, month_index, tr
 
@@ -41,7 +42,7 @@ def propose(tid, uid, own_person, other_person):
         t = alliance(c, tid)
         c.execute('SELECT * FROM nations WHERE id IN (?,?) ORDER BY id', (t['proposer_id'], t['recipient_id']))
         parties = c.fetchall()
-        a = next((n for n in parties if n['owner_id'] == str(uid)), None)
+        a = next((n for n in parties if can_manage(n['id'],uid,c)), None)
         if not a:
             raise ValueError(tr('Nie jesteś stroną sojuszu.', 'You are not an alliance party.'))
         b = next(n for n in parties if n['id'] != a['id'])
@@ -66,7 +67,7 @@ def answer(mid, uid, accept):
         for prefix in ('proposer', 'recipient'):
             if parties[m[prefix+'_id']]['owner_id'] != m[prefix+'_owner']:
                 raise ValueError(tr('Zmienił się właściciel państwa. Przygotuj nową propozycję.', 'Nation ownership changed. Prepare a new proposal.'))
-        if str(uid) != m['recipient_owner'] and (accept or str(uid) != m['proposer_owner']):
+        if not can_manage(m['recipient_id'],uid,c) and (accept or not can_manage(m['proposer_id'],uid,c)):
             raise ValueError(tr('Tylko odbiorca może zaakceptować mariaż.', 'Only the recipient may accept the marriage.'))
         if accept:
             for prefix in ('proposer', 'recipient'):

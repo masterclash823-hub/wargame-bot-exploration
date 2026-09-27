@@ -20,7 +20,7 @@ def spend(c,n, cost):
 
 
 def build(nid,cell,key,upgrade=False,uid=None):
-    from cogs.economy import _tech_ok,_terrain_ok
+    from cogs.economy import _tech_ok,_building_terrain_ok
     from world_service import world_lock,owned
     with db.atomic() as c:
         world_lock(c)
@@ -43,7 +43,7 @@ def build(nid,cell,key,upgrade=False,uid=None):
             if not c.fetchone():
                 raise ValueError(i18n.text('Algae extraction requires a rare deposit. See /algae locations.'))
         required=max(6 if upgrade else 3,b['requires_tech']) if key=='algae_farm' else b['requires_tech']
-        if (key!='algae_farm' and not _terrain_ok(p['terrain'],b['requires_terrain'])) or not _tech_ok(n,required,key):
+        if (key!='algae_farm' and not _building_terrain_ok(p,b)) or not _tech_ok(n,required,key):
             raise ValueError(i18n.text('Terrain or technology requirements are not met.'))
         multiplier={0:1,1:1.5,2:2}[old]
         cost={k:v*multiplier for k,v in read_json(b['cost_json']).items()}

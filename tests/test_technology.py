@@ -68,7 +68,7 @@ class ResearchTests(ResearchFixture,unittest.TestCase):
         from cogs.world import goal_state
         self.assertIn('1/1',goal_state(1)[0].fields[3].value)
         report=forecast(1)
-        self.assertEqual(report['production']['food'],22)
+        self.assertEqual(report['production']['food'],23.1)
         self.assertEqual(self.rows("SELECT source FROM nation_history WHERE source='research_private'")[0]['source'],'research_private')
 
     def test_stockpile_cannot_bypass_duration_pause_keeps_progress(self):
@@ -189,7 +189,7 @@ class AlgaeTests(ResearchFixture,unittest.TestCase):
         for k in tech.CATEGORIES:tech.set_program(1,1,k,True)
         r=forecast(1)
         self.assertEqual(sum(p['funded'] for p in r['algae_programs']),4)
-        self.assertEqual(r['production']['food'],28)
+        self.assertEqual(r['production']['food'],29.4)
         self.assertEqual(json.loads(self.nation()['resources_json'])['algae'],4)
         run_tick()
         with db.cursor() as c:

@@ -157,7 +157,7 @@ class LaborTests(Fixture, unittest.TestCase):
         self.assertEqual(before,self.balances())
         self.assertEqual(self.regime()['mode'],'free')
         self.assertEqual(forecast(1),base)
-        self.assertEqual(base['production']['food'],17.5)
+        self.assertEqual(base['production']['food'],18.375)
 
     def test_slavery_production_costs_and_preview_never_write(self):
         labor.change(1,1,'slavery',0,50)
@@ -168,7 +168,7 @@ class LaborTests(Fixture, unittest.TestCase):
         before=self.balances();preview=forecast(1)
         self.assertEqual(before,self.balances())
         self.assertEqual(self.reputation(),40)
-        self.assertAlmostEqual(preview['production']['food'],19.25)
+        self.assertAlmostEqual(preview['production']['food'],20.2125)
         self.assertEqual(preview['labor_upkeep'],2)
         self.assertEqual(preview['upkeep'],4)
         self.assertEqual(preview['policy']['unrest'],2)
@@ -192,11 +192,11 @@ class LaborTests(Fixture, unittest.TestCase):
             preview=forecast(1)
             self.assertEqual(self.regime(),before)
             self.assertEqual(preview['labor']['transition_months'],remaining)
-            self.assertAlmostEqual(preview['production']['food'],16.625)
+            self.assertAlmostEqual(preview['production']['food'],17.45625)
             self.assertEqual(preview['labor_upkeep'],0)
             run_tick()
         self.assertEqual(self.regime()['transition_months'],0)
-        self.assertEqual(forecast(1)['production']['food'],17.5)
+        self.assertEqual(forecast(1)['production']['food'],18.375)
         self.assertEqual(self.reputation(),40)
 
     def test_atomic_cost_owner_version_and_quote_checks(self):

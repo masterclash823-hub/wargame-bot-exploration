@@ -48,7 +48,7 @@ class ReportTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['opening_resources'],json.loads(before[0]['resources_json']))
         self.assertEqual(result['opening_treasury'],before[0]['treasury'])
         self.assertEqual(rows['wood']['change'],-3)  # Project +7, monthly contract -10.
-        self.assertEqual(rows['food']['production'],20)
+        self.assertEqual(rows['food']['production'],21)
         self.assertLess(rows['food']['change'],rows['food']['production'])
         self.assertEqual(rows['coal']['change'],-2)
         self.assertEqual(rows['algae']['stock'],.05)

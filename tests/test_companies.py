@@ -84,7 +84,7 @@ class CompanyTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
         result=forecast(1)
         self.assertEqual(before,self.balances())
         self.assertEqual(s,self.state())
-        self.assertAlmostEqual(result['production']['food'],21)
+        self.assertAlmostEqual(result['production']['food'],22.05)
         run_month()
         with db.cursor() as c:
             c.execute('SELECT buildings_json FROM provinces WHERE azgaar_cell_id=10')
@@ -100,8 +100,8 @@ class CompanyTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
         with db.cursor() as c:
             c.execute('SELECT report_json FROM economy_months')
             r=json.loads(c.fetchone()['report_json'])
-        self.assertAlmostEqual(r['2']['production']['food'],6.3)
-        self.assertAlmostEqual(r['1']['company']['received']['food'],14.7)
+        self.assertAlmostEqual(r['2']['production']['food'],6.615)
+        self.assertAlmostEqual(r['1']['company']['received']['food'],15.435)
         self.assertAlmostEqual(r['2']['upkeep'],0)
         self.assertAlmostEqual(r['1']['company']['costs']['gold'],2)
 

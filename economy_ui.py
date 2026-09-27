@@ -278,8 +278,15 @@ class EconomyControlCog(commands.Cog):
         if not n:await interaction.response.send_message(i18n.t(i18n.current_language(),'no_nation'),ephemeral=True);return
         await interaction.response.defer(ephemeral=True)
         try:
-            level,cost=await asyncio.to_thread(services.build,n['id'],cell_id,i18n.normalize_key(building),True)
-            await interaction.followup.send(tr('Poziom budynku: ','Building level: ')+str(level)+' · '+i18n.resource_list(cost),ephemeral=True)
+            key=i18n.normalize_key(building)
+            level,cost=await asyncio.to_thread(services.build,n['id'],cell_id,key,True,interaction.user.id)
+            from economy_engine import LEVEL_OUTPUT,LEVEL_WORK,WORKERS
+            note=tr('Poziom budynku: ','Building level: ')+str(level)+' · '+i18n.resource_list(cost)
+            note+='\n'+tr('Wydajność bazowa: ','Base output: ')+f'{LEVEL_OUTPUT[level]:.0%}'
+            note+=tr(' · pracownicy do pełnej obsady: ',' · workers for full staffing: ')+f'{WORKERS.get(key,200)*LEVEL_WORK[level]:g}'
+            note+='\n'+tr('Ręczny przydział pracowników pozostaje bez zmian. Sprawdź obsadę w /economy workers.',
+                           'Manual worker assignments are preserved. Check staffing in /economy workers.')
+            await interaction.followup.send(note,ephemeral=True)
         except ValueError as exc:await interaction.followup.send(str(exc),ephemeral=True)
 
     @economy.command(name='posture',description='Reserve or mobilize units / Rezerwa i mobilizacja')

@@ -86,12 +86,12 @@ class BalanceTests(DatabaseFixture,unittest.TestCase):
         prefs['arrears']=1000
         self.assertEqual(project(*data)['production']['food'],0)
         defs['farm']['upkeep_json']='{}'
-        self.assertEqual(project(*data)['production']['food'],20)
+        self.assertEqual(project(*data)['production']['food'],21)
         defs['farm']['upkeep_json']='{"gold":2}'
         provs[0]['company_plants']={'farm':dict(foreign=True,upkeep=2,inputs={},share=.7,nation_id=2)}
         result=project(*data)
-        self.assertAlmostEqual(result['production']['food'],6)
-        self.assertAlmostEqual(result['company_transfers'][0]['resources']['food'],14)
+        self.assertAlmostEqual(result['production']['food'],6.3)
+        self.assertAlmostEqual(result['company_transfers'][0]['resources']['food'],14.7)
         self.assertEqual(result['upkeep'],0)
 
     def test_paid_services_are_reduced_together_with_production(self):
@@ -160,7 +160,7 @@ class BalanceTests(DatabaseFixture,unittest.TestCase):
             uid=c.lastrowid
         create_route(1,'Legacy route',10,20,uid)
         self.assertEqual(self.data()[-1],20)
-        self.assertEqual(project(*self.data())['production']['food'],15)
+        self.assertEqual(project(*self.data())['production']['food'],15.75)
         self.coast(0)
         data=list(self.data());self.assertEqual(data[-1],0)
         data[4]=0;result=project(*data)

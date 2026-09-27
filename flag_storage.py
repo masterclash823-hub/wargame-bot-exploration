@@ -4,6 +4,7 @@ import hashlib
 import io
 
 import db
+from nation_access import can_manage
 from flags import clean_source, flag_url, public_base, ASSET, CUSTOM_EMOJI
 from world_service import world_lock, tr
 
@@ -34,7 +35,7 @@ def can_edit(c, nid, uid, gm=False, expected_owner=None):
     c.execute('SELECT * FROM nations WHERE id=?', (nid,))
     nation = c.fetchone()
     if not nation: raise ValueError(tr('Nie znaleziono państwa.', 'Nation not found.'))
-    if not gm and nation['owner_id'] != str(uid):
+    if not gm and not can_manage(nid,uid,c):
         raise ValueError(tr('Możesz zmieniać tylko własną flagę.', 'You can only change your own flag.'))
     if expected_owner is not None and nation['owner_id'] != expected_owner:
         raise ValueError(tr('Państwo zmieniło właściciela. Powtórz komendę.', 'Nation ownership changed. Run the command again.'))
@@ -80,9 +81,12 @@ async def change_flag(interaction, nation='', flag=None, file=None):
     from flags import flagged_embed, flag_text
     gm = gm_only(interaction)
     with db.cursor() as c:
-        if nation: c.execute('SELECT * FROM nations WHERE LOWER(name)=LOWER(?)', (nation,))
-        else: c.execute('SELECT * FROM nations WHERE owner_id=?', (str(interaction.user.id),))
-        row = c.fetchone()
+        if nation:
+            c.execute('SELECT * FROM nations WHERE LOWER(name)=LOWER(?)', (nation,))
+            row=c.fetchone()
+        else:
+            from nation_access import find_nation
+            row=find_nation(interaction.user.id,c)
     try:
         if not row: raise ValueError(tr('Nie znaleziono państwa.', 'Nation not found.'))
         with db.cursor() as c: can_edit(c, row['id'], interaction.user.id, gm)

@@ -99,6 +99,29 @@ class ProviderTests(ModelFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.await_count,2)
         self.assertTrue(all(call.kwargs['json_mode'] for call in request.call_args_list))
 
+    async def test_next_phase_rejects_repeated_choices_and_asks_a_new_decision(self):
+        choices=['Scout the road before departing','Negotiate passage with the guards','Force a crossing at dawn']
+        state=dict(lang='en',opening='A blocked road',text='The guards stop you.',choices=choices,
+                   history=[dict(action=choices[1],offered_choices=choices)],base_effects={'treasury':10})
+        fresh=['Set the meeting in the nearby inn','Agree an escort schedule','Send the convoy under the new agreement']
+        request=AsyncMock(side_effect=[json.dumps(dict(text='Same dilemma',choices=choices)),
+                                      json.dumps(dict(text='The guards accepted talks. Arrange the passage.',choices=fresh))])
+        with patch.object(ai,'_request',request):
+            text,labels=await event_adventure.scene(state)
+        self.assertEqual(labels,fresh);self.assertFalse(state['scene_fallback'])
+        self.assertEqual(request.await_count,2)
+        self.assertIn('initial approach has already been chosen',request.call_args.args[1])
+
+    async def test_offline_phases_offer_different_actions(self):
+        state=dict(lang='pl',opening='Spór o drogę',history=[],base_effects={})
+        seen=[]
+        with patch.object(event_adventure,'_ai_json',AsyncMock(side_effect=ValueError('offline'))):
+            for _ in range(3):
+                _,choices=await event_adventure.scene(state)
+                seen.append(tuple(choices))
+                state['history'].append(dict(action=choices[1],offered_choices=choices))
+        self.assertEqual(len(set(seen)),3)
+
     async def test_truncated_response_can_use_another_provider(self):
         with patch.object(ai, '_request', AsyncMock(side_effect=ai.EventAIOutputError())), \
                 patch.object(ai, '_chat_request', AsyncMock(return_value='Complete answer')):

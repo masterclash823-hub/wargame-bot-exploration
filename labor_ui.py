@@ -3,6 +3,7 @@ import asyncio
 
 import discord
 import db
+from nation_access import can_manage
 import i18n
 import labor
 from economy_engine import forecast
@@ -80,7 +81,7 @@ async def show(interaction,nid,cell=None,page=0,*,edit=False):
     if not response_done(interaction):await interaction.response.defer(ephemeral=True)
     with db.cursor() as c:
         c.execute('SELECT owner_id FROM nations WHERE id=?',(nid,));n=c.fetchone()
-        if not n or n['owner_id']!=str(interaction.user.id):raise ValueError(i18n.text('This is not your menu.'))
+        if not n or not can_manage(nid,interaction.user.id,c):raise ValueError(i18n.text('This is not your menu.'))
         c.execute('SELECT azgaar_cell_id,name,population FROM provinces WHERE owner_nation_id=? AND active=1 ORDER BY azgaar_cell_id',(nid,))
         provinces=c.fetchall()
     e=discord.Embed(title='👥 '+tr('Pracownicy','Workers'),color=discord.Color.gold())
@@ -93,7 +94,7 @@ async def show(interaction,nid,cell=None,page=0,*,edit=False):
         r=await asyncio.to_thread(forecast,nid)
         with db.cursor() as c:
             c.execute('SELECT owner_id FROM nations WHERE id=?',(nid,));current=c.fetchone()
-            if not current or current['owner_id']!=str(interaction.user.id):raise ValueError(i18n.text('This is not your menu.'))
+            if not current or not can_manage(nid,interaction.user.id,c):raise ValueError(i18n.text('This is not your menu.'))
         staff=[s for s in r['staffing'] if s['cell']==cell]
         page=max(0,min(page,max(0,(len(staff)-1)//20)))
         available=max(0,p['population'])*.4;used=sum(s['workers'] for s in staff)

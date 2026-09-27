@@ -27,6 +27,7 @@ from discord.ext import commands
 
 import config
 import db
+from nation_access import find_nation,can_manage
 import i18n
 import battle_resolution
 import battle_plan_text
@@ -42,9 +43,7 @@ def _lang(i):
 from utils import gm_only as _gm
 
 def _nat_owner(uid):
-    with db.cursor() as c:
-        c.execute("SELECT * FROM nations WHERE owner_id=?", (str(uid),))
-        return c.fetchone()
+    return find_nation(str(uid))
 
 def _nat_name(name):
     with db.cursor() as c:
@@ -432,7 +431,7 @@ class CombatCog(commands.Cog):
         with db.cursor() as c:
             c.execute('SELECT p.*,n.owner_id FROM battle_plans p JOIN nations n ON n.id=p.nation_id WHERE p.id=?', (plan_id,))
             plan = c.fetchone()
-        if not plan or (str(plan['owner_id']) != str(interaction.user.id) and not _gm(interaction)):
+        if not plan or (not can_manage(plan['nation_id'],interaction.user.id) and not _gm(interaction)):
             await interaction.response.send_message('Plan unavailable. / Plan niedostępny.', ephemeral=True)
             return
         await interaction.response.send_message(file=battle_plan_text.plan_file(plan_id, battle_plan_text.unpack(plan)), ephemeral=True)

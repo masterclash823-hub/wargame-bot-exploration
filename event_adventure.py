@@ -3,8 +3,11 @@ import copy
 import asyncio
 import json
 import math
+import re
+from difflib import SequenceMatcher
 
 import db
+from nation_access import can_manage
 import i18n
 
 MAX_DECISIONS = 3
@@ -13,6 +16,26 @@ FALLBACK_CHOICES = {
     ('Ostrożne działanie','Zrównoważone działanie','Zdecydowane działanie'),
     ('Cautious action','Balanced action','Decisive action'),
 }
+PHASE_CHOICES = {
+    'pl': [
+        ['Zbierz informacje przed podjęciem działań','Uzgodnij działania z zainteresowanymi','Rozpocznij bezpośrednią interwencję'],
+        ['Wdrażaj wybraną decyzję etapami i sprawdzaj wyniki','Ustal podział zadań i nadzoruj realizację','Przyspiesz realizację wybranego działania'],
+        ['Zakończ działania po sprawdzeniu ich następstw','Uzgodnij końcowe rozwiązanie z uczestnikami','Podejmij ostateczną decyzję i zamknij sprawę'],
+    ],
+    'en': [
+        ['Gather information before acting','Agree an approach with those involved','Begin a direct intervention'],
+        ['Implement the decision in stages and check results','Assign responsibilities and supervise implementation','Accelerate the chosen action'],
+        ['Conclude the response after checking its consequences','Agree a final settlement with those involved','Make the final decision and close the matter'],
+    ],
+}
+FALLBACK_CHOICES.update(tuple(choices) for phases in PHASE_CHOICES.values() for choices in phases)
+
+
+def repeated_choice(label, previous):
+    clean=lambda text:re.sub(r'[^\w\s]','',text.casefold()).strip()
+    candidate=clean(label)
+    return any(candidate==clean(old) or (len(candidate)>20 and SequenceMatcher(None,candidate,clean(old)).ratio()>=.88)
+               for old in previous)
 
 
 def tr(lang, pl, en):
@@ -94,15 +117,22 @@ def _validate_choice(result):
 async def scene(state):
     """Generate only narrative/labels; mechanical choice slots are immutable."""
     lang = state["lang"]
-    labels = [tr(lang, "Ostrożne działanie", "Cautious action"),
-              tr(lang, "Zrównoważone działanie", "Balanced action"),
-              tr(lang, "Zdecydowane działanie", "Decisive action")]
     stage = len(state["history"]) + 1
+    labels = PHASE_CHOICES.get(lang,PHASE_CHOICES['en'])[stage-1]
     phase = [tr(lang, "Reakcja", "Response"), tr(lang, "Realizacja", "Implementation"),
              tr(lang, "Rozstrzygnięcie", "Resolution")][stage - 1]
     fallback = f"{phase} ({stage}/3): {state['opening'][:1100]}"
     if state["history"]:
         fallback += tr(lang, "\nOstatnia decyzja: ", "\nLast decision: ") + state["history"][-1]["action"][:300]
+    previous=[label for step in state['history'] for label in step.get('offered_choices',[step['action']])]
+    if stage>1:previous+=state.get('choices',[])
+    phase_task=(
+        'Introduce the immediate dilemma and ask the player how to approach it.',
+        'The initial approach has already been chosen. Show its concrete consequences and ask HOW to implement it: '
+        'a new practical decision about people, timing, logistics or a compromise. Never ask the player to choose the initial approach again.',
+        'Resolve the implementation and present the FINAL settlement decision. Close the original problem; '
+        'do not restart investigation, repeat preparations, or introduce another unrelated crisis.',
+    )[stage-1]
     prompt = (
         "You narrate a fantasy strategy event. Write in " + ("Polish" if lang == "pl" else "English")
         + '. Return JSON only: {"text":"short scene", "choices":["cautious action", "balanced action", "decisive action"]}. '
@@ -110,6 +140,8 @@ async def scene(state):
         "Do not promise a guaranteed result in the labels. Mechanical consequences are assessed separately and "
         "cannot exceed GM-approved axes and limits. Do not invent extra benefits, costs or rewards. "
         "Each label <=120 characters, text <=1200 characters. "
+        + phase_task + ' All three choices must address a NEW decision at this stage, not paraphrase earlier options. '
+        'A cautious, balanced or decisive approach is only a risk profile: never use generic risk labels as actions. '
         "Stay with this event's opening and the player's latest decision; do not hijack it with an old subplot. "
         "Preserve genuine opportunities: do not invent a hidden crisis merely to make a positive event dramatic. "
         "Challenges can be mitigated; do not force a loss or reward regardless of what the player does. "
@@ -118,12 +150,18 @@ async def scene(state):
         + json.dumps({"opening": state["opening"], "history": state["history"], "effects": state["base_effects"],
                       "ruins":state.get('ruins'), "past_decisions":state.get('memories',[]),
                       "opening_brief":state.get('opening_brief'),
+                      "previous_options_do_not_repeat":previous,
                       "nation_context":state.get('nation_context','')}, ensure_ascii=False)
         + ' Past decisions are recorded facts: refer to relevant choices and actual outcomes, '
           'never invent promises, reverse recorded outcomes or disclose private memory as public news.'
     )
+    def validate(result):
+        result=_validate_scene(result)
+        if any(repeated_choice(label,previous) for label in result['choices']):
+            raise ValueError('Repeated choices')
+        return result
     try:
-        result = _validate_scene(await _ai_json(prompt,validate=_validate_scene))
+        result = validate(await _ai_json(prompt,validate=validate))
         state["scene_fallback"] = False
         return result["text"], result["choices"]
     except Exception as exc:
@@ -254,6 +292,9 @@ def start_run(state):
             raise ValueError(i18n.text('Event already published or missing. / Event już opublikowany lub nie istnieje.'))
         if event["gm_final_text"] != state["opening"] or validate_effects(event["effects_json"]) != state["base_effects"]:
             raise ValueError(i18n.text('Draft changed. Run /event post again. / Szkic zmieniony. Powtórz /event post.'))
+        if state.get('public_image'):
+            from event_media import save
+            state['public_image']=save(c,state['event_id'],state['public_image'])
         c.execute("INSERT INTO event_runs(event_id,version,state_json) VALUES(?,?,?)",
                   (state["event_id"], 0, json.dumps(state, ensure_ascii=False)))
         c.execute('INSERT INTO event_publications(event_id,visibility,channel_id) VALUES(?,?,?)',
@@ -265,7 +306,7 @@ def start_run(state):
 async def retry_scene(event_id, version, owner_id):
     """Regenerate a persisted fallback scene without consuming a decision."""
     old=load_run(event_id)
-    if str(owner_id)!=old['owner_id']:
+    if not can_manage(old['nation_id'],owner_id):
         raise ValueError(i18n.text('Only the nation owner can regenerate choices. / Tylko właściciel narodu może ponowić wybory.'))
     if old['version']!=version or not needs_scene_retry(old):
         raise ValueError(i18n.text('Choices are current or the event is finished. Use /event play. / Wybory są aktualne albo event jest zakończony. Użyj /event play.'))
@@ -273,7 +314,7 @@ async def retry_scene(event_id, version, owner_id):
     with db.cursor() as c:
         c.execute('SELECT * FROM nations WHERE id=?',(state['nation_id'],))
         nat=c.fetchone()
-    if not nat or nat['owner_id']!=str(owner_id):
+    if not nat or not can_manage(state['nation_id'],owner_id):
         raise ValueError(i18n.text('Nation owner changed. / Zmieniono właściciela narodu.'))
     from cogs.events import _build_nation_context
     topic=(state.get('opening_brief') or {}).get('topic')
@@ -294,7 +335,7 @@ async def retry_scene(event_id, version, owner_id):
             raise ValueError(i18n.text('Choices already changed. Use /event play. / Wybory już się zmieniły. Użyj /event play.'))
         c.execute('SELECT owner_id FROM nations WHERE id=?'+lock,(state['nation_id'],))
         current_nat=c.fetchone()
-        if not current_nat or current_nat['owner_id']!=str(owner_id):
+        if not current_nat or not can_manage(state['nation_id'],owner_id,c):
             raise ValueError(i18n.text('Nation owner changed. / Zmieniono właściciela narodu.'))
         c.execute('UPDATE event_runs SET version=?,state_json=? WHERE event_id=?',
                   (state['version'],json.dumps(state,ensure_ascii=False),event_id))
@@ -320,7 +361,7 @@ def prospective_effects(state, decisions):
 
 async def decide(event_id, version, owner_id, choice=None, answer=None):
     old = load_run(event_id)
-    if str(owner_id) != old["owner_id"]:
+    if not can_manage(old['nation_id'],owner_id):
         raise ValueError(i18n.text('Only the nation owner can decide. / Decyduje wyłącznie właściciel narodu.'))
     if old["resolved"] or old["version"] != version:
         raise ValueError(i18n.text('Old or finished turn. Use /event play. / Nieaktualna lub zakończona tura. Użyj /event play.'))
@@ -345,6 +386,7 @@ async def decide(event_id, version, owner_id, choice=None, answer=None):
     action = answer if answer is not None else state["choices"][choice]
     impact, reason, impact_fallback = await assess_consequence(state, action, choice)
     state["history"].append({"action": action, "choice": choice, "custom": answer is not None,
+                             "offered_choices":list(state['choices']),
                              "fallback": fallback, "impact": impact, "reason": reason,
                              "impact_fallback": impact_fallback})
     state["version"] = version + 1
@@ -365,7 +407,7 @@ async def decide(event_id, version, owner_id, choice=None, answer=None):
             raise ValueError(i18n.text('Decision already saved. Use /event play. / Decyzja już zapisana. Użyj /event play.'))
         c.execute("SELECT * FROM nations WHERE id=?" + lock, (state["nation_id"],))
         nat = c.fetchone()
-        if not nat or nat["owner_id"] != str(owner_id):
+        if not nat or not can_manage(state['nation_id'],owner_id,c):
             raise ValueError(i18n.text('Nation owner changed. / Zmieniono właściciela narodu.'))
         if state["resolved"]:
             effects = prospective_effects(state, state["history"])

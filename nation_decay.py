@@ -45,6 +45,7 @@ def tick(c,target):
         c.execute("UPDATE nation_decay SET status='ruins',former_owner=? WHERE nation_id=?",(d['owner_id'],nid))
         # Keep the nation, provinces and history, but release the player account.
         c.execute('UPDATE nations SET owner_id=? WHERE id=?',(f'ruins:{nid}',nid))
+        c.execute('DELETE FROM nation_coops WHERE nation_id=?',(nid,))
         c.execute('INSERT INTO ruin_sites(nation_id,cell_id) SELECT ?,azgaar_cell_id FROM provinces WHERE owner_nation_id=? AND active=1 ON CONFLICT DO NOTHING',(nid,nid))
         c.execute("UPDATE trades SET status='cancelled' WHERE status='pending' AND (from_nation_id=? OR to_nation_id=?)",(nid,nid))
         c.execute("UPDATE trade_contracts SET status='ended' WHERE trade_id IN (SELECT id FROM trades WHERE from_nation_id=? OR to_nation_id=?)",(nid,nid))
