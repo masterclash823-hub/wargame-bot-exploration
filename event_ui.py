@@ -3,6 +3,7 @@ import discord
 import logging
 import i18n
 import event_media
+from event_text import wrong_language
 from nation_access import can_manage
 
 import event_adventure as adventure
@@ -36,7 +37,11 @@ def render_event(state):
     lang = state["lang"]
     title = adventure.tr(lang, "Wydarzenie", "Event")
     title += f" #{state['event_id']} — {state['nation'][:150]}"
-    embed = discord.Embed(title=title, description=state["text"][:1800], color=discord.Color.purple())
+    text=state['text']
+    if not state.get('resolved') and wrong_language(text,lang):
+        text=adventure.tr(lang,'Scena wymaga ponownego załadowania w języku państwa. Użyj przycisku poniżej.',
+                              'Reload the scene in the nation’s language using the button below.')
+    embed = discord.Embed(title=title, description=text[:1800], color=discord.Color.purple())
     flagged_embed(embed, (state.get('flag', ''), state['nation']))
     history = state["history"]
     if history:
@@ -62,15 +67,16 @@ def render_event(state):
             embed.add_field(name=adventure.tr(lang, "Uwaga GM (fabularna)", "GM note (narrative)"), value=note, inline=False)
         embed.set_footer(text=adventure.tr(lang, "Koniec • 3/3 decyzji • efekty naliczone raz", "Finished • 3/3 decisions • effects applied once"))
         return illustrate_event(embed, state)
-    for i, label in enumerate(state["choices"]):
+    retry=adventure.needs_scene_retry(state)
+    for i, label in enumerate([] if retry else state["choices"]):
         embed.add_field(name=f"{i + 1}. {label}"[:256], value=
                         adventure.tr(lang, "Skutek zależy od sensu decyzji. Limit: ",
                                      "Outcome depends on the decision. Limit: ")
                         + adventure.effect_limits_text(state)[:750], inline=False)
-    if adventure.needs_scene_retry(state):
+    if retry:
         embed.add_field(name=adventure.tr(lang,"Wybory awaryjne","Fallback choices"), value=adventure.tr(lang,
-            "AI nie przygotowało poprawnych wyborów. Użyj przycisku poniżej, aby wygenerować je ponownie bez zużywania decyzji.",
-            "AI did not prepare valid choices. Use the button below to regenerate them without consuming a decision."), inline=False)
+            "Nie ma jeszcze konkretnych odpowiedzi do tej sceny. Kliknij „Załaduj odpowiedzi ponownie” — nie zużyjesz decyzji ani zasobów. Możesz też opisać własne działanie. Ogólne opcje 1/2/3 są zablokowane.",
+            "Specific choices are not ready. Click Reload choices without spending a decision or resources, or describe your own action. Generic options 1/2/3 are disabled."), inline=False)
     embed.add_field(name=adventure.tr(lang, "Zasady", "Rules"), value=adventure.tr(lang,
         "Każda decyzja wnosi ⅓ końcowego skutku. AI ocenia osobno wpływ na złoto, stabilność i zasoby, więc znak może się odwrócić. "
         "GM nadal ustala dozwolone rodzaje oraz maksymalną skalę efektów; AI nie może stworzyć nowych nagród.",
@@ -117,16 +123,17 @@ class EventView(discord.ui.View):
         self.state = state
         if state["resolved"]:
             return
-        for index in range(3):
+        retry=adventure.needs_scene_retry(state)
+        for index in range(0 if retry else 3):
             button = discord.ui.Button(label=str(index + 1), style=discord.ButtonStyle.primary)
             button.callback = self._choose(index)
             self.add_item(button)
         other = discord.ui.Button(label=adventure.tr(state["lang"], "Własna odpowiedź", "Custom response"))
         other.callback = self._custom
         self.add_item(other)
-        if adventure.needs_scene_retry(state):
-            retry=discord.ui.Button(label=adventure.tr(state['lang'],'Wygeneruj wybory ponownie','Regenerate choices'),
-                                    style=discord.ButtonStyle.secondary,row=1)
+        if retry:
+            retry=discord.ui.Button(label=adventure.tr(state['lang'],'Załaduj odpowiedzi ponownie','Reload choices'),
+                                    style=discord.ButtonStyle.primary,row=0)
             retry.callback=self._retry
             self.add_item(retry)
 

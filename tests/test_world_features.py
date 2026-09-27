@@ -339,7 +339,7 @@ class WorldUITests(WorldFixture,unittest.IsolatedAsyncioTestCase):
         eid=db.insert_returning_id('INSERT INTO events(nation_id,gm_final_text,effects_json) VALUES(2,?,?)',
                                   ('Border negotiations','{"treasury":-500,"resources":{"iron":-80}}'))
         event=self.query('SELECT * FROM events WHERE id=?',(eid,))[0]
-        with patch.object(events,'scene',AsyncMock(return_value=('Story',['Cautious','Balanced','Decisive']))):
+        with patch.object(events,'scene',AsyncMock(return_value=('Story',['Scout the border','Negotiate passage','Send an escort']))):
             state=await events.prepare_run(event,self.balances()[1])
         state['visibility']=visibility
         return events.start_run(state)
@@ -363,7 +363,7 @@ class WorldUITests(WorldFixture,unittest.IsolatedAsyncioTestCase):
         with patch.object(events,'_ai_json',AsyncMock(return_value={'text':'A','choices':['A','B','C']})) as ai:
             await events.scene(next_state)
         self.assertIn('Border negotiations',ai.call_args.args[0])
-        self.assertIn('past_decisions',ai.call_args.args[0])
+        self.assertIn('Private remembered decisions',ai.call_args.args[0])
 
     async def test_event_transfer_moves_decisions_to_current_owner_and_guards_archive(self):
         state=await self.new_event('public')

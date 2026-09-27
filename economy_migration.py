@@ -2,8 +2,8 @@
 import json
 import db
 
-NEW_EFFECTS={'farm':{'food':21},'pasture':{'food':8.4,'horses':1},
-             'fishing_wharf':{'food':15.75},'plantation':{'food':6.3,'spices':3},
+NEW_EFFECTS={'farm':{'food':21},'pasture':{'food':8,'horses':1},
+             'fishing_wharf':{'food':16},'plantation':{'food':6,'spices':3},
              'powder_mill':{'gunpowder':4,'coal':-2,'copper':-1},
              'silk_workshop':{'silk':2,'cloth':-2},'market':{},'port':{}}
 NEW_DESCRIPTIONS={
@@ -44,6 +44,14 @@ def seed_buildings(defaults):
             if row and set(row['requires_terrain'].split(',')) in ({'forest'},set(default.split(','))-{'taiga'}):
                 c.execute("UPDATE building_defs SET requires_terrain=? WHERE key='lumber_camp'",(default,))
             c.execute("INSERT INTO economy_meta(key,value) VALUES('food_taiga_v4','1')")
+        c.execute("SELECT value FROM economy_meta WHERE key='food_whole_v5'")
+        if not c.fetchone():
+            previous={'pasture':{'food':8.4,'horses':1},'fishing_wharf':{'food':15.75},'plantation':{'food':6.3,'spices':3}}
+            for key,effect in previous.items():
+                c.execute('SELECT effect_json FROM building_defs WHERE key=?',(key,));row=c.fetchone()
+                if row and json.loads(row['effect_json'])==effect:
+                    c.execute('UPDATE building_defs SET effect_json=? WHERE key=?',(json.dumps(NEW_EFFECTS[key]),key))
+            c.execute("INSERT INTO economy_meta(key,value) VALUES('food_whole_v5','1')")
         c.execute("SELECT value FROM economy_meta WHERE key='silk_upkeep_v3'")
         if not c.fetchone():
             c.execute("SELECT upkeep_json FROM building_defs WHERE key='silk_workshop'")

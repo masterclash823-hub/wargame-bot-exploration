@@ -23,6 +23,7 @@ import db
 from nation_access import find_nation,can_manage
 import i18n
 import event_variety
+from event_text import language_instruction, validate_language
 from utils import short_date
 import event_adventure as adventure
 from event_ui import EventView, send_event
@@ -61,7 +62,7 @@ def _cfg(key, default=""):
     return row["value"] if row else default
 
 
-def _build_nation_context(nat, topic=None) -> str:
+def _build_nation_context(nat, topic=None, *, compact=False) -> str:
     """Build authoritative current context, including a non-mutating monthly forecast."""
     tech      = json.loads(nat["tech_json"])
     resources = json.loads(nat["resources_json"])
@@ -77,8 +78,8 @@ def _build_nation_context(nat, topic=None) -> str:
         )
         history = c.fetchall()
     history_str = "\n".join(
-        f"[{short_date(r['timestamp'])} {r['source'].upper()}] {r['entry_text'][:1200]}"
-        for r in reversed(history)
+        f"[{short_date(r['timestamp'])} {r['source'].upper()}] {r['entry_text'][:400 if compact else 1200]}"
+        for r in reversed(history[:6] if compact else history)
     ) or "No recorded history yet."
 
     # Relations
@@ -104,7 +105,7 @@ def _build_nation_context(nat, topic=None) -> str:
         mname = i18n.text('Month {p0}', p0=month)
 
     from world_service import memories
-    remembered=json.dumps(memories(nat['id'],event_variety.TOPICS.get(topic,''),limit=6),ensure_ascii=False)
+    remembered=json.dumps(memories(nat['id'],event_variety.TOPICS.get(topic,''),limit=2 if compact else 6),ensure_ascii=False)
     from labor_regimes import state as labor_state
     with db.cursor() as c:
         labor=labor_state(c,nat['id'])
@@ -113,7 +114,8 @@ def _build_nation_context(nat, topic=None) -> str:
                   "WHERE m.status='active' AND t.status='active' AND (m.proposer_id=? OR m.recipient_id=?)",(nat['id'],nat['id']))
         marriages=json.dumps(c.fetchall(),ensure_ascii=False)
         c.execute("SELECT state_json FROM explorations WHERE nation_id=? AND status='resolved' ORDER BY id DESC LIMIT 3",(nat['id'],))
-        expeditions=[{k:s[k] for k in ('text','success')} for row in c.fetchall() for s in [json.loads(row['state_json'])]]
+        expeditions=[{'text':s['text'][:300] if compact else s['text'],'success':s['success']}
+                     for row in c.fetchall() for s in [json.loads(row['state_json'])]]
     institutions=[
         f"Labor policy: {labor['mode']}; emancipation transition remaining: {labor['transition_months']} months. "
         f"Enslaved war captives already included in population: {labor.get('captives',0)}.",
@@ -168,7 +170,7 @@ async def _generate_event(nat, ruin_context=None, *, theme='', strict=False) -> 
     Returns (event_text, effects_json_str).
     """
     brief = nat.get('event_brief') or event_variety.plan(nat['id'],ruins=bool(ruin_context))
-    context = _build_nation_context(nat,brief['topic'])
+    context = _build_nation_context(nat,brief['topic'],compact=True)
     if ruin_context:
         context += "\nThis event is the discovery of neighboring nation ruins. Public historical context (story data): " + json.dumps(ruin_context,ensure_ascii=False)
     if theme:
@@ -202,10 +204,16 @@ Keep the literal EFFECTS: separator and all JSON keys/resource identifiers in En
 Include at least one signed numeric effect; mixed events need a benefit and a cost on different axes.
 Write the event now:"""
 
+    prompt=language_instruction(lang)+prompt+'\n'+language_instruction(lang)
+    def validate(raw):
+        text,effects=event_variety.parse_draft(raw,brief)
+        validate_language(text,lang)
+        validate_language(json.loads(effects).get('special_note',''),lang)
+        return text,effects
     try:
         from event_ai import generate_text
-        raw = await generate_text(prompt,validate=lambda text:event_variety.parse_draft(text,brief))
-        return event_variety.parse_draft(raw,brief)
+        raw = await generate_text(prompt,validate=validate,max_output_tokens=1000,max_invalid=2)
+        return validate(raw)
 
     except Exception as e:
         print(f"[EVENTS AI] generation failed: {type(e).__name__}", flush=True)
@@ -536,9 +544,10 @@ class EventsCog(commands.Cog):
                     await interaction.followup.send(adventure.tr(_lang(interaction),
                         'Wgraj prawidłowy JPG, PNG lub WebP do 6 MB i 12 mln pikseli.',
                         'Upload a valid JPG, PNG or WebP up to 6 MB and 12 million pixels.'),ephemeral=True);return
-            else:image = await find_event_image(ev['gm_final_text'], image_query)
         try:
-            prepared = await adventure.prepare_run(ev, nat)
+            if include_image and not file:
+                prepared,image=await asyncio.gather(adventure.prepare_run(ev,nat),find_event_image(ev['gm_final_text'],image_query))
+            else:prepared = await adventure.prepare_run(ev, nat)
             prepared.update(visibility=visibility, channel_id=str(ch.id) if ch else None, public_image=image)
             state = adventure.start_run(prepared)
         except ValueError as exc:

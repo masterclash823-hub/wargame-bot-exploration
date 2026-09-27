@@ -70,6 +70,11 @@ podział pozostaje symulacją. Zmiana dotyczy nowych rozstrzygnięć.
 
 ## Publikowanie eventów
 
+Przy odpowiedziach awaryjnych widoczny jest przycisk **Załaduj odpowiedzi ponownie**;
+nie zużywa decyzji ani zasobów. Typowe ogólne opcje są ukryte, a stare kliknięcia
+blokowane. Generowanie używa mniejszego kontekstu historycznego, zachowując pełny
+bilans żywności. [Język, ponawianie i ograniczenie kosztów](docs/event-reliability.md).
+
 GM ustawia kanał przez `/event channel channel:#wydarzenia`. Przy publikacji
 `/event post event_id:12 visibility:public` pokazuje wszystkim narrację i ilustrację
 wyszukaną w Wikimedia Commons lub Art Institute of Chicago. Opcjonalne `channel` zmienia kanał dla jednego

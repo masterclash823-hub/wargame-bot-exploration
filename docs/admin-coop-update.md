@@ -50,8 +50,9 @@ z panelu lub `/event play`. Prywatną historię mogą czytać członkowie państ
 
 ## Budynki i eventy
 
-Bazowa produkcja żywności standardowych gospodarstw, pastwisk, przystani
-i plantacji rośnie o **5%**. Nie zmienia to kosztów ani zapotrzebowania ludności.
+Bazową produkcję żywności standardowych gospodarstw, pastwisk, przystani
+i plantacji zwiększono o **5%**, a następnie zaokrąglono do całości: 21 / 8 / 16 / 6.
+Nie zmienia to kosztów ani zapotrzebowania ludności.
 Tartak można budować także w tajdze, w tym na jej pagórkowatych polach;
 korzysta z tego również automat kompanii.
 
@@ -61,9 +62,9 @@ na pracowników 1 / 1,5 / 2. Przykład przystani, przy pełnej obsadzie i stabil
 
 | Poziom | Pracownicy | Żywność / miesiąc |
 | --- | ---: | ---: |
-| 1 | 200 | 15,75 |
-| 2 | 300 | 26,775 |
-| 3 | 400 | 37,8 |
+| 1 | 200 | 16 |
+| 2 | 300 | 27,2 |
+| 3 | 400 | 38,4 |
 
 Ręczny przydział 200 osób pozostaje 200 po ulepszeniu. Pełną wydajność wyższego
 poziomu uzyskuje się po zwiększeniu obsady przez `/economy workers`, o czym
