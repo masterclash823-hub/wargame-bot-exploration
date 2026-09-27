@@ -4,6 +4,8 @@ import i18n
 
 PARAMETERS = {
     'price':'cena','offer_id':'id_oferty',
+    'map_file':'projekt_map','sync_owners':'zastąp_granice','format':'format',
+    'state_id':'id_państwa','culture_id':'id_kultury','religion_id':'id_religii',
     'population':'populacja','biome':'biom','coastal':'wybrzeże','normalize_population':'uśrednij_populację',
     'limit':'limit',
     'title':'tytuł', 'goal_id':'id_celu',

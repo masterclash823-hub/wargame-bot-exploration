@@ -1,6 +1,6 @@
 """
 Province commands:
-  /admin map_import         - GM: import Azgaar JSON (file attachment or URL)
+  /admin map_import         - GM: import Full Data JSON / .map (file attachment or URL)
   /admin map_resync         - GM: re-import updated map, merges with existing data
   /admin map_export_markers - GM: generate JS snippet to place resource markers in Azgaar
   /province claim           - GM: claim provinces for a nation (comma list + ranges)
@@ -11,7 +11,6 @@ Province commands:
 from flags import flag_text, flagged_embed
 import json
 import asyncio
-import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -53,6 +52,7 @@ def _biome_resources(biome_name: str, height: int, has_river: bool, coastal: boo
     return {k: v for k, v in base.items() if v > 0}
 
 def _terrain_label(height: int, biome: str) -> str:
+    if height < 20:               return "water"
     if height > 70:               return "mountains"
     if height > 50:               return "hills"
     if "forest"  in biome.lower(): return "forest"
@@ -86,28 +86,6 @@ def _get_nation(name: str):
         cur.execute("SELECT * FROM nations WHERE LOWER(name)=LOWER(?)", (name,))
         return cur.fetchone()
 
-async def _fetch_json(source: str, attachment: discord.Attachment | None) -> dict:
-    """Load JSON from attachment bytes or a URL string. Handles gzipped Azgaar .map files."""
-    import gzip
-
-    def _parse_bytes(raw: bytes) -> dict:
-        # Try gzip first (newer Azgaar .map files are gzipped)
-        try:
-            raw = gzip.decompress(raw)
-        except (gzip.BadGzipFile, OSError):
-            pass  # Not gzipped, use as-is
-        return json.loads(raw.decode("utf-8"))
-
-    if attachment:
-        raw = await attachment.read()
-        return _parse_bytes(raw)
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(source, headers={"User-Agent": "WargameBot/1.0"}) as resp:
-            resp.raise_for_status()
-            raw = await resp.read()
-            return _parse_bytes(raw)
-
 def _neighbor_ids(value) -> list[int]:
     if not isinstance(value, (list, tuple)):
         return []
@@ -132,7 +110,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
     else:
         pack = {}
 
-    biomes_raw = pack.get("biomes", {})
+    biomes_raw = pack.get("biomes", data.get("biomesData", {}))
     biome_names = []
 
     if isinstance(biomes_raw, dict):
@@ -145,6 +123,8 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
                 biome_names.append(b)
             else:
                 biome_names.append("unknown")
+    canonical = {name.casefold(): name for name in BIOME_RESOURCES}
+    biome_names = [canonical.get(name.casefold(), name) for name in biome_names]
 
     burg_cell: dict[int, str] = {}
     for burg in pack.get("burgs", []):
@@ -169,7 +149,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
             coastal   = bool(cell.get("haven", 0))
             
             # Preserve relative map population before normalization below.
-            pop       = int(cell.get("pop", 0)) * 100
+            pop       = round(float(cell.get("pop", 0)) * 100) if height >= 20 else 0
             
             terrain = _terrain_label(height, bname)
             resources = _biome_resources(bname, height, has_river, coastal)
@@ -203,7 +183,7 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
             
             
             # Preserve relative map population before normalization below.
-            pop       = (int(pops[idx]) if idx < len(pops) else 0) * 100
+            pop       = round(float(pops[idx]) * 100) if idx < len(pops) and height >= 20 else 0
             
             terrain   = _terrain_label(height, bname)
             resources = _biome_resources(bname, height, has_river, coastal)
@@ -232,11 +212,13 @@ def _process_azgaar(data: dict) -> tuple[list[dict], str | None]:
         for p,w in zip(land,weights):p['pop']=round(w*scale)
     return provinces, None
 
-def _upsert_provinces(province_list: list[dict], resync: bool) -> dict:
+def _upsert_provinces(province_list: list[dict], resync: bool, preserve_game: bool = False) -> dict:
     inserted = updated = deactivated = 0
     incoming = {p["cell_id"] for p in province_list}
 
     with db.atomic() as cur:
+        from world_service import world_lock
+        world_lock(cur)
         if resync:
             cur.execute("SELECT azgaar_cell_id FROM provinces WHERE active=1")
             existing = {r["azgaar_cell_id"] for r in cur.fetchall()}
@@ -249,31 +231,22 @@ def _upsert_provinces(province_list: list[dict], resync: bool) -> dict:
                 )
                 deactivated = len(gone)
 
-        for p in province_list:
-            cur.execute("SELECT id FROM provinces WHERE azgaar_cell_id=?", (p["cell_id"],))
-            if cur.fetchone():
-                cur.execute(
-                    """UPDATE provinces SET biome=?,terrain=?,base_resources_json=?,
-                       name=?,active=1 WHERE azgaar_cell_id=?""",
-                    (p["biome"], p["terrain"], json.dumps(p["resources"]),
-                     p["name"], p["cell_id"]),
-                )
-                updated += 1
-            else:
-                cur.execute(
-                    """INSERT INTO provinces
-                       (azgaar_cell_id,name,biome,terrain,base_resources_json,population)
-                       VALUES (?,?,?,?,?,?)""",
-                    (p["cell_id"], p["name"], p["biome"], p["terrain"],
-                     json.dumps(p["resources"]), p["pop"]),
-                )
-                inserted += 1
-
-        for p in province_list:
-            if 'coastal' not in p:continue
-            cur.execute('INSERT INTO province_coasts(province_id,coastal) SELECT id,? FROM provinces WHERE azgaar_cell_id=? '
+        cur.execute('SELECT azgaar_cell_id FROM provinces')
+        existing_ids = {r['azgaar_cell_id'] for r in cur.fetchall()}
+        new_rows = [p for p in province_list if p['cell_id'] not in existing_ids]
+        old_rows = [p for p in province_list if p['cell_id'] in existing_ids]
+        inserted, updated = len(new_rows), len(old_rows)
+        cur.executemany("INSERT INTO provinces (azgaar_cell_id,name,biome,terrain,base_resources_json,population) VALUES(?,?,?,?,?,?)",
+                        [(p['cell_id'],p['name'],p['biome'],p['terrain'],json.dumps(p['resources']),p['pop']) for p in new_rows])
+        if preserve_game:
+            cur.executemany("UPDATE provinces SET name=CASE WHEN name='' THEN ? ELSE name END,active=1 WHERE azgaar_cell_id=?",
+                            [(p['name'],p['cell_id']) for p in old_rows])
+        else:
+            cur.executemany("UPDATE provinces SET biome=?,terrain=?,base_resources_json=?,name=?,active=1 WHERE azgaar_cell_id=?",
+                            [(p['biome'],p['terrain'],json.dumps(p['resources']),p['name'],p['cell_id']) for p in old_rows])
+        cur.executemany('INSERT INTO province_coasts(province_id,coastal) SELECT id,? FROM provinces WHERE azgaar_cell_id=? '
                         'ON CONFLICT(province_id) DO UPDATE SET coastal=excluded.coastal',
-                        (int(p['coastal']),p['cell_id']))
+                        [(int(p['coastal']),p['cell_id']) for p in province_list if 'coastal' in p])
 
         # Azgaar exports adjacency as ``c``. Rebuild it with every import so
         # expansion can only target a real, currently active neighbouring cell.
@@ -285,11 +258,7 @@ def _upsert_provinces(province_list: list[dict], resync: bool) -> dict:
                     edges.add((cell_id, neighbor_id))
                     edges.add((neighbor_id, cell_id))
         cur.execute("DELETE FROM province_neighbors")
-        for cell_id, neighbor_id in sorted(edges):
-            cur.execute(
-                "INSERT INTO province_neighbors(cell_id,neighbor_cell_id) VALUES(?,?)",
-                (cell_id, neighbor_id),
-            )
+        cur.executemany("INSERT INTO province_neighbors(cell_id,neighbor_cell_id) VALUES(?,?)", sorted(edges))
         from technology import seed_algae_sites
         seed_algae_sites(cur)
 
@@ -349,73 +318,70 @@ class ProvincesCog(commands.Cog):
             await interaction.followup.send(text,ephemeral=True)
         except ValueError as exc:await interaction.followup.send(str(exc),ephemeral=True)
 
-    # -------------------------------------------------- /admin map_import
-    @admin_grp.command(name="map_import",
-                       description="[GM] Import Azgaar JSON / [GM] Importuj mape Azgaar")
-    @app_commands.describe(
-        file="Attach the .json file (max ~8 MB) / Dolacz plik .json",
-        url="Or paste a direct URL to the JSON file / Lub wklej URL do pliku JSON",
-    )
+    @admin_grp.command(name="map_import", description="[GM] Import states, cultures and religions / Import mapy i państw")
+    @app_commands.describe(file="Full Data JSON or saved .map / Full Data JSON lub zapis .map",
+                           url="Direct file URL / Bezpośredni adres pliku",
+                           map_file="Original .map for later exports / Oryginalny .map do eksportu",
+                           sync_owners="Replace game borders with imported borders / Zastąp granice gry granicami pliku")
     @i18n.localized
-    async def map_import(self, interaction: discord.Interaction,
-                         file: discord.Attachment | None = None,
-                         url: str | None = None):
-        if not _gm(interaction):
-            await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
-            return
-        if not file and not url:
-            await interaction.response.send_message(
-                i18n.text('Provide either a file attachment or a URL.'), ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True)
-        try:
-            data = await _fetch_json(url or "", file)
-            provinces, err = _process_azgaar(data)
-            if err:
-                await interaction.followup.send(f"❌ {err}", ephemeral=True)
-                return
-            stats = _upsert_provinces(provinces, resync=False)
-            await interaction.followup.send(
-                i18n.text('✅ **Import complete.**\n• Inserted: {p0} provinces\n• Updated:  {p1} provinces\n• Adjacency links: {p2}', p0=stats['inserted'], p1=stats['updated'], p2=stats['neighbor_links']),
-                ephemeral=True,
-            )
-        except Exception as e:
-            await interaction.followup.send(i18n.text('❌ Error: {p0}', p0=e), ephemeral=True)
-            raise
+    async def map_import(self, interaction: discord.Interaction, file: discord.Attachment | None = None,
+                         url: str | None = None, map_file: discord.Attachment | None = None, sync_owners: bool = False):
+        from azgaar_ui import import_command
+        await import_command(interaction, file, url, map_file, False, sync_owners)
 
-    # -------------------------------------------------- /admin map_resync
-    @admin_grp.command(name="map_resync",
-                       description="[GM] Re-import updated Azgaar map / [GM] Zaktualizuj mape")
-    @app_commands.describe(
-        file="Attach updated .json / Dolacz zaktualizowany .json",
-        url="Or paste a direct URL / Lub wklej URL",
-    )
+    @admin_grp.command(name="map_resync", description="[GM] Update the same Azgaar world / Aktualizuj tę samą mapę")
+    @app_commands.describe(file="Updated Full Data JSON or .map / Zaktualizowany Full Data JSON lub .map",
+                           map_file="Matching original .map / Zgodny oryginalny projekt .map",
+                           sync_owners="Replace game borders with imported borders / Zastąp granice gry granicami pliku")
     @i18n.localized
-    async def map_resync(self, interaction: discord.Interaction,
-                         file: discord.Attachment | None = None,
-                         url: str | None = None):
+    async def map_resync(self, interaction: discord.Interaction, file: discord.Attachment | None = None,
+                         url: str | None = None, map_file: discord.Attachment | None = None, sync_owners: bool = False):
+        from azgaar_ui import import_command
+        await import_command(interaction, file, url, map_file, True, sync_owners)
+
+    @admin_grp.command(name="map_export", description="[GM] Export the world to Azgaar / Eksport mapy do Azgaara")
+    @app_commands.choices(format=[app_commands.Choice(name="map", value="map"), app_commands.Choice(name="json", value="json")])
+    @app_commands.describe(file="Original .map on the first export / Oryginalny .map przy pierwszym eksporcie",
+                           format="Loadable .map or Full Data JSON / Otwieralny .map lub Full Data JSON")
+    @i18n.localized
+    async def map_export(self, interaction: discord.Interaction, file: discord.Attachment | None = None, format: str = 'map'):
+        from azgaar_ui import export_command
+        await export_command(interaction, file, format)
+
+    @admin_grp.command(name="map_entities", description="[GM] List map state, culture and religion IDs / Lista ID państw, kultur i religii")
+    @app_commands.choices(kind=[app_commands.Choice(name=k, value=k) for k in ('states', 'cultures', 'religions')])
+    @i18n.localized
+    async def map_entities(self, interaction: discord.Interaction, kind: str = 'states', page: int = 1):
+        from azgaar_ui import entities_command
+        await entities_command(interaction, kind, page)
+
+    @admin_grp.command(name="map_bind", description="[GM] Link a map state to a game nation / Powiąż państwo mapy z państwem gry")
+    @i18n.localized
+    async def map_bind(self, interaction: discord.Interaction, state_id: int, nation: str):
         if not _gm(interaction):
-            await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
-            return
-        if not file and not url:
-            await interaction.response.send_message(
-                i18n.text('Provide either a file attachment or a URL.'), ephemeral=True)
-            return
+            await interaction.response.send_message(i18n.t(_lang(interaction), 'gm_only'), ephemeral=True); return
         await interaction.response.defer(ephemeral=True)
+        from azgaar_service import bind
+        from world_service import tr
         try:
-            data = await _fetch_json(url or "", file)
-            provinces, err = _process_azgaar(data)
-            if err:
-                await interaction.followup.send(f"❌ {err}", ephemeral=True)
-                return
-            stats = _upsert_provinces(provinces, resync=True)
-            await interaction.followup.send(
-                i18n.text('✅ **Resync complete.**\n• Inserted: {p0} new provinces\n• Updated:  {p1} existing provinces\n• Deactivated: {p2} removed provinces\n• Adjacency links: {p3}', p0=stats['inserted'], p1=stats['updated'], p2=stats['deactivated'], p3=stats['neighbor_links']),
-                ephemeral=True,
-            )
-        except Exception as e:
-            await interaction.followup.send(i18n.text('❌ Error: {p0}', p0=e), ephemeral=True)
-            raise
+            count = await asyncio.to_thread(bind, state_id, nation)
+            await interaction.followup.send(tr('Powiązano państwo. Przyznane nieprzypisane pola: ', 'State linked. Unclaimed cells granted: ') + str(count), ephemeral=True)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+
+    @province_grp.command(name="identity", description="[GM] Set a province culture or religion / Ustaw kulturę lub religię prowincji")
+    @i18n.localized
+    async def province_identity(self, interaction: discord.Interaction, cell_id: int,
+                                culture_id: int | None = None, religion_id: int | None = None):
+        if not _gm(interaction):
+            await interaction.response.send_message(i18n.t(_lang(interaction), 'gm_only'), ephemeral=True); return
+        from azgaar_service import set_identity
+        from world_service import tr
+        try:
+            set_identity(cell_id, culture_id, religion_id)
+            await interaction.response.send_message(tr('Zapisano kulturę i religię prowincji.', 'Province culture and religion saved.'), ephemeral=True)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
 
     # -------------------------------------------------- /admin map_export_markers
     # Emoji icons for each resource — chosen to be visually distinct on the map.
@@ -678,6 +644,14 @@ class ProvincesCog(commands.Cog):
         embed.add_field(name=i18n.text('Population'),     value=f"{row['population']:,}",  inline=True)
         embed.add_field(name=i18n.text('Fortification'),  value=str(row["fortification_level"]), inline=True)
         embed.add_field(name=i18n.text('Base Resources'), value=res_str,                   inline=False)
+        from azgaar_service import identity
+        from world_service import tr
+        cultural = identity(cell_id)
+        if cultural:
+            embed.add_field(name=tr('Kultura', 'Culture'), value=cultural['cultures'][:1024], inline=True)
+            embed.add_field(name=tr('Religia', 'Religion'), value=cultural['religions'][:1024], inline=True)
+            if not row['nation_name']:
+                embed.add_field(name=tr('Państwo mapy', 'Map state'), value=cultural['states'][:1024], inline=True)
         with db.cursor() as c:
             c.execute('SELECT province_id FROM algae_sites WHERE province_id=?',(row['id'],))
             if c.fetchone():embed.add_field(name='🧪 Algae',value=i18n.text('Rare algae deposit. Automatic farm production from economy 3; see /algae production.'),inline=False)

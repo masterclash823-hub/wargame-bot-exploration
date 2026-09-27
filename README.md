@@ -274,3 +274,15 @@ każdą elitarną. `/nation stats` pokazuje umowny odpowiednik roku technologicz
 
 `/economy workers` i **Gospodarka → Pracownicy** pozwalają opcjonalnie
 rezerwować ludzi w konkretnych budynkach. Domyślnie obsada pozostaje automatyczna.
+
+
+### Mapa Azgaara w obie strony
+
+GM może importować i eksportować mapę wraz z państwami, kulturami oraz religiami.
+Pierwszy import: `/admin map_import file:pełny.json map_file:projekt.map`
+(JSON z **Export → JSON → Full Data**, projekt z **Save → Machine**).
+Następnie `/admin map_export` tworzy `.map` otwierany przez **Load → Machine**.
+Dostępne także: `/admin map_resync`, `/admin map_entities`, `/admin map_bind`
+oraz `/province identity`; panel GM ma kategorię **Mapa Azgaara**.
+Obecne granice gry są domyślnie zachowane; zastąpienie ich wymaga `sync_owners:true`
+i potwierdzenia. [Pełna instrukcja i ograniczenia](docs/azgaar-map-exchange.md).
