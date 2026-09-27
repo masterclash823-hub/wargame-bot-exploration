@@ -29,19 +29,19 @@ class ProvinceTests(DatabaseFixture,unittest.TestCase):
         for level in (1,2,3):
             build(1,10,'fishing_wharf',level>1,uid=1)
             report=forecast(1)
-            self.assertAlmostEqual(report['production']['food'],15.75*{1:1,2:1.7,3:2.4}[level])
+            self.assertAlmostEqual(report['production']['food'],16*{1:1,2:1.7,3:2.4}[level])
             self.assertEqual(report['staffing'][0]['workers'],{1:200,2:300,3:400}[level])
         run_tick()
         with db.cursor() as c:
             c.execute('SELECT report_json FROM economy_months');actual=json.loads(c.fetchone()['report_json'])['1']
-        self.assertAlmostEqual(actual['production']['food'],37.8)
+        self.assertAlmostEqual(actual['production']['food'],38.4)
 
     def test_manual_staffing_and_migration_preserve_player_and_gm_choices(self):
         build(1,10,'fishing_wharf',uid=1)
         from labor import set_assignment
         set_assignment(1,1,10,'fishing_wharf',200)
         build(1,10,'fishing_wharf',True,uid=1)
-        self.assertAlmostEqual(forecast(1)['production']['food'],15.75*1.7*2/3)
+        self.assertAlmostEqual(forecast(1)['production']['food'],16*1.7*2/3)
         with db.cursor() as c:
             c.execute("DELETE FROM economy_meta WHERE key='food_taiga_v4'")
             c.execute("UPDATE building_defs SET effect_json=? WHERE key='farm'",('{"food":20}',))

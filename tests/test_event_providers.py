@@ -81,9 +81,10 @@ class ProviderTests(ModelFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(chat.call_args.args[0].provider, 'groq')
 
     async def test_invalid_json_uses_backup_but_filtered_content_does_not(self):
-        with patch.object(ai, '_request', AsyncMock(return_value='not JSON')), \
+        with patch.object(config,'GEMINI_FALLBACK_MODELS',''), patch.object(ai, '_request', AsyncMock(return_value='not JSON')), \
                 patch.object(ai, '_chat_request', AsyncMock(return_value='```json\n{"choice":1}\n```')):
             self.assertEqual(await event_adventure._ai_json('JSON please'), {'choice': 1})
+        ai._unavailable_until.clear()
         chat = AsyncMock(return_value='Should not be requested')
         with patch.object(ai, '_request', AsyncMock(side_effect=ai.EventAIError(200))), \
                 patch.object(ai, '_chat_request', chat), self.assertRaises(ai.EventAIError):
@@ -92,12 +93,34 @@ class ProviderTests(ModelFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_valid_json_with_missing_choices_uses_next_model(self):
         replies=[json.dumps({'text':'Scene','choices':['Only one']}),
-                 json.dumps({'text':'Scene','choices':['Careful','Practical','Bold']})]
+                 json.dumps({'text':'Scene','choices':['Scout the road','Negotiate passage','Force a crossing']})]
         with patch.object(ai,'_request',AsyncMock(side_effect=replies)) as request:
             result=await event_adventure._ai_json('JSON please',validate=event_adventure._validate_scene)
-        self.assertEqual(result['choices'],['Careful','Practical','Bold'])
+        self.assertEqual(result['choices'],['Scout the road','Negotiate passage','Force a crossing'])
         self.assertEqual(request.await_count,2)
         self.assertTrue(all(call.kwargs['json_mode'] for call in request.call_args_list))
+
+    async def test_invalid_output_budget_and_reload_skip_recent_bad_models(self):
+        request=AsyncMock(side_effect=['bad','bad','{"choice":1}'])
+        with patch.object(ai,'_request',request):
+            with self.assertRaises(ai.EventAIError):
+                await ai.generate_text('Prompt',validate=json.loads,max_invalid=2,max_output_tokens=600)
+            self.assertEqual(request.await_count,2)
+            self.assertEqual(await ai.generate_text('Prompt',validate=json.loads,max_invalid=2,max_output_tokens=600),'{'+'"choice":1}')
+        self.assertEqual([c.args[0] for c in request.call_args_list],['primary','backup','final'])
+        self.assertTrue(all(c.kwargs['max_output_tokens']==600 for c in request.call_args_list))
+
+    async def test_polish_scene_rejects_english_and_placeholder_choices(self):
+        state=dict(lang='pl',opening='Kupcy proszą o ochronę transportu.',history=[],base_effects={})
+        good=dict(text='Kupcy czekają na decyzję rady.',choices=['Wyślij patrol na trakt','Uzgodnij wspólny konwój','Przydziel kupcom eskortę'])
+        for bad in (dict(text='The merchants ask the council for help.',choices=good['choices']),
+                    dict(text=good['text'],choices=['cautious action.','balanced action','decisive action'])):
+            ai._unavailable_until.clear()
+            with patch.object(ai,'_request',AsyncMock(side_effect=[json.dumps(bad),json.dumps(good)])) as request:
+                self.assertEqual(await event_adventure.scene(state),(good['text'],good['choices']))
+                self.assertEqual(request.await_count,2)
+                self.assertNotIn('"cautious action"',request.call_args.args[1])
+                self.assertEqual(request.call_args.kwargs['max_output_tokens'],1200)
 
     async def test_next_phase_rejects_repeated_choices_and_asks_a_new_decision(self):
         choices=['Scout the road before departing','Negotiate passage with the guards','Force a crossing at dawn']
@@ -163,6 +186,17 @@ class ProviderTests(ModelFixture, unittest.IsolatedAsyncioTestCase):
         with patch.object(ai.aiohttp,'ClientSession',return_value=ctx):
             await ai._chat_request(target,'Prompt',3,json_mode=True)
         self.assertEqual(session.post.call_args.kwargs['json']['response_format'],{'type':'json_object'})
+
+    async def test_gemini_reduces_thinking_before_reducing_output_budget(self):
+        for model,thinking in [('gemini-2.5-flash',{'thinkingBudget':0}),
+                               ('gemini-2.5-flash-lite',{'thinkingBudget':0}),
+                               ('gemini-3.1-flash-lite',{'thinkingLevel':'minimal'})]:
+            session,ctx,_=self.session({'candidates':[{'finishReason':'STOP','content':{'parts':[{'text':'{}'}]}}]})
+            with patch.object(ai.aiohttp,'ClientSession',return_value=ctx):
+                await ai._request(model,'Prompt',3,json_mode=True,max_output_tokens=600)
+            cfg=session.post.call_args.kwargs['json']['generationConfig']
+            self.assertEqual(cfg['thinkingConfig'],thinking)
+            self.assertEqual(cfg['maxOutputTokens'],600)
 
     async def test_refusal_truncation_and_empty_content_are_not_game_data(self):
         for message, reason in (({'content': 'Partial'}, 'length'), ({'content': 'Blocked'}, 'content_filter'),

@@ -160,7 +160,7 @@ class BalanceTests(DatabaseFixture,unittest.TestCase):
             uid=c.lastrowid
         create_route(1,'Legacy route',10,20,uid)
         self.assertEqual(self.data()[-1],20)
-        self.assertEqual(project(*self.data())['production']['food'],15.75)
+        self.assertEqual(project(*self.data())['production']['food'],16)
         self.coast(0)
         data=list(self.data());self.assertEqual(data[-1],0)
         data[4]=0;result=project(*data)

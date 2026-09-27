@@ -11,7 +11,7 @@ import aiohttp
 import config
 
 REQUEST_TIMEOUT = 20
-TOTAL_TIMEOUT = 60
+TOTAL_TIMEOUT = 40
 COOLDOWN = 60
 RETRYABLE = {404, 429, 500, 502, 503, 504}
 AUTH_COOLDOWN = 900
@@ -104,10 +104,14 @@ def retry_delay(headers, payload):
     return delay
 
 
-async def _request(model,prompt,timeout, *, json_mode=False):
+async def _request(model,prompt,timeout, *, json_mode=False, max_output_tokens=MAX_OUTPUT_TOKENS):
     """One HTTP request, with cancellation and no hidden SDK retries."""
     url='https://generativelanguage.googleapis.com/v1beta/models/'+quote(model,safe='')+':generateContent'
-    generation_config={'maxOutputTokens':MAX_OUTPUT_TOKENS}
+    generation_config={'maxOutputTokens':max_output_tokens}
+    if model.startswith('gemini-2.5-flash'):
+        generation_config['thinkingConfig']={'thinkingBudget':0}
+    elif model.startswith(('gemini-3.1-flash-lite','gemini-3-flash')):
+        generation_config['thinkingConfig']={'thinkingLevel':'minimal'}
     if json_mode:
         generation_config['responseMimeType']='application/json'
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
@@ -136,14 +140,16 @@ async def _request(model,prompt,timeout, *, json_mode=False):
     return text
 
 
-async def _chat_request(target,prompt,timeout, *, json_mode=False):
+async def _chat_request(target,prompt,timeout, *, json_mode=False, max_output_tokens=MAX_OUTPUT_TOKENS):
     body={'model':target.model,'messages':[{'role':'user','content':prompt}],'stream':False}
     if target.provider=='groq':
-        body['max_completion_tokens']=MAX_OUTPUT_TOKENS
+        body['max_completion_tokens']=max_output_tokens
         if target.model.startswith('openai/gpt-oss-'):
+            # Completion budget also includes reasoning; leave room for valid JSON.
+            body['max_completion_tokens']=max(1200,max_output_tokens)
             body.update(reasoning_effort='low',include_reasoning=False)
     else:
-        body['max_tokens']=MAX_OUTPUT_TOKENS
+        body['max_tokens']=max_output_tokens
     if json_mode:
         body['response_format']={'type':'json_object'}
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
@@ -171,10 +177,14 @@ async def _chat_request(target,prompt,timeout, *, json_mode=False):
     return text.strip()
 
 
-async def generate_text(prompt, *, validate=None, json_mode=False):
+async def generate_text(prompt, *, validate=None, json_mode=False, max_output_tokens=None, max_invalid=None):
     """Bound the whole operation; optional validation retries malformed game output."""
     deadline=time.monotonic()+TOTAL_TIMEOUT
     candidates=targets()
+    invalid=0
+    options={}
+    if json_mode:options['json_mode']=True
+    if max_output_tokens is not None:options['max_output_tokens']=max_output_tokens
     for index,target in enumerate(candidates):
         now=time.monotonic()
         # Sharing cooldowns keeps later stages and /event all off an exhausted model.
@@ -189,20 +199,24 @@ async def generate_text(prompt, *, validate=None, json_mode=False):
         timeout=min(REQUEST_TIMEOUT,remaining/max(1,slots))
         try:
             if target.provider=='gemini':
-                request=(_request(target.model,prompt,timeout,json_mode=True) if json_mode
-                         else _request(target.model,prompt,timeout))
+                request=_request(target.model,prompt,timeout,**options)
             else:
-                request=(_chat_request(target,prompt,timeout,json_mode=True) if json_mode
-                         else _chat_request(target,prompt,timeout))
+                request=_chat_request(target,prompt,timeout,**options)
             text=await asyncio.wait_for(request,timeout=timeout)
             if validate:
                 try:validate(text)
                 except (ValueError,TypeError,KeyError):
                     log.warning('Event AI provider %s model %s returned invalid game data; trying next model',target.provider,target.model)
+                    invalid+=1
+                    if max_invalid is not None:_unavailable_until[key]=time.monotonic()+15
+                    if max_invalid is not None and invalid>=max_invalid:break
                     continue
             return text
         except EventAIOutputError:
             log.warning('Event AI provider %s model %s returned incomplete output; trying next model',target.provider,target.model)
+            invalid+=1
+            if max_invalid is not None:_unavailable_until[key]=time.monotonic()+15
+            if max_invalid is not None and invalid>=max_invalid:break
             continue
         except EventAIError as exc:
             if exc.status==200:raise  # Never route a refused/filtered response to another provider.

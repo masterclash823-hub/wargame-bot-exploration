@@ -27,10 +27,9 @@ wersję usługi. Dotychczasowy `GEMINI_API_KEY` pozostaje wymagany przez bota,
 ponieważ Gemini obsługuje również inne funkcje.
 
 Domyślne próby przy dodaniu wszystkich kluczy:
-Gemini główny → Groq → Mistral → OpenRouter → pozostałe modele Gemini.
-Najpierw próbowane są niezależne konta, a dopiero potem kolejny model tego
-samego dostawcy. Możesz ustawić np. `EVENT_AI_PROVIDERS=groq,mistral,gemini,openrouter`,
-aby oszczędzać limit Google dla bitew. Jawnie pusta lista wyłącza AI eventów;
+Gemini główny → pozostałe modele Gemini → Groq → Mistral → OpenRouter.
+Gemini ma pierwszeństwo także przy innej kolejności w `EVENT_AI_PROVIDERS`.
+Jawnie pusta lista wyłącza AI eventów;
 powtórzenia, nieznane nazwy dostawców i brakujące klucze są pomijane.
 
 OpenRouter przyjmuje tu wyłącznie `openrouter/free` lub identyfikator z `:free`.
@@ -59,7 +58,7 @@ nielimitowanego użycia, a samo dodanie integracji nie tworzy kont i kluczy.
 
 - Limit 429, brak modelu 404, błędy 500/502/503/504 i problemy połączenia
   uruchamiają kolejny dostępny model. Każdy cel jest próbowany raz na wywołanie.
-- Jedna próba ma maksymalnie 20 sekund, całe wywołanie maksymalnie 60.
+- Jedna próba ma maksymalnie 20 sekund, całe wywołanie maksymalnie 40.
   Budżet dzielony jest pomiędzy dostępne cele, aby zawieszony pierwszy model
   nie pozbawił szansy pozostałych dostawców. Nie ma ukrytych ponowień SDK.
 - Wyczerpany model odpoczywa co najmniej 60 sekund. `Retry-After`, Google
@@ -70,11 +69,13 @@ nielimitowanego użycia, a samo dodanie integracji nie tworzy kont i kluczy.
 - Niepoprawny JSON, niewłaściwy znak bazowych efektów, bliska kopia poprzedniego
   eventu lub ucięta odpowiedź powodują próbę kolejnego modelu. Odrzucenie treści
   przez dostawcę kończy wywołanie. Wyniki nadal przechodzą walidację gry.
-- Odpowiedzi mają limit 2400 tokenów. GPT-OSS używa niskiego poziomu rozumowania;
-  narrator otrzymuje krótszą historię i najwyżej dwa zapamiętane eventy.
+- Szkice mają limit 1000 tokenów, sceny 1200, oceny skutków 600, klasyfikacja
+  własnej odpowiedzi 256. GPT-OSS ma minimum 1200, obejmujące też rozumowanie.
+  Szczegóły redukcji kontekstu i prób: [niezawodność eventów](event-reliability.md).
 - Jeśli wszystkie próby zawiodą, `/event generate` i `/event all` nie zapisują
-  fikcyjnego szkicu ani nie zużywają pozycji w rotacji. Istniejący event zachowuje
-  trzy opcje i reguły awaryjne oceny skutków. Nie zmieniają się granice zatwierdzone przez GM.
+  fikcyjnego szkicu ani nie zużywają pozycji w rotacji. Istniejący event pokazuje
+  ponowne ładowanie odpowiedzi i własne działanie zamiast ogólnych opcji 1/2/3.
+  Nie zmieniają się granice efektów zatwierdzone przez GM.
 
 Logi przełączania podają dostawcę, model i klasę/kod błędu, bez kluczy,
 treści promptu lub odpowiedzi dostawcy. Integracje są sprawdzane testami HTTP
