@@ -142,29 +142,5 @@ async def _search(session,provider,query):
 
 
 async def find_event_image(text, query=''):
-    topic=search_topic(query or text)
-    broad={'historical flood':'flood','historic city fire':'fire','harvest painting':'harvest',
-           'popular revolt painting':'revolt','historical plague':'plague','market painting':'market',
-           'sailing ships painting':'sailing ships','battle painting':'battle',
-           'exploration expedition painting':'exploration','peace treaty painting':'peace',
-           'historic town painting':'town'}[topic]
-    # Only general topics or the GM's chosen keywords leave the bot, not private prose.
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5),headers={'User-Agent':USER_AGENT}) as session:
-        for provider in ('commons','museum'):
-            queries=[query.strip()[:120] or (topic if provider=='commons' else broad)]
-            if not query.strip() or topic!='historic town painting':queries.append(broad)
-            queries=list(dict.fromkeys(queries))
-            try:
-                async with asyncio.timeout(PROVIDER_TIMEOUT):
-                    for keywords in queries:
-                        candidates=await _search(session,provider,keywords)
-                        for candidate in candidates[:3]:
-                            try:
-                                data,extension=await _download(session,candidate['url'])
-                                return {**candidate,'data':data,'extension':extension}
-                            except (aiohttp.ClientError,TimeoutError,ValueError):
-                                log.warning('Event illustration: %s returned an unreadable image',provider)
-            except (aiohttp.ClientError,TimeoutError,ValueError,TypeError,KeyError,AttributeError) as exc:
-                log.warning('Event illustration: %s unavailable (%s)',provider,type(exc).__name__)
-    log.warning('Event illustration: no downloadable image from either provider')
+    """Network image search is disabled; uploads and saved attachments still work."""
     return None

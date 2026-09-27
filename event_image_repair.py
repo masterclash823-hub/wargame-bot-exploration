@@ -55,7 +55,9 @@ async def repair(bot,interaction,event_id,query='',file=None,message_link=''):
             except (ValueError,discord.HTTPException):
                 await interaction.followup.send(tr('Wgraj prawidłowy JPG, PNG lub WebP do 6 MB i 12 mln pikseli.',
                                                    'Upload a valid JPG, PNG or WebP up to 6 MB and 12 million pixels.'),ephemeral=True);return
-        else:image=await find_event_image(state['opening'],query)
+        else:
+            await interaction.followup.send(tr('Wyszukiwanie obrazków jest wyłączone. Dodaj plik przez /event image file.',
+                                               'Image search is disabled. Attach a file using /event image file.'),ephemeral=True);return
     if not image:
         await interaction.followup.send(tr('Nie udało się pobrać ilustracji. Wpisz inne hasła lub dodaj plik JPG, PNG albo WebP. Dotychczasowy obraz pozostał bez zmian.',
                                            'Could not download an illustration. Try other keywords or attach JPG, PNG or WebP. The previous image is unchanged.'),ephemeral=True);return

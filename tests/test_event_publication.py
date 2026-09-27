@@ -29,8 +29,8 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_public_is_only_opening_and_image(self):
         with db.cursor() as c:c.execute('UPDATE nations SET flag=? WHERE id=2',('🇵🇱',))
-        with patch('cogs.events.find_event_image', AsyncMock(return_value=self.image)):
-            await self.cog.event_post.callback(self.cog, self.gm, self.eid, 'public', self.channel)
+        with patch('event_images.from_upload', AsyncMock(return_value=self.image)):
+            await self.cog.event_post.callback(self.cog, self.gm, self.eid, 'public', self.channel,file=NS())
         sent = self.channel.send.call_args.kwargs
         self.assertNotIn('view', sent)
         self.assertEqual(sent['embed'].description, 'A fire in the town.')
@@ -43,8 +43,8 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_illustration_is_large_with_any_flag_or_no_flag(self):
         import event_adventure as flow
-        with patch('cogs.events.find_event_image', AsyncMock(return_value=self.image)):
-            await self.cog.event_post.callback(self.cog,self.gm,self.eid,'public',self.channel)
+        with patch('event_images.from_upload', AsyncMock(return_value=self.image)):
+            await self.cog.event_post.callback(self.cog,self.gm,self.eid,'public',self.channel,file=NS())
         state=flow.load_run(self.eid)
         for flag in ('','🇵🇱','https://example.com/flag.png','invalid flag','flag:'+'a'*64):
             state['flag']=flag
@@ -61,8 +61,8 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
 
     async def test_resumed_decisions_and_final_result_keep_image_and_progress_footer(self):
         import event_adventure as flow
-        with patch('cogs.events.find_event_image', AsyncMock(return_value=self.image)):
-            await self.cog.event_post.callback(self.cog,self.gm,self.eid,'public',self.channel)
+        with patch('event_images.from_upload', AsyncMock(return_value=self.image)):
+            await self.cog.event_post.callback(self.cog,self.gm,self.eid,'public',self.channel,file=NS())
         async def consequence(state,action,choice):
             return flow.fallback_consequence(state,choice),'Baseline',False
         with patch.object(flow,'assess_consequence',side_effect=consequence):
@@ -79,8 +79,8 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
                 if version==2:self.assertIn('Finished',sent['embed'].footer.text)
 
     async def test_private_illustration_is_never_sent_publicly(self):
-        with patch('cogs.events.find_event_image', AsyncMock(return_value=self.image)) as search:
-            await self.cog.event_post.callback(self.cog, self.gm, self.eid, 'private', self.channel)
+        with patch('event_images.from_upload', AsyncMock(return_value=self.image)) as search:
+            await self.cog.event_post.callback(self.cog, self.gm, self.eid, 'private', self.channel,file=NS())
             search.assert_awaited_once()
         self.channel.send.assert_not_awaited()
         outsider = interaction(1)
@@ -94,8 +94,9 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
             await event_adventure.decide(self.eid, 0, 1, choice=0)
 
     async def test_image_failure_still_publishes_event(self):
-        with patch('cogs.events.find_event_image', AsyncMock(return_value=None)):
+        with patch('cogs.events.find_event_image', AsyncMock(return_value=None)) as search:
             await self.cog.event_post.callback(self.cog, self.gm, self.eid, 'public', self.channel)
+            search.assert_not_awaited()
         with db.cursor() as c:
             c.execute('SELECT status FROM events WHERE id=?', (self.eid,))
             self.assertEqual(c.fetchone()['status'], 'active')
@@ -136,8 +137,8 @@ class PublicationTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
     async def test_configured_channel_is_used(self):
         self.channel.mention = '<#12>'
         await self.cog.event_channel.callback(self.cog, self.gm, self.channel)
-        with patch('cogs.events.find_event_image', AsyncMock(return_value=self.image)):
-            await self.cog.event_post.callback(self.cog, self.gm, self.eid, 'public')
+        with patch('event_images.from_upload', AsyncMock(return_value=self.image)):
+            await self.cog.event_post.callback(self.cog, self.gm, self.eid, 'public',file=NS())
         self.channel.send.assert_awaited_once()
 
     async def test_unassigned_plan_warns_player_and_gm(self):

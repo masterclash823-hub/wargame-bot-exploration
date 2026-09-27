@@ -3,6 +3,7 @@ from discord import Locale, app_commands
 import i18n
 
 PARAMETERS = {
+    'price':'cena','offer_id':'id_oferty',
     'population':'populacja','biome':'biom','coastal':'wybrzeże','normalize_population':'uśrednij_populację',
     'limit':'limit',
     'title':'tytuł', 'goal_id':'id_celu',

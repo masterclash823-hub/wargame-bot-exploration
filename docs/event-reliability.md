@@ -46,8 +46,8 @@ Osoby z ustawionym językiem angielskim nadal otrzymują angielskie eventy.
   próby po dwóch niepoprawnych odpowiedziach. Modele, które właśnie zwróciły
   błędne dane, są pomijane przez 15 sekund; po ponowieniu można wykorzystać
   kolejne modele. Limity API nadal mają własne okresy oczekiwania.
-- Gemini pozostaje pierwsze w kolejce. Pobieranie ilustracji i przygotowanie
-  pierwszej sceny odbywają się równocześnie. Czas zależy od usług zewnętrznych;
+- Gemini pozostaje pierwsze w kolejce. Wyszukiwanie ilustracji jest wyłączone;
+  bot przygotowuje samą scenę. Czas zależy od usług zewnętrznych;
   decyzja obejmująca kilka etapów AI może potrwać dłużej niż pojedynczy limit.
 
 Parametry Gemini: [dokumentacja sterowania rozumowaniem](https://ai.google.dev/gemini-api/docs/generate-content/thinking).

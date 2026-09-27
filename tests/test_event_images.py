@@ -21,36 +21,10 @@ def context(value):
 
 
 class SearchTests(unittest.IsolatedAsyncioTestCase):
-    async def test_broken_first_image_tries_next_candidate_and_validates_download(self):
-        data=picture();first=candidate();second=candidate('https://upload.wikimedia.org/good.png')
-        with patch.object(images,'_search',AsyncMock(return_value=[first,second])),patch.object(images,'_download',
-                AsyncMock(side_effect=[ValueError('HTML instead of image'),(data,'png')])) as download:
-            result=await images.find_event_image('Pożar miasta')
-        self.assertEqual(result['data'],data);self.assertEqual(result['url'],second['url'])
-        self.assertEqual(download.await_count,2)
-
-    async def test_failed_commons_uses_museum_and_does_not_send_private_prose(self):
-        seen=[]
-        async def search(session,provider,query):
-            seen.append((provider,query))
-            if provider=='commons':raise asyncio.TimeoutError()
-            return [candidate('https://www.artic.edu/iiif/2/abc/full/843,/0/default.jpg')]
-        with patch.object(images,'_search',side_effect=search),patch.object(images,'_download',AsyncMock(return_value=(picture(),'png'))):
-            self.assertIsNotNone(await images.find_event_image('Tajna narada gracza, pożar spichlerza.'))
-        self.assertEqual(seen,[('commons','historic city fire'),('museum','fire')])
-
-    async def test_provider_timeout_leaves_budget_for_backup_and_failure_is_not_cached(self):
-        async def search(session,provider,query):
-            if provider=='commons':await asyncio.Future()
-            return [candidate()]
-        with patch.object(images,'PROVIDER_TIMEOUT',.01),patch.object(images,'_search',side_effect=search),\
-                patch.object(images,'_download',AsyncMock(return_value=(picture(),'png'))):
-            self.assertIsNotNone(await images.find_event_image('Battle'))
-        with patch.object(images,'_search',AsyncMock(return_value=[])):
-            self.assertIsNone(await images.find_event_image('Battle','missing'))
-        with patch.object(images,'_search',AsyncMock(return_value=[candidate()])),\
-                patch.object(images,'_download',AsyncMock(return_value=(picture(),'png'))):
-            self.assertIsNotNone(await images.find_event_image('Battle','new query'))
+    async def test_search_is_disabled_without_network_requests(self):
+        with patch.object(images.aiohttp,'ClientSession') as session:
+            self.assertIsNone(await images.find_event_image('Private story','fire'))
+            session.assert_not_called()
 
     async def test_real_request_shape_and_public_domain_museum_filter(self):
         rows=[dict(id=1,title='Fire',image_id='abc-123',artist_display='Artist',is_public_domain=True),

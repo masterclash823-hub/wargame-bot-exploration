@@ -40,6 +40,7 @@ class MediaTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
         return NS(id=123)
 
     async def post(self,visibility='public',**kwargs):
+        kwargs.setdefault('file',self.upload('red'))
         await self.cog.event_post.callback(self.cog,self.gm,self.eid,visibility,self.channel,**kwargs)
 
     def upload(self,color='blue'):
@@ -63,22 +64,12 @@ class MediaTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
             c.execute('SELECT data_base64 FROM event_media WHERE event_id=?',(self.eid,))
             self.assertEqual(base64.b64decode(c.fetchone()['data_base64']),picture())
 
-    async def test_search_response_download_persistence_and_discord_attachment_together(self):
-        import event_images as source
-        info=dict(mime='image/png',url=candidate()['url'],descriptionurl=candidate()['source'],
-                  extmetadata={'LicenseShortName':{'value':'Public domain'}})
-        search_reply=NS(status=200,raise_for_status=Mock(),json=AsyncMock(return_value={
-            'query':{'pages':{'1':{'title':'File:Fire.png','imageinfo':[info]}}}}))
-        async def chunks():yield picture()
-        file_reply=NS(status=200,raise_for_status=Mock(),content_length=len(picture()),
-                      content=NS(iter_chunked=lambda _:chunks()))
-        session=NS(get=Mock(side_effect=[context(search_reply),context(file_reply)]))
-        with patch.object(source.aiohttp,'ClientSession',return_value=context(session)),\
-                patch('cogs.events.find_event_image',source.find_event_image):
-            await self.post()
-        self.assertEqual(session.get.call_count,2)
-        self.assertTrue(all(r[2]==picture() for r in self.records))
-        self.assertTrue(all(r[1]['embed'].image.url.startswith('attachment://') for r in self.records))
+    async def test_default_post_never_searches_or_requires_attach_permission(self):
+        self.channel.permissions_for=lambda _:NS(view_channel=True,send_messages=True,embed_links=True,attach_files=False)
+        await self.post(file=None)
+        self.search.assert_not_awaited()
+        self.assertTrue(all(r[2] is None for r in self.records))
+        self.assertTrue(flow.load_run(self.eid))
 
     async def test_restart_play_and_three_decisions_keep_large_illustration_without_network(self):
         await self.post();db.init_db();self.search.reset_mock()
@@ -92,9 +83,9 @@ class MediaTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
             self.assertEqual(data,picture());self.assertIn('attachment://',message['embed'].image.url)
         self.search.assert_not_awaited()
 
-    async def test_default_private_event_searches_and_keeps_illustration_private(self):
+    async def test_uploaded_private_illustration_stays_private(self):
         await self.post('private')
-        self.search.assert_awaited_once();self.channel.send.assert_not_awaited()
+        self.search.assert_not_awaited();self.channel.send.assert_not_awaited()
         self.assertEqual([r[0] for r in self.records],['DM','GM'])
         outsider=interaction(1)
         await self.cog.event_play.callback(self.cog,outsider,self.eid)

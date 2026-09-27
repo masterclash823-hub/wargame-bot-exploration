@@ -40,12 +40,31 @@ CREATE TABLE IF NOT EXISTS nations (
     flag                TEXT NOT NULL DEFAULT '',
     government_type     TEXT NOT NULL DEFAULT 'Monarchy',
     capital_province_id INTEGER,
-    treasury            REAL NOT NULL DEFAULT 0,
+    treasury            DOUBLE PRECISION NOT NULL DEFAULT 0,
     stability           REAL NOT NULL DEFAULT 50,
     population          INTEGER NOT NULL DEFAULT 0,
     resources_json      TEXT NOT NULL DEFAULT '{}',
     tech_json           TEXT NOT NULL DEFAULT '{"naval":3.0,"land":3.0,"economy":3.0,"colonial":3.0}',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS market_offers (
+    id SERIAL PRIMARY KEY,
+    nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    resource TEXT NOT NULL,
+    remaining BIGINT NOT NULL CHECK (remaining >= 0),
+    price_cents BIGINT NOT NULL CHECK (price_cents > 0),
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_market_book ON market_offers(status,resource,price_cents,id);
+CREATE TABLE IF NOT EXISTS market_fills (
+    request_id TEXT PRIMARY KEY,
+    offer_id INTEGER REFERENCES market_offers(id) ON DELETE SET NULL,
+    buyer_id INTEGER REFERENCES nations(id) ON DELETE SET NULL,
+    quantity BIGINT NOT NULL,
+    gold DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS nation_coops (
@@ -704,4 +723,10 @@ def init_db() -> None:
     from technology import seed_algae_sites
     with atomic() as cur:
         seed_algae_sites(cur)
+        if USE_POSTGRES:
+            cur.execute("SELECT value FROM economy_meta WHERE key='treasury_double_v1'")
+            if not cur.fetchone():
+                # Fractional market payments must not disappear in float32 balances.
+                cur.execute('ALTER TABLE nations ALTER COLUMN treasury TYPE DOUBLE PRECISION')
+                cur.execute("INSERT INTO economy_meta(key,value) VALUES('treasury_double_v1','1') ON CONFLICT(key) DO NOTHING")
     print(f"[DB] init_db complete ({'PostgreSQL/Supabase' if USE_POSTGRES else 'SQLite'})", flush=True)

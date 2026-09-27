@@ -20,6 +20,7 @@ COGS = [
     "cogs.nations",
     "cogs.provinces",
     "cogs.economy",
+    "cogs.market",
     "cogs.companies",
     "cogs.tech",
     "cogs.military",

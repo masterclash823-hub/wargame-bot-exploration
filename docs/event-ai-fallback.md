@@ -3,7 +3,7 @@
 Szkice, `/event all`, sceny, własne odpowiedzi, ocena skutków i ekspedycje
 korzystają ze wspólnego mechanizmu przełączania AI. Obok Gemini można włączyć
 Groq, Mistral i darmowe modele OpenRouter. Bitwy nadal używają dotychczasowego
-wywołania Gemini. Ilustracje eventów są wyszukiwane w internecie.
+wywołania Gemini. Wyszukiwanie ilustracji jest wyłączone; można dodać własny plik.
 
 ## Konfiguracja Rendera
 
