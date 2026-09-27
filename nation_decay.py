@@ -42,6 +42,8 @@ def tick(c,target):
     c.execute("SELECT d.*,n.owner_id FROM nation_decay d JOIN nations n ON n.id=d.nation_id WHERE d.status='decaying' AND d.due_month<=?",(target,))
     for d in c.fetchall():
         nid=d['nation_id']
+        from market_service import refund
+        refund(c,nid)
         c.execute("UPDATE nation_decay SET status='ruins',former_owner=? WHERE nation_id=?",(d['owner_id'],nid))
         # Keep the nation, provinces and history, but release the player account.
         c.execute('UPDATE nations SET owner_id=? WHERE id=?',(f'ruins:{nid}',nid))

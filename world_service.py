@@ -130,6 +130,8 @@ def transfer_nation(nid,new_owner,expected_owner,gm_id):
         assigned=find_nation(new_owner,c)
         if assigned and assigned['id']!=nid:raise ValueError(tr('Ten gracz ma już państwo.','This player already owns a nation.'))
         c.execute('DELETE FROM nation_coops WHERE nation_id=?',(nid,))
+        from market_service import refund
+        refund(c,nid)
         c.execute('UPDATE nations SET owner_id=? WHERE id=?',(str(new_owner),nid))
         c.execute('INSERT INTO ownership_changes(nation_id,previous_owner,new_owner,gm_id) VALUES(?,?,?,?)',
                   (nid,n['owner_id'],str(new_owner),str(gm_id)))

@@ -77,8 +77,8 @@ odpowiedzi. Powtórzone lub niemal identyczne opcje są odrzucane podczas genero
 i uruchamiają kolejną próbę w istniejącym łańcuchu modeli. Awaryjne odpowiedzi
 również różnią się między fazami. Pełny kontekst gospodarki pozostaje dostępny.
 
-Ilustracje są pobierane, sprawdzane i wysyłane jako duże załączniki pod eventem,
-niezależnie od flagi. Można też przesłać plik albo naprawić istniejący post przez
+Własne pliki ilustracji są sprawdzane i wysyłane jako duże załączniki pod eventem,
+niezależnie od flagi. Wyszukiwanie wyłączono; istniejący post można uzupełnić przez
 `/event image`. [Szczegóły ilustracji i uprawnień](event-images.md).
 
 ## Uruchomienie aktualizacji

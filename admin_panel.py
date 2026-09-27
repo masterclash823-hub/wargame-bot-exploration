@@ -28,7 +28,7 @@ class AdminPanel(i18n.LocalizedView):
                        ('coop','Współdzielenie','Co-op access'),('stats','Statystyki','Statistics'),('starter','Pakiet startowy','Starter pack')],
             'events':[('generate','Generuj dla państwa','Generate for nation'),('all','Generuj dla wszystkich','Generate for all'),
                       ('events','Lista eventów','Event list'),('post_private','Opublikuj prywatnie','Publish privately'),
-                      ('post_public','Opublikuj publicznie','Publish publicly'),('image','Napraw ilustrację','Repair illustration')],
+                      ('post_public','Opublikuj publicznie','Publish publicly'),('image','Ilustracja z pliku','Upload illustration')],
             'world':[('calendar_status','Data i stan','Date & status'),('calendar_start','Uruchom kalendarz','Start calendar'),
                      ('calendar_stop','Zatrzymaj kalendarz','Pause calendar'),('tick','Rozlicz miesiące','Settle months'),
                      ('plans','Oczekujące plany bitew','Pending battle plans')],
@@ -146,12 +146,13 @@ class AdminPanel(i18n.LocalizedView):
             async def submit(j,description):await self.call(j,'EventsCog','event_all',description)
             await self.form(i,tr('Eventy dla wszystkich','Events for all'),[dict(label=tr('Motyw przewodni (opcjonalnie)','Theme (optional)'),required=False,max_length=1000)],submit)
         elif key=='events':await self.call(i,'EventsCog','event_list',self.nation()['name'] if self.nid else '')
-        elif key in ('post_private','post_public','image'):
-            async def submit(j,event_id,query):
-                if key=='image':await self.call(j,'EventsCog','event_image',int(event_id),query)
-                else:await self.call(j,'EventsCog','event_post',int(event_id),'public' if key=='post_public' else 'private',None,query)
-            await self.form(i,tr('Event i obrazek','Event & image'),[dict(label='Event ID',max_length=10),
-                dict(label=tr('Hasła obrazka (opcjonalnie)','Image keywords (optional)'),required=False,max_length=120)],submit)
+        elif key=='image':
+            await i.response.send_message(tr('Wyszukiwanie jest wyłączone. Dodaj plik przez /event image event_id:ID file:obrazek.',
+                                             'Search is disabled. Upload with /event image event_id:ID file:image.'),ephemeral=True)
+        elif key in ('post_private','post_public'):
+            async def submit(j,event_id):
+                await self.call(j,'EventsCog','event_post',int(event_id),'public' if key=='post_public' else 'private')
+            await self.form(i,tr('Opublikuj event','Publish event'),[dict(label='Event ID',max_length=10)],submit)
         elif key.startswith('calendar_'):await self.call(i,'EconomyCog',key)
         elif key=='plans':await self.call(i,'CombatCog','plans_pending')
         elif key=='tick':

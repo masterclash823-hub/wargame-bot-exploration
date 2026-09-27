@@ -483,8 +483,8 @@ class EventsCog(commands.Cog):
                        description="[GM] Post an event publicly / [GM] Opublikuj event")
     @app_commands.describe(event_id="Event ID / ID eventu", channel="Public event channel / Kanał publicznego eventu",
                            visibility="public = everyone, private = nation owner / Widoczność",
-                           image_query="Optional image search keywords / Opcjonalne hasła wyszukiwania obrazka",
-                           include_image="Search for an illustration (optional) / Szukaj ilustracji (opcjonalne)",
+                           image_query="Search disabled; use file / Wyszukiwanie wyłączone; użyj pliku",
+                           include_image="Include uploaded file / Dołącz wgrany plik",
                            file="Optional JPG, PNG or WebP illustration / Opcjonalny plik ilustracji")
     @i18n.localized
     async def event_post(self, interaction: discord.Interaction, event_id: int,
@@ -531,7 +531,7 @@ class EventsCog(commands.Cog):
                     'Kanał musi być widoczny dla @everyone, a bot musi móc go czytać i wysyłać osadzone wiadomości.',
                     'The channel must be visible to @everyone and the bot must be able to view it and send embeds.'), ephemeral=True)
                 return
-            if include_image and not permissions.attach_files:
+            if include_image and file and not permissions.attach_files:
                 await interaction.followup.send(adventure.tr(_lang(interaction),
                     'Włącz botowi uprawnienie „Załączanie plików” na kanale eventów. Ilustracje są wysyłane jako pliki.',
                     'Enable Attach Files for the bot in the event channel. Illustrations are sent as files.'),ephemeral=True)
@@ -545,9 +545,7 @@ class EventsCog(commands.Cog):
                         'Wgraj prawidłowy JPG, PNG lub WebP do 6 MB i 12 mln pikseli.',
                         'Upload a valid JPG, PNG or WebP up to 6 MB and 12 million pixels.'),ephemeral=True);return
         try:
-            if include_image and not file:
-                prepared,image=await asyncio.gather(adventure.prepare_run(ev,nat),find_event_image(ev['gm_final_text'],image_query))
-            else:prepared = await adventure.prepare_run(ev, nat)
+            prepared = await adventure.prepare_run(ev, nat)
             prepared.update(visibility=visibility, channel_id=str(ch.id) if ch else None, public_image=image)
             state = adventure.start_run(prepared)
         except ValueError as exc:
@@ -574,15 +572,15 @@ class EventsCog(commands.Cog):
             f"✅ Event #{event_id} started. The player can use /event play {event_id}. Effects apply after decision three.")
         if failures:
             notice += "\n" + adventure.tr(state["lang"], "Nie udało się wysłać: ", "Delivery failed: ") + ", ".join(failures)
-        if include_image and not image:
+        if include_image and image_query and not file:
             notice += "\n" + adventure.tr(_lang(interaction),
-                'Nie udało się pobrać ilustracji z obu źródeł. Dodaj ją przez /event image — możesz podać własny plik.',
-                'Neither source returned a downloadable illustration. Use /event image to retry or upload a file.')
+                'Wyszukiwanie obrazków jest wyłączone. Ilustrację możesz wgrać przez /event image file.',
+                'Image search is disabled. Upload an illustration through /event image file.')
         await send_event(interaction.followup.send,state,content=notice,view=EventView(state),ephemeral=True)
 
     @event_grp.command(name='image',description='[GM] Add or replace an event illustration / Dodaj lub zmień ilustrację eventu')
     @app_commands.describe(event_id='Event ID / ID eventu',
-                           image_query='Optional image search keywords / Opcjonalne hasła wyszukiwania obrazka',
+                           image_query='Search disabled; use file / Wyszukiwanie wyłączone; użyj pliku',
                            file='Optional JPG, PNG or WebP illustration / Opcjonalny plik ilustracji',
                            message_link='Old public event message link (optional) / Link do starego publicznego eventu')
     @i18n.localized

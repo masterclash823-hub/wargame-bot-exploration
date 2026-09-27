@@ -54,6 +54,13 @@ budynki wraz z prowincjami oraz miesięczny bilans każdego surowca i złota.
 Te same raporty otwierają `/buildings owned` i `/economy income`; można
 przeglądać strony lub pobrać całość w TXT. [Opis raportów](docs/economy-reports.md).
 
+## Wolny rynek
+
+**Panel → Gospodarka → Wolny rynek** lub `/market list` pokazuje najtańszą
+ofertę każdego surowca od innych państw. Droższe oferty pozostają zapisane.
+`/market sell` rezerwuje towar, `/market buy` otwiera potwierdzenie zakupu,
+a `/market mine` pozwala wycofać własne oferty. [Zasady i komendy](docs/open-market.md).
+
 ## Podział strat w bitwie
 
 AI ocenia narażenie każdego oddziału na podstawie obu planów, terenu i jednostek
@@ -75,15 +82,11 @@ nie zużywa decyzji ani zasobów. Typowe ogólne opcje są ukryte, a stare klikn
 blokowane. Generowanie używa mniejszego kontekstu historycznego, zachowując pełny
 bilans żywności. [Język, ponawianie i ograniczenie kosztów](docs/event-reliability.md).
 
-GM ustawia kanał przez `/event channel channel:#wydarzenia`. Przy publikacji
-`/event post event_id:12 visibility:public` pokazuje wszystkim narrację i ilustrację
-wyszukaną w Wikimedia Commons lub Art Institute of Chicago. Opcjonalne `channel` zmienia kanał dla jednego
-eventu, a `image_query` pozwala podać hasła wyszukiwania ilustracji.
-Bot wybiera obrazy domeny publicznej/CC0 i odrzuca oznaczone jako wygenerowane AI.
-Jeżeli nie znajdzie ilustracji lub wyszukiwarka jest niedostępna, rozpoczyna event
-bez obrazka. `include_image:False` wyłącza wyszukiwanie, również gdy podano
-`image_query`. Puste `image_query` przy włączonym obrazku oznacza automatyczny
-dobór tematu, a nie wyłączenie ilustracji.
+GM ustawia kanał przez `/event channel channel:#wydarzenia`.
+`/event post event_id:12 visibility:public` pokazuje wszystkim narrację.
+**Wyszukiwanie obrazków jest wyłączone.** Opcjonalny plik można dodać przez
+`file` przy publikacji albo `/event image`. Bez pliku event pojawia się bez
+ilustracji. `image_query` nie uruchamia wyszukiwania.
 
 `visibility:private` (domyślnie) udostępnia event właścicielowi i coopom wybranego
 państwa oraz GM. Państwo wskazuje się wcześniej przy `/event generate`.
