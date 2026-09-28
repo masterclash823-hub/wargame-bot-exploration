@@ -103,6 +103,31 @@ CREATE TABLE IF NOT EXISTS provinces (
 CREATE INDEX IF NOT EXISTS idx_provinces_owner ON provinces(owner_nation_id);
 CREATE INDEX IF NOT EXISTS idx_provinces_cell  ON provinces(azgaar_cell_id);
 
+CREATE TABLE IF NOT EXISTS azgaar_world (
+    id INTEGER PRIMARY KEY CHECK (id=1),
+    data_json TEXT NOT NULL,
+    map_text TEXT,
+    geometry_hash TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS azgaar_states (
+    state_id INTEGER PRIMARY KEY,
+    nation_id INTEGER UNIQUE REFERENCES nations(id) ON DELETE SET NULL,
+    linked INTEGER NOT NULL DEFAULT 0,
+    data_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS azgaar_entities (
+    kind TEXT NOT NULL,
+    entity_id INTEGER NOT NULL,
+    data_json TEXT NOT NULL,
+    PRIMARY KEY(kind,entity_id)
+);
+CREATE TABLE IF NOT EXISTS azgaar_cells (
+    cell_id INTEGER PRIMARY KEY REFERENCES provinces(azgaar_cell_id) ON DELETE CASCADE,
+    state_id INTEGER NOT NULL,
+    culture_id INTEGER NOT NULL,
+    religion_id INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS province_coasts (
     province_id INTEGER PRIMARY KEY REFERENCES provinces(id) ON DELETE CASCADE,
     coastal INTEGER NOT NULL
@@ -579,6 +604,13 @@ class _UnifiedCursor:
                         self._cur  = self._conn.cursor()
         else:
             self._conn.executescript(sql)
+
+    def executemany(self, sql, rows):
+        """Batch map writes without a network round trip for every cell on PostgreSQL."""
+        if self._is_pg:
+            psycopg2.extras.execute_batch(self._cur, sql.replace('?', '%s'), rows, page_size=500)
+        else:
+            self._cur.executemany(sql, rows)
 
     def fetchone(self):
         row = self._cur.fetchone()

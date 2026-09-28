@@ -13,7 +13,7 @@ class AdminPanel(i18n.LocalizedView):
         self.bot,self.uid,self.nid,self.cell,self.section=bot,uid,nid,cell,section
         category=discord.ui.Select(row=0,options=[discord.SelectOption(label=tr(pl,en),value=key,default=key==section)
             for key,pl,en in [('provinces','Prowincje','Provinces'),('nations','Państwa i coop','Nations & co-op'),
-                              ('events','Eventy','Events'),('world','Kalendarz i bitwy','Calendar & battles')]])
+                              ('events','Eventy','Events'),('world','Kalendarz i bitwy','Calendar & battles'),('map','Mapa Azgaara','Azgaar map')]])
         async def change(i):
             if not await self.interaction_check(i):return
             await self.open(i,section=category.values[0])
@@ -29,6 +29,9 @@ class AdminPanel(i18n.LocalizedView):
             'events':[('generate','Generuj dla państwa','Generate for nation'),('all','Generuj dla wszystkich','Generate for all'),
                       ('events','Lista eventów','Event list'),('post_private','Opublikuj prywatnie','Publish privately'),
                       ('post_public','Opublikuj publicznie','Publish publicly'),('image','Ilustracja z pliku','Upload illustration')],
+            'map':[('map_import','Jak wgrać mapę','How to import'),('map_export','Eksportuj .map','Export .map'),
+                   ('map_states','Państwa mapy','Map states'),('map_cultures','Kultury','Cultures'),
+                   ('map_religions','Religie','Religions'),('map_bind','Powiąż państwo','Link nation'),('identity','Kultura i religia pola','Cell culture & religion')],
             'world':[('calendar_status','Data i stan','Date & status'),('calendar_start','Uruchom kalendarz','Start calendar'),
                      ('calendar_stop','Zatrzymaj kalendarz','Pause calendar'),('tick','Rozlicz miesiące','Settle months'),
                      ('plans','Oczekujące plany bitew','Pending battle plans')],
@@ -127,6 +130,22 @@ class AdminPanel(i18n.LocalizedView):
         elif key=='coast':
             async def choose(j,value):await self.call(j,'ProvincesCog','coast',self.cell,value=='1')
             await self.picker(i,[('1',tr('Ląd na wybrzeżu','Coastal land')),('0',tr('Poza wybrzeżem','Inland'))],choose)
+        elif key=='map_import':
+            await i.response.send_message(tr('W Azgaarze zapisz projekt .map i Export → JSON → Full Data. Wgraj je przez /admin map_import file:JSON map_file:MAP. Kolejne aktualizacje: /admin map_resync.',
+                'In Azgaar save a .map project and Export → JSON → Full Data. Upload with /admin map_import file:JSON map_file:MAP. Later updates: /admin map_resync.'),ephemeral=True)
+        elif key=='map_export':await self.call(i,'ProvincesCog','map_export')
+        elif key in ('map_states','map_cultures','map_religions'):
+            await self.call(i,'ProvincesCog','map_entities',key[4:])
+        elif key=='map_bind':
+            name=self.nation()['name']
+            async def submit(j,value):await self.call(j,'ProvincesCog','map_bind',int(value),name)
+            await self.form(i,tr('ID państwa Azgaara','Azgaar state ID'),[dict(label=tr('ID z /admin map_entities','ID from /admin map_entities'),max_length=5)],submit)
+        elif key=='identity':
+            if self.cell is None:raise ValueError(tr('Najpierw wybierz prowincję.','Choose a province first.'))
+            async def submit(j,culture,religion):await self.call(j,'ProvincesCog','province_identity',self.cell,int(culture) if culture else None,int(religion) if religion else None)
+            await self.form(i,tr('Kultura i religia','Culture & religion'),[
+                dict(label=tr('ID kultury (puste = bez zmian)','Culture ID (blank = unchanged)'),required=False,max_length=5),
+                dict(label=tr('ID religii (puste = bez zmian)','Religion ID (blank = unchanged)'),required=False,max_length=5)],submit)
         elif key=='normalize':await self.call(i,'EconomyControlCog','population',self.nation()['name'])
         elif key=='found':
             async def chosen(j,member):
