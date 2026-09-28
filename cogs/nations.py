@@ -210,10 +210,8 @@ class NationCog(commands.Cog):
         flagged_embed(embed, (nation['flag'], nation['name']))
 
         stab = nation["stability"]
-        if stab >= 80:   stab_str = i18n.text('✅ {p0:.0f}/100 (Stable)', p0=stab)
-        elif stab >= 60: stab_str = i18n.text('🟡 {p0:.0f}/100 (Tense)', p0=stab)
-        elif stab >= 40: stab_str = i18n.text('🟠 {p0:.0f}/100 (Unstable)', p0=stab)
-        else:            stab_str = i18n.text('🔴 {p0:.0f}/100 (Crisis)', p0=stab)
+        from stability_ui import stability_value,add_current_fields
+        stab_str = stability_value(stab,lang)
 
         if decay and decay['status'] in ('decaying','ruins'):
             status=tr('Ruiny — państwo niegrywalne','Ruins — nation unplayable') if decay['status']=='ruins' else tr('Rozpad: do upadku zostało miesięcy gry: ','Decay: game months until collapse: ')+str(max(0,decay['due_month']-now))
@@ -222,6 +220,7 @@ class NationCog(commands.Cog):
         embed.add_field(name=i18n.text('Government'),  value=nation["government_type"],         inline=True)
         embed.add_field(name=i18n.text('Treasury'),    value=i18n.text('{p0:.0f} gold', p0=nation['treasury']),  inline=True)
         embed.add_field(name=i18n.text('Stability'),   value=stab_str,                          inline=True)
+        add_current_fields(embed,nation,include_stability=False,lang=lang)
         embed.add_field(name=i18n.text('Population'),  value=f"{total_population:,}",           inline=True)
         
         from world_service import profile, tr

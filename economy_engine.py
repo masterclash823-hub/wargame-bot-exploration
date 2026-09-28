@@ -21,6 +21,17 @@ DEFAULT_POLICY = dict(tax='normal', priority='balanced', luxury='auto', unrest=0
                       arrears=0., unpaid_months=0, hunger_months=0)
 
 
+def happiness(unrest):
+    """Player-facing name for the existing tax/labor unrest index, not a new stat."""
+    return 100 - min(100, max(0, float(unrest)))
+
+
+def social_change(before, after, effects):
+    change = after - before
+    return dict(before=before, after=after, change=change, effects=effects,
+                limit_adjustment=change-sum(effects.values()))
+
+
 def read_json(value, default=None):
     if isinstance(value,str) and value:return json.loads(value)
     if value is None or value=='':return copy.deepcopy(default if default is not None else {})
@@ -140,6 +151,9 @@ def _project(nation, provinces, definitions, prefs, military_upkeep=0, units=(),
     res = {k:max(0,float(v)) for k,v in read_json(nation['resources_json']).items() if isinstance(v,(float,int))}
     start_gold = float(nation['treasury'])
     stability = min(100, max(0, float(nation['stability'])))
+    stability_before = stability
+    unrest_before = p['unrest']
+    stability_effects = dict(slavery=0., dynasty=0., hunger=0., luxuries=0., taxes=0.)
     stab = .75 + stability / 400
     taxes = output_gold = building_upkeep = 0.
     production, staffing, populations = {}, [], {}
@@ -283,20 +297,28 @@ def _project(nation, provinces, definitions, prefs, military_upkeep=0, units=(),
     res['food'] = max(0,food_have-food_need)
     p['hunger_months'] = p['hunger_months']+1 if shortage else 0
     p['unrest'] = min(100,max(0,p['unrest']+{'low':-3,'normal':-1,'high':3}[p['tax']]))
+    unrest_after_tax = p['unrest']
     if slavery:
         p['unrest'] = min(100, p['unrest'] + 2)
-        stability -= .5
-    stability += nation.get('dynasty_stability', 0)
+        stability_effects['slavery'] = -.5
+        stability += stability_effects['slavery']
+    stability_effects['dynasty'] = nation.get('dynasty_stability', 0)
+    stability += stability_effects['dynasty']
     growth = 0.
     if shortage:
-        if p['hunger_months'] >= 2: stability -= (1-fed)*8
+        if p['hunger_months'] >= 2:
+            stability_effects['hunger'] = -(1-fed)*8
+            stability += stability_effects['hunger']
         if p['hunger_months'] >= 3 and fed<.5: growth = -(0.5-fed)*.02
     elif food_have >= food_need*1.2:
         growth = {'low':.003,'normal':.002,'high':.0005}[p['tax']]
         if luxury_used >= use and use: growth += .001
-    if luxury_used and use: stability += min(1,luxury_used/(use*2))
-    if p['tax']=='high': stability -= p['unrest']/100
-    elif p['tax']=='low': stability += .25
+    if luxury_used and use:
+        stability_effects['luxuries'] = min(1,luxury_used/(use*2))
+        stability += stability_effects['luxuries']
+    if p['tax']=='high': stability_effects['taxes'] = -p['unrest']/100
+    elif p['tax']=='low': stability_effects['taxes'] = .25
+    stability += stability_effects['taxes']
     spoilage = max(0,res['food']-food_need*3)*(.02-.015*min(1,granaries))*(1+effects.get('spoilage',0))
     res['food'] -= spoilage
     for prov in provinces:
@@ -309,7 +331,11 @@ def _project(nation, provinces, definitions, prefs, military_upkeep=0, units=(),
     p['arrears'] = round(max(0,due-paid),2)
     p['unpaid_months'] = p['unpaid_months']+1 if p['arrears']>.01 else 0
     # Two-month adjustment period is represented by a zero arrears history at migration.
-    return dict(resources=res,treasury=round(cash-paid,2),stability=min(100,max(0,stability)),
+    stability = min(100,max(0,stability))
+    return dict(resources=res,treasury=round(cash-paid,2),stability=stability,
+                stability_report=social_change(stability_before, stability, stability_effects),
+                happiness_report=social_change(happiness(unrest_before), happiness(p['unrest']),
+                    dict(taxes=unrest_before-unrest_after_tax, slavery=unrest_after_tax-p['unrest'])),
                 population=sum(populations.values()),populations=populations,policy=p,staffing=staffing,
                 income=round(gold_income,2),taxes=round(taxes,2),upkeep=round(upkeep,2),
                 balance=round(gold_income-upkeep,2),food_needed=food_need,food_shortage=shortage,
@@ -343,6 +369,9 @@ def forecast(nid=None):
                               labor_upkeep=0,dynasty_stability=0,company_transfers={})
                 c.execute('SELECT id,population FROM provinces WHERE owner_nation_id=? AND active=1',(nid,))
                 result['populations']={p['id']:p['population'] for p in c.fetchall()}
+                result['stability_report']=social_change(frozen['stability'],frozen['stability'],{})
+                h=happiness(result['policy']['unrest'])
+                result['happiness_report']=social_change(h,h,{})
             raise PreviewRollback(result)
     except PreviewRollback as preview:
         return preview.result
@@ -420,6 +449,8 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
         from economy_services import settle_contracts
         from treaty_service import tick as treaty_tick
         treaty_tick(c,target)
+        c.execute('SELECT id,stability FROM nations')
+        after_treaties={row['id']:row['stability'] for row in c.fetchall()}
         from dynasty import tick as dynasty_tick
         dynasty_tick(c,target)
         settle_contracts(c,target)
@@ -431,11 +462,18 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
             nid=n['id']
             from technology import fund_programs,tick_research
             programs=fund_programs(c,nid)
+            c.execute('SELECT stability FROM nations WHERE id=?',(nid,))
+            before_projects=c.fetchone()['stability']
             with i18n.using_language(i18n.get_user_language(n['owner_id'])):
                 _megaprojects(c,nid)
             data=snapshot(c,nid,company_plants)
             transfers=data[0]['treasury']-n['treasury']
             result=project(*data)
+            sources=dict(result['stability_report']['effects'])
+            sources.update(treaties=after_treaties[nid]-n['stability'],
+                           projects=data[0]['stability']-before_projects,
+                           other=before_projects-after_treaties[nid])
+            result['stability_report']=social_change(n['stability'],result['stability'],sources)
             result['opening_resources']=read_json(n['resources_json'])
             result['opening_treasury']=n['treasury']
             result['income']+=transfers
@@ -485,8 +523,11 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
             summaries.append(f"{n['name']}: {r['balance']:+.1f}g; {r['treasury']:.1f}g")
             lang=i18n.get_user_language(n['owner_id'])
             debt='zaległości' if lang=='pl' else 'arrears'
+            sr=r['stability_report']
+            social=f"{sr['before']:.2f} → {sr['after']:.2f} ({sr['change']:+.2f})"
+            label='stabilność' if lang=='pl' else 'stability'
             c.execute('INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,?,?)',
-                      (n['id'],'system',f"{month}/{year}: {r['balance']:+.1f}g; {debt} {r['policy']['arrears']:.1f}g"))
+                      (n['id'],'system',f"{month}/{year}: {r['balance']:+.1f}g; {debt} {r['policy']['arrears']:.1f}g; {label} {social}"))
         return month,year,summaries
 
 

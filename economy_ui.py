@@ -57,6 +57,8 @@ def dashboard(n,r):
     inventory=inventory_text(n)
     embed.add_field(name=tr('Skarbiec teraz','Treasury now'),value=f"{n['treasury']:.1f}g")
     embed.add_field(name=tr('Populacja','Population'),value=f"{n['population']:,}")
+    from stability_ui import add_current_fields,add_forecast_fields
+    add_current_fields(embed,n)
     embed.add_field(name=tr('Magazyn','Stockpile'),value=inventory[:900]+(tr('\nPełna lista w załączniku.','\nFull inventory in the attachment.') if len(inventory)>900 else ''),inline=False)
     if r is not None and r.get('stockpile_only'):
         embed.description=tr('Aktualne zasoby państwa. „Prognoza” oblicza bilans następnego miesiąca; ustawienia gospodarki są poniżej.',
@@ -79,8 +81,7 @@ def dashboard(n,r):
     embed.add_field(name=tr('Polityka pracy','Labor policy'),value=label(regime['mode'])+
                     tr(' · nadzór: ',' · supervision: ')+f"{r.get('labor_upkeep',0):g}g/"+tr('mies.','month')+
                     (tr(' · okres przejściowy: ',' · transition: ')+str(regime['transition_months']) if regime['transition_months'] else ''),inline=False)
-    if r.get('dynasty_stability'):
-        embed.add_field(name=tr('Mariaże dynastyczne','Dynastic marriages'),value=f"+{r['dynasty_stability']:g} "+tr('stabilności/miesiąc','stability/month'))
+    add_forecast_fields(embed,r)
     needed=r['food_needed'];stock=read_json(n['resources_json']).get('food',0)
     cover=f'{stock/needed:.1f}' if needed else '∞'
     embed.add_field(name=tr('Żywność','Food'),value=tr('Zapas na ','Stock for ')+cover+tr(' mies.',' months')+f"\n{r['food_change']:+.1f}/"+tr('mies.','month'))
@@ -134,6 +135,7 @@ class EconomyView(i18n.LocalizedView):
         self.income.label=tr('Bilans surowców','Resource balance')
         self.labor.label=tr('Polityka pracy','Labor policy')
         self.preview.label=tr('Prognoza','Forecast')
+        self.social.label=tr('Stabilność i zadowolenie','Stability & happiness')
         options=[('tax:low',tr('Podatki niskie','Low taxes')),('tax:normal',tr('Podatki normalne — domyślne','Normal taxes — default')),
                  ('tax:high',tr('Podatki wysokie','High taxes')),('priority:balanced',tr('Rozwój zrównoważony — domyślny','Balanced growth — default')),
                  ('priority:food',tr('Priorytet: żywność','Priority: food')),('priority:industry',tr('Priorytet: przemysł','Priority: industry')),
@@ -141,7 +143,11 @@ class EconomyView(i18n.LocalizedView):
                  ('luxury:auto',tr('Luksusy: automatycznie — domyślne','Luxuries: automatic — default')),
                  ('luxury:stockpile',tr('Luksusy: magazynuj','Luxuries: stockpile')),('luxury:consume',tr('Luksusy: konsumuj','Luxuries: consume')),
                  ('luxury:sell',tr('Luksusy: sprzedawaj','Luxuries: sell'))]
-        self.settings.options=[discord.SelectOption(label=label,value=value) for value,label in options]
+        tax_descriptions={
+            'tax:low':tr('Do +3 zadowolenia/mies.; +0,25 stabilności/mies.', 'Up to +3 happiness/month; +0.25 stability/month.'),
+            'tax:normal':tr('Do +1 zadowolenia/mies.; bez bezpośredniej zmiany stabilności.', 'Up to +1 happiness/month; no direct stability change.'),
+            'tax:high':tr('Do −3 zadowolenia/mies.; kara do stabilności rośnie z niezadowoleniem.', 'Up to −3 happiness/month; stability penalty grows with unrest.')}
+        self.settings.options=[discord.SelectOption(label=label,value=value,description=tax_descriptions.get(value)) for value,label in options]
         self.settings.placeholder=tr('Opcjonalne ustawienia gospodarki','Optional economy settings')
 
     async def interaction_check(self,interaction):
@@ -162,6 +168,12 @@ class EconomyView(i18n.LocalizedView):
         from economy_reports import show
         await show(interaction,'income')
 
+    @discord.ui.button(label='Stability & happiness',row=2)
+    @i18n.localized
+    async def social(self,interaction,button):
+        from stability_ui import show
+        await show(interaction)
+
     @discord.ui.select(row=0)
     @i18n.localized
     async def settings(self,interaction,select):
@@ -174,7 +186,11 @@ class EconomyView(i18n.LocalizedView):
         if not n or n['id']!=self.nid:
             await interaction.followup.send(tr('Państwo zmieniło właściciela.','Nation ownership changed.'),ephemeral=True);return
         embed=dashboard(n,{'stockpile_only':True})
-        embed.set_footer(text=tr('Ustawienia zapisane.','Settings saved.'))
+        if key=='tax':
+            from stability_ui import current_policy,rules_text
+            embed.add_field(name=tr('Zmiana podatków — od następnego miesiąca','Tax change — from next month'),
+                            value=rules_text(current_policy(self.nid)),inline=False)
+        embed.set_footer(text=tr('Ustawienia zapisane. Wejdą w życie przy następnym rozliczeniu.','Settings saved. They take effect at the next settlement.'))
         await interaction.edit_original_response(embed=embed,view=EconomyView(self.owner,self.nid))
 
     @discord.ui.button(label='Forecast',row=1)
@@ -242,6 +258,12 @@ class PopulationConfirm(i18n.LocalizedView):
 
 class EconomyControlCog(commands.Cog):
     economy=app_commands.Group(name='economy',description='Economy dashboard / Panel gospodarki')
+
+    @economy.command(name='stability',description='Explain stability and happiness changes / Wyjaśnij zmiany stabilności i zadowolenia')
+    @i18n.localized
+    async def stability(self,interaction:discord.Interaction,nation:str=''):
+        from stability_ui import show
+        await show(interaction,nation)
 
     @economy.command(name='income',description='Monthly balance of every resource / Miesięczny bilans wszystkich surowców')
     @i18n.localized
