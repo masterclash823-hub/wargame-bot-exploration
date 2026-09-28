@@ -15,6 +15,7 @@ from utils import get_nation_by_owner, gm_only
 
 
 PL = {
+    'stability':'Stabilność i zadowolenie',
     'ruins':'Ruiny', 'company':'Kompania', 'company_offers':'Oferty inwestycji',
     'exploration':'Eksploracja','captives':'Jeńcy',
     'labor':'Polityka pracy',
@@ -50,6 +51,7 @@ PL = {
 
 def tr(lang: str, key: str) -> str:
     en = {
+        'stability':'Stability & happiness',
         'ruins':'Ruins', 'company':'Company', 'company_offers':'Investment offers',
         'exploration':'Exploration','captives':'Captives',
         'labor':'Labor policy',
@@ -224,7 +226,7 @@ SECTIONS = [
 ]
 
 ACTIONS = {
-    "home": [("stats","📊"),("resources","📦"),("calendar","📅"),("goals","🎯"),("refresh","🔄")],
+    "home": [("stats","📊"),("resources","📦"),("calendar","📅"),("goals","🎯"),("stability","⚖️"),("refresh","🔄")],
     "economy": [("resources","💰"),("build","🏗️"),("buildings","📚"),("yield","🌾"),("trades","🔁"),("new_trade","➕"),
                 ("projects","🏛️"),("new_project","📝"),("start_project","▶️"),("contracts","📆"),("workers","👥"),("labor","⚖️"),
                 ("owned_buildings","🏘️"),("income","📈"),("market","🛒")],
@@ -316,7 +318,8 @@ class PlayerPanel(OwnedView):
         embed.description = f"{flag_text(nation['flag'])} **{nation['name']}**\n{tr(self.lang, 'private')}"
         flagged_embed(embed, (nation['flag'], nation['name']))
         embed.add_field(name="💰 " + ("Skarbiec" if self.lang == "pl" else "Treasury"), value=f"{nation['treasury']:,.0f}")
-        embed.add_field(name="⚖️ " + ("Stabilność" if self.lang == "pl" else "Stability"), value=f"{nation['stability']:.0f}/100")
+        from stability_ui import add_current_fields
+        add_current_fields(embed,nation,lang=self.lang)
         embed.add_field(name="🗺️/⚔️/🔁/🎭", value=f"{provinces} / {forces} / {trades} / {events}")
         if proposals or calls or marriages:
             embed.add_field(name='📬 '+tr(self.lang,'diplomacy'),
@@ -362,6 +365,7 @@ class PlayerPanel(OwnedView):
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
+            'stability':('EconomyControlCog','stability',[]),
             'market':('MarketCog','market_list',[]),
             'owned_buildings':('EconomyCog','buildings_owned',[]), 'income':('EconomyControlCog','income',[]),
             'ruins':('RuinsCog','ruins_list',[]), 'company':('CompanyCog','company',[]), 'company_offers':('CompanyCog','company_offers',[]),

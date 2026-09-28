@@ -46,16 +46,19 @@ Nieczynny budynek nadal kosztuje 25% utrzymania swojego poziomu.
 
 ## Podatki i żywność
 
-| Podatki | Złoto / 1000 mieszkańców / miesiąc | Zmiana niezadowolenia | Bazowy wzrost populacji przy nadwyżce żywności |
+| Podatki | Złoto / 1000 mieszkańców / miesiąc | Zmiana zadowolenia | Bazowy wzrost populacji przy nadwyżce żywności |
 |---|---:|---:|---:|
-| Niskie | 8 | −3 | 0,3% |
-| Normalne — domyślne | 12 | −1 | 0,2% |
-| Wysokie | 16 | +3 | 0,05% |
+| Niskie | 8 | do +3 | 0,3% |
+| Normalne — domyślne | 12 | do +1 | 0,2% |
+| Wysokie | 16 | do −3 | 0,05% |
 
-Niezadowolenie mieści się w 0–100 i ogranicza podatki maksymalnie o połowę.
-Wysokie podatki obniżają stabilność o niezadowolenie/100 miesięcznie;
+Zadowolenie to `100 − niezadowolenie`, w zakresie 0–100. Przy 100 wpływy
+podatkowe są pełne, a przy 0 zmniejszone o połowę. Wysokie podatki obniżają
+stabilność o `(100 − zadowolenie po rozliczeniu)/100` miesięcznie;
 niskie dodają 0,25. Stabilność mnoży podatki i produkcję przez
 `0,75 + stabilność/400`. Kolonie mają dodatkowy mnożnik swojego etapu.
+Przyczyny zmian i ostatnie rozliczenie pokazuje `/economy stability`
+oraz przycisk **Stabilność i zadowolenie**. [Pełne wyjaśnienie](stability.md).
 W pełni obsadzony rynek poziomu 1 zwiększa podatki własnej prowincji o 15%;
 wyższe poziomy skalują premię tak jak produkcję.
 
@@ -64,7 +67,7 @@ także dla rezerw. Farma daje 20 żywności, przystań rybacka 15,
 pastwisko 8 i 1 konia, plantacja 6 żywności i 3 przyprawy — przed mnożnikami.
 Do wzrostu ludności potrzeba żywności na co najmniej 120% bieżących potrzeb.
 
-Pierwszy miesiąc głodu daje ostrzeżenie, drugi może obniżyć stabilność do 8,
+Pierwszy miesiąc głodu daje ostrzeżenie, drugi może obniżyć stabilność o maksymalnie 8 punktów,
 a trzeci i kolejne mogą zmniejszać populację do 1%, gdy wyżywienie spada
 poniżej 50%. Uzupełnienie zapasów zeruje serię głodu. Psuje się 2% żywności
 ponad trzymiesięczne potrzeby; pełna obsada spichlerza ogranicza to do 0,5%.

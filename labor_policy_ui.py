@@ -11,13 +11,13 @@ def rules():
     return tr(
         'Wolna praca: zwykła produkcja, bez kosztów tej polityki.\n\n'
         'Niewolnictwo: +10% produkcji farm, pastwisk, plantacji, obozów drwali, kopalń, glinianek i smolarni. '
-        'Co miesiąc: nadzór 1 złota/1000 mieszkańców, +2 niepokojów, −0,5 stabilności i −1 reputacji. '
+        'Co miesiąc: nadzór 1 złota/1000 mieszkańców, do −2 zadowolenia, −0,5 stabilności i −1 reputacji. '
         'Wprowadzenie: 50 złota, −5 stabilności i −10 reputacji.\n\n'
         'Zniesienie: 20 złota/1000 mieszkańców na reformę, potem 3 miesiące −5% produkcji wymienionych budynków. '
         'Koszty nadzoru i miesięczne kary kończą się od razu. Ludność i pula pracowników pozostają te same. Algae nie otrzymuje premii.',
         'Free labor: normal production, without costs from this policy.\n\n'
         'Slavery: +10% output from farms, pastures, plantations, lumber camps, mines, clay pits and tar works. '
-        'Monthly: supervision costs 1 gold/1000 inhabitants, +2 unrest, −0.5 stability and −1 reputation. '
+        'Monthly: supervision costs 1 gold/1000 inhabitants, up to −2 happiness, −0.5 stability and −1 reputation. '
         'Introduction: 50 gold, −5 stability and −10 reputation.\n\n'
         'Abolition: reform costs 20 gold/1000 inhabitants, followed by 3 months of −5% output from those buildings. '
         'Supervision costs and monthly penalties end immediately. Population and workforce stay the same. Algae receives no bonus.')

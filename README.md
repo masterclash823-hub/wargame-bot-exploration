@@ -54,6 +54,11 @@ budynki wraz z prowincjami oraz miesięczny bilans każdego surowca i złota.
 Te same raporty otwierają `/buildings owned` i `/economy income`; można
 przeglądać strony lub pobrać całość w TXT. [Opis raportów](docs/economy-reports.md).
 
+**Panel → Przegląd → Stabilność i zadowolenie** oraz `/economy stability`
+pokazują bieżące wartości, przyczyny zmiany w punktach, prognozę i ostatnie
+rozliczenie. Zadowolenie jest widoczną postacią istniejącego niezadowolenia;
+aktualizacja nie zmienia balansu. [Zasady stabilności](docs/stability.md).
+
 ## Wolny rynek
 
 **Panel → Gospodarka → Wolny rynek** lub `/market list` pokazuje najtańszą
