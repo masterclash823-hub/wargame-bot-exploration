@@ -1,5 +1,6 @@
 """Discord UI for persisted event adventures; /event play restores expired views."""
 import discord
+import asyncio
 import logging
 import i18n
 import event_media
@@ -88,11 +89,31 @@ def render_event(state):
     return illustrate_event(embed, state)
 
 
-@i18n.localized
-async def respond(interaction, state, choice=None, answer=None):
-    await interaction.response.defer(ephemeral=True)
+async def current_state(interaction, state):
+    """Check live access and version after acknowledging the click, even after restart."""
+    current = await asyncio.to_thread(adventure.load_run, state['event_id'])
+    if not await asyncio.to_thread(can_manage, current['nation_id'], interaction.user.id):
+        raise ValueError(adventure.tr(current['lang'],
+            'Decyzję podejmuje właściciel lub coop tego państwa.',
+            "Only this nation's owner or co-op members can decide."))
+    if current['version'] != state['version'] or current['resolved']:
+        await send_event(interaction.followup.send, current, view=EventView(current), ephemeral=True,
+                         content=adventure.tr(current['lang'],
+                             'Ten etap już się zmienił. Pokazuję aktualny stan; nie naliczono dodatkowej decyzji.',
+                             'This stage has already changed. Here is the current state; no extra decision was charged.'))
+        return None
+    return current
+
+
+async def respond(interaction, state, choice=None, answer=None, *, deferred=False):
+    if not deferred:
+        await interaction.response.defer(ephemeral=True, thinking=True)
     try:
-        updated = await adventure.decide(state["event_id"], state["version"], interaction.user.id, choice, answer)
+        state = await current_state(interaction, state)
+        if state is None:
+            return
+        with i18n.using_language(state['lang']):
+            updated = await adventure.decide(state["event_id"], state["version"], interaction.user.id, choice, answer)
     except ValueError as exc:
         await interaction.followup.send(str(exc), ephemeral=True)
         return
@@ -103,6 +124,50 @@ async def respond(interaction, state, choice=None, answer=None):
             "Save failed. Check the current state with /event play before choosing again."), ephemeral=True)
         return
     await send_event(interaction.followup.send,updated,view=EventView(updated),ephemeral=True)
+    await retire_buttons(interaction)
+
+
+async def retire_buttons(interaction):
+    message = getattr(interaction, 'message', None)
+    if message is not None:
+        try:
+            await message.edit(view=None)
+        except discord.HTTPException:
+            # The decision is committed and the new message is already delivered.
+            # A surviving old button safely restores current_state on the next click.
+            logging.info('Could not remove old event buttons from message %s', message.id)
+
+
+class EventAction(discord.ui.DynamicItem[discord.ui.Button],
+                  template=r'wargame:event:(?P<event_id>\d+):(?P<version>\d+):(?P<action>[012]|custom|retry)'):
+    """Route durable component IDs without relying on an in-memory View instance."""
+    def __init__(self, event_id, version, action, label, style=discord.ButtonStyle.secondary):
+        self.event_id, self.version, self.action = event_id, version, action
+        super().__init__(discord.ui.Button(label=label, style=style,
+                         custom_id=f'wargame:event:{event_id}:{version}:{action}'))
+
+    @property
+    def label(self):
+        return self.item.label
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match['event_id']), int(match['version']), match['action'], item.label, item.style)
+
+    async def callback(self, interaction):
+        # No database or AI work before the initial Discord response.
+        locale = getattr(getattr(interaction, 'locale', None), 'value', '') or ''
+        state = dict(event_id=self.event_id, version=self.version,
+                     lang='en' if self.label in ('Custom response', 'Reload choices')
+                     or (self.action in ('0', '1', '2') and locale.startswith('en')) else 'pl')
+        if self.action == 'custom':
+            await interaction.response.send_modal(CustomAnswer(state))
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        if self.action == 'retry':
+            await retry_response(interaction, state, deferred=True)
+        else:
+            await respond(interaction, state, choice=int(self.action), deferred=True)
 
 
 class CustomAnswer(discord.ui.Modal):
@@ -119,53 +184,41 @@ class CustomAnswer(discord.ui.Modal):
 
 class EventView(discord.ui.View):
     def __init__(self, state):
-        super().__init__(timeout=600)
+        super().__init__(timeout=None)
         self.state = state
         if state["resolved"]:
             return
         retry=adventure.needs_scene_retry(state)
         for index in range(0 if retry else 3):
-            button = discord.ui.Button(label=str(index + 1), style=discord.ButtonStyle.primary)
-            button.callback = self._choose(index)
-            self.add_item(button)
-        other = discord.ui.Button(label=adventure.tr(state["lang"], "Własna odpowiedź", "Custom response"))
-        other.callback = self._custom
-        self.add_item(other)
+            self.add_item(EventAction(state['event_id'], state['version'], str(index), str(index + 1), discord.ButtonStyle.primary))
+        self.add_item(EventAction(state['event_id'], state['version'], 'custom',
+                                 adventure.tr(state["lang"], "Własna odpowiedź", "Custom response")))
         if retry:
-            retry=discord.ui.Button(label=adventure.tr(state['lang'],'Załaduj odpowiedzi ponownie','Reload choices'),
-                                    style=discord.ButtonStyle.primary,row=0)
-            retry.callback=self._retry
-            self.add_item(retry)
+            self.add_item(EventAction(state['event_id'], state['version'], 'retry',
+                                     adventure.tr(state['lang'],'Załaduj odpowiedzi ponownie','Reload choices'),
+                                     discord.ButtonStyle.primary))
 
-    async def interaction_check(self, interaction):
-        if can_manage(self.state['nation_id'],interaction.user.id):
-            return True
-        await interaction.response.send_message(adventure.tr(self.state["lang"],
-            "Decyzję podejmuje właściciel lub coop tego państwa.", "Only this nation's owner or co-op members can decide."), ephemeral=True)
-        return False
 
-    def _choose(self, index):
-        async def callback(interaction):
-            await respond(interaction, self.state, choice=index)
-        return callback
-
-    async def _custom(self, interaction):
-        await interaction.response.send_modal(CustomAnswer(self.state))
-
-    async def _retry(self, interaction):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            updated=await adventure.retry_scene(self.state['event_id'],self.state['version'],interaction.user.id)
-        except ValueError as exc:
-            await interaction.followup.send(str(exc),ephemeral=True)
+async def retry_response(interaction, state, *, deferred=False):
+    if not deferred:
+        await interaction.response.defer(ephemeral=True, thinking=True)
+    try:
+        state = await current_state(interaction, state)
+        if state is None:
             return
-        except Exception:
-            logging.exception('Failed to regenerate event %s choices',self.state['event_id'])
-            await interaction.followup.send(adventure.tr(self.state['lang'],
-                'Nie udało się zapisać nowych wyborów. Użyj /event play.',
-                'Could not save new choices. Use /event play.'),ephemeral=True)
-            return
-        await send_event(interaction.followup.send,updated,view=EventView(updated),ephemeral=True)
+        with i18n.using_language(state['lang']):
+            updated=await adventure.retry_scene(state['event_id'],state['version'],interaction.user.id)
+    except ValueError as exc:
+        await interaction.followup.send(str(exc),ephemeral=True)
+        return
+    except Exception:
+        logging.exception('Failed to regenerate event %s choices',state['event_id'])
+        await interaction.followup.send(adventure.tr(state['lang'],
+            'Nie udało się zapisać nowych wyborów. Użyj /event play.',
+            'Could not save new choices. Use /event play.'),ephemeral=True)
+        return
+    await send_event(interaction.followup.send,updated,view=EventView(updated),ephemeral=True)
+    await retire_buttons(interaction)
 
 
 async def send_event(sender,state,*,public=False,editing=False,**kwargs):

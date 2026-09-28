@@ -655,4 +655,6 @@ class EventsCog(commands.Cog):
 
 
 async def setup(bot):
+    from event_ui import EventAction
+    bot.add_dynamic_items(EventAction)
     await bot.add_cog(EventsCog(bot))
