@@ -133,6 +133,10 @@ def _validate_choice(result):
 
 async def scene(state):
     """Generate only narrative/labels; mechanical choice slots are immutable."""
+    prepared = state.pop('_next_scene', None)
+    if prepared is not None:
+        state['scene_fallback'] = False
+        return prepared['text'], prepared['choices']
     lang = state["lang"]
     stage = len(state["history"]) + 1
     labels = PHASE_CHOICES.get(lang,PHASE_CHOICES['en'])[stage-1]
@@ -223,9 +227,12 @@ def _valid_coefficient(value):
 
 async def assess_consequence(state, action, choice):
     """Assess direction per approved effect axis without allowing new rewards or larger limits."""
+    state.pop('_next_scene', None)
     fallback = fallback_consequence(state, choice)
     base = state["base_effects"]
     expected_resources = set(base.get("resources", {}))
+    next_stage = len(state['history']) + 2
+    continue_event = next_stage <= MAX_DECISIONS
     prompt = (
         language_instruction(state['lang']) + "Evaluate one decision in a strategy-game event. Return JSON only: "
         '{"stability":0,"treasury":0,"resources":{"resource":0},"reason":"short explanation"}. '
@@ -244,6 +251,25 @@ async def assess_consequence(state, action, choice):
             "nation_context":state.get('nation_context',''),
         }, ensure_ascii=False)
     )
+    if continue_event:
+        prompt += (
+            '\nIn the SAME JSON include next_scene: {"text":"...","choices":["...","...","..."]}. '
+            f'This is stage {next_stage}/3, AFTER the chosen action and the consequences you just assessed. '
+            + ('The initial approach has already been chosen. Show its concrete consequences and ask HOW to implement it: '
+               'a new practical choice about people, timing, logistics or compromise. '
+               if next_stage == 2 else
+               'Present the final settlement decision, close the original problem without starting another crisis. ')
+            + 'Text <=1200 characters; exactly three distinct, situation-specific labels <=120 characters, '
+            'cautious, balanced and decisive in that order. Never use generic risk labels as actions. '
+            'Do not repeat earlier choices, invent extra rewards or force a positive event into a crisis. '
+            'These consequences are pending until decision 3, not changes already applied to the stockpile. '
+            'This decision contributes abs(base effect) * coefficient / 3 to the final outcome. '
+            'Write the scene and all labels in the required language. Previous choices (do not repeat): '
+            + json.dumps([*state.get('choices', []),
+                          *[label for h in state['history'] for label in h.get('offered_choices', [h['action']])]],
+                         ensure_ascii=False)
+            + language_instruction(state['lang'])
+        )
     def validate(result):
         if not isinstance(result,dict):
             raise ValueError("Invalid consequence")
@@ -258,9 +284,23 @@ async def assess_consequence(state, action, choice):
         validate_language(reason,state['lang'])
         return result
     try:
-        result = validate(await _ai_json(prompt,validate=validate,max_output_tokens=600))
+        result = validate(await _ai_json(prompt,validate=validate,max_output_tokens=1600 if continue_event else 600))
         resources = result.get("resources")
         reason = result.get("reason")
+        if continue_event:
+            # Keep a valid mechanical assessment even if the scene needs a repair.
+            # scene() consumes this only inside this decision; it is never persisted.
+            try:
+                prepared = _validate_scene(result.get('next_scene'))
+                previous = [*state.get('choices', []),
+                            *[label for h in state['history'] for label in h.get('offered_choices', [h['action']])]]
+                for text in [prepared['text'], *prepared['choices']]:
+                    validate_language(text, state['lang'])
+                if any(repeated_choice(label, previous) for label in prepared['choices']):
+                    raise ValueError('Repeated choices')
+                state['_next_scene'] = prepared
+            except (ValueError, TypeError, KeyError):
+                pass  # One scene repair may use the remaining shared time budget.
         return {
             "stability": float(result["stability"]),
             "treasury": float(result["treasury"]),
@@ -325,12 +365,15 @@ def start_run(state):
 
 def single_retry(fn):
     @wraps(fn)
-    async def guarded(event_id,version,owner_id):
+    async def guarded(event_id,version,owner_id,*args,**kwargs):
         with _retry_lock:
             if event_id in _retrying:
-                raise ValueError(i18n.text('Odpowiedzi są już ładowane. Poczekaj na wynik. / Choices are already loading. Wait for the result.'))
+                raise ValueError(i18n.text('Event jest już przetwarzany. Poczekaj na wynik pierwszego kliknięcia. / This event is already processing. Wait for the first click to finish.'))
             _retrying.add(event_id)
-        try:return await fn(event_id,version,owner_id)
+        try:
+            from event_ai import interactive_budget
+            with interactive_budget():
+                return await fn(event_id,version,owner_id,*args,**kwargs)
         finally:
             with _retry_lock:_retrying.discard(event_id)
     return guarded
@@ -392,6 +435,7 @@ def prospective_effects(state, decisions):
             "special_note": base.get("special_note", "")}
 
 
+@single_retry
 async def decide(event_id, version, owner_id, choice=None, answer=None):
     old = load_run(event_id)
     if not can_manage(old['nation_id'],owner_id):

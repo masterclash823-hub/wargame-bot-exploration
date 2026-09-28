@@ -61,6 +61,8 @@ nielimitowanego użycia, a samo dodanie integracji nie tworzy kont i kluczy.
 - Jedna próba ma maksymalnie 20 sekund, całe wywołanie maksymalnie 40.
   Budżet dzielony jest pomiędzy dostępne cele, aby zawieszony pierwszy model
   nie pozbawił szansy pozostałych dostawców. Nie ma ukrytych ponowień SDK.
+  Kliknięcie decyzji lub ponowienie odpowiedzi ma ciaśniejszy wspólny budżet
+  24 sekund na wszystkie etapy AI; kolejne wywołanie nie dostaje nowego limitu.
 - Wyczerpany model odpoczywa co najmniej 60 sekund. `Retry-After`, Google
   `RetryInfo` i reset limitu konta OpenRouter mogą wydłużyć przerwę.
   Przerwy współdzielą eventy, masowe generowanie i ekspedycje; pamięć znika po restarcie.
@@ -71,6 +73,8 @@ nielimitowanego użycia, a samo dodanie integracji nie tworzy kont i kluczy.
   przez dostawcę kończy wywołanie. Wyniki nadal przechodzą walidację gry.
 - Szkice mają limit 1000 tokenów, sceny 1200, oceny skutków 600, klasyfikacja
   własnej odpowiedzi 256. GPT-OSS ma minimum 1200, obejmujące też rozumowanie.
+  Podczas decyzji ocena i kolejna scena są łączone w jedno wywołanie z limitem
+  1600 tokenów. Końcowa decyzja nie generuje już kolejnej sceny.
   Szczegóły redukcji kontekstu i prób: [niezawodność eventów](event-reliability.md).
 - Jeśli wszystkie próby zawiodą, `/event generate` i `/event all` nie zapisują
   fikcyjnego szkicu ani nie zużywają pozycji w rotacji. Istniejący event pokazuje

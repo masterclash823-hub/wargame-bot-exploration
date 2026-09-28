@@ -3,6 +3,8 @@ import asyncio
 import logging
 import math
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote
@@ -23,6 +25,19 @@ CHAT_ENDPOINTS = {
 }
 _unavailable_until = {}
 log = logging.getLogger(__name__)
+_interactive_deadline = ContextVar('event_interactive_deadline', default=None)
+
+
+@contextmanager
+def interactive_budget(seconds=24):
+    """Share a wall-clock AI budget across all requests belonging to one click."""
+    deadline = time.monotonic() + seconds
+    current = _interactive_deadline.get()
+    token = _interactive_deadline.set(min(current, deadline) if current is not None else deadline)
+    try:
+        yield
+    finally:
+        _interactive_deadline.reset(token)
 
 
 class EventAIError(RuntimeError):
@@ -180,6 +195,9 @@ async def _chat_request(target,prompt,timeout, *, json_mode=False, max_output_to
 async def generate_text(prompt, *, validate=None, json_mode=False, max_output_tokens=None, max_invalid=None):
     """Bound the whole operation; optional validation retries malformed game output."""
     deadline=time.monotonic()+TOTAL_TIMEOUT
+    interactive_deadline = _interactive_deadline.get()
+    if interactive_deadline is not None:
+        deadline = min(deadline, interactive_deadline)
     candidates=targets()
     invalid=0
     options={}

@@ -146,16 +146,16 @@ New event workflow:
 2. `/event post` starts an interactive event without applying any effects yet.
 3. The nation owner uses buttons 1/2/3 or **Custom response**. Each custom answer
    counts as one decision, just like a button. `/event play <id>` restores the
-   latest saved state after a timeout, missed DM or a Render restart.
+   latest saved state after a missed DM. New buttons also work after a Render restart.
 4. After exactly three accepted decisions, the event ends and applies effects
    once. Old buttons/repeated submissions cannot pay out again. GM can inspect
    with `/event play`; the nation owner and co-op members can make choices.
 
-The three mechanical strategies scale the GM-approved base gains **and losses**
-by 0.5, 1, or 1.5. The final multiplier is their average, not three full payouts.
-Choices display accumulated pending effects. Custom text shapes the story and
-AI classifies it into the same bounded strategies; it cannot introduce arbitrary
-rewards. AI failure uses a visible balanced fallback and three default choices.
+Each decision contributes one third of its assessed effect. AI evaluates signs
+independently for each GM-approved axis, within the existing magnitude limits.
+Choices display accumulated pending effects. Custom text shapes the story;
+it cannot introduce arbitrary rewards. AI failure uses a visible bounded fallback;
+generic choices are blocked and can be reloaded without spending a decision.
 The stored event language follows the owner's `/language` setting when posted.
 Existing posted events are left unchanged and are not paid out again.
 
@@ -163,7 +163,12 @@ Deployment: merge and deploy, then startup `db.init_db()` adds `event_runs`
 without deleting existing tables. Run the test suite and try a disposable event
 first; verify no balances change on post or decisions 1/2, and exactly one change
 after decision 3. The GM/owner can inspect the final result through `/event play`.
-Decision views expire after 10 minutes, but saved progress does not expire.
+New decision buttons use durable IDs instead of expiring after 10 minutes.
+Old pre-update messages need one `/event play` refresh to receive the new buttons.
+Clicks are acknowledged immediately; assessment and the next scene share one AI
+request, with a 24-second shared AI budget including fallbacks. Repeated clicks
+cannot duplicate decisions, and stale buttons restore the current stage.
+[Details and limits](docs/event-reliability.md).
 Resuming after a restart requires retaining the same database (use the configured
 PostgreSQL database on the hosted bot, not a disposable test SQLite file).
 
