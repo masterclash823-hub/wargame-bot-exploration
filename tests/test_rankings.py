@@ -75,6 +75,10 @@ class RankingTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
             for nid,points in ((1,30),(2,20),(3,10),(4,0)):
                 c.execute('INSERT INTO nation_profiles(nation_id,prestige) VALUES(?,?)',(nid,points))
             c.execute('UPDATE nations SET stability=100 WHERE id=1')
+        before=self.database_dump()
+        projected=forecast()
+        self.assertEqual(forecast(),projected)
+        self.assertEqual(self.database_dump(),before)
         run_tick()
         with db.cursor() as c:
             c.execute('SELECT id,stability FROM nations ORDER BY id')
@@ -87,6 +91,15 @@ class RankingTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
             c.execute('SELECT report_json FROM economy_months ORDER BY month_index DESC LIMIT 1')
             saved=json.loads(c.fetchone()['report_json'])
         self.assertEqual(saved['2']['stability_report']['effects']['prestige_rank'],1)
+        for nid in ('1','2','3','4'):
+            self.assertEqual(saved[nid]['stability_report'],projected[nid]['stability_report'])
+        with db.cursor() as c:
+            c.execute('UPDATE nation_profiles SET prestige=99 WHERE nation_id=4')
+        run_tick()
+        with db.cursor() as c:
+            c.execute('SELECT id,stability FROM nations ORDER BY id')
+            self.assertEqual({r['id']:r['stability'] for r in c.fetchall()},
+                             {1:100,2:52,3:51,4:51})
 
     async def test_income_uses_one_world_forecast_and_rolls_everything_back(self):
         with db.cursor() as c:

@@ -172,7 +172,9 @@ class LaborTests(Fixture, unittest.TestCase):
         self.assertEqual(preview['labor_upkeep'],2)
         self.assertEqual(preview['upkeep'],4)
         self.assertEqual(preview['policy']['unrest'],2)
-        self.assertEqual(preview['stability'],49.5)
+        self.assertEqual(preview['stability_report']['effects']['slavery'],-.5)
+        self.assertEqual(preview['stability_report']['effects']['prestige_rank'],1)
+        self.assertEqual(preview['stability'],50.5)
         run_tick()
         self.assertEqual(self.reputation(),39)
         n=self.balances()[0]
@@ -187,16 +189,18 @@ class LaborTests(Fixture, unittest.TestCase):
         self.assertEqual(pop,self.query('SELECT SUM(population) AS n FROM provinces')[0]['n'])
         self.assertEqual(self.balances()[0]['treasury'],10)
         with db.cursor() as c:c.execute('UPDATE nations SET stability=50 WHERE id=1')
-        for remaining in (3,2,1):
+        for remaining,production in ((3,17.45625),(2,17.506125),(1,17.556)):
             before=self.regime()
             preview=forecast(1)
             self.assertEqual(self.regime(),before)
             self.assertEqual(preview['labor']['transition_months'],remaining)
-            self.assertAlmostEqual(preview['production']['food'],17.45625)
+            # Each completed month adds one stability point from prestige.
+            self.assertAlmostEqual(preview['production']['food'],production)
             self.assertEqual(preview['labor_upkeep'],0)
             run_tick()
         self.assertEqual(self.regime()['transition_months'],0)
-        self.assertEqual(forecast(1)['production']['food'],18.375)
+        self.assertEqual(self.balances()[0]['stability'],53)
+        self.assertAlmostEqual(forecast(1)['production']['food'],18.5325)
         self.assertEqual(self.reputation(),40)
 
     def test_atomic_cost_owner_version_and_quote_checks(self):

@@ -40,9 +40,9 @@ class SocialFixture(Fixture):
 class StabilityTests(SocialFixture, unittest.TestCase):
     def test_tax_rates_and_opening_happiness_revenue(self):
         for tax, closing_happiness, closing_stability, tax_income in (
-            ('high', 71, 49.71, 24.36),
-            ('normal', 75, 50, 18.27),
-            ('low', 77, 50.25, 12.18),
+            ('high', 71, 50.71, 24.36),
+            ('normal', 75, 51, 18.27),
+            ('low', 77, 51.25, 12.18),
         ):
             with self.subTest(tax=tax):
                 self.prefs(tax=tax, unrest=26)
@@ -50,6 +50,7 @@ class StabilityTests(SocialFixture, unittest.TestCase):
                 self.assertEqual(r['happiness_report']['before'], 74)
                 self.assertEqual(r['happiness_report']['after'], closing_happiness)
                 self.assertAlmostEqual(r['stability'], closing_stability)
+                self.assertEqual(r['stability_report']['effects']['prestige_rank'], 1)
                 self.assertAlmostEqual(r['taxes'], tax_income)
                 self.assert_reconciles(r)
 
@@ -78,7 +79,9 @@ class StabilityTests(SocialFixture, unittest.TestCase):
         run_tick()
         second = forecast(1)
         self.assertEqual(second['stability_report']['effects']['hunger'], -8)
-        self.assertEqual(second['stability'], 42)
+        # One prestige point in each month; hunger still removes eight points.
+        self.assertEqual(first['stability'], 51)
+        self.assertEqual(second['stability'], 44)
         with db.cursor() as c:
             c.execute('UPDATE nations SET resources_json=? WHERE id=1', ('{"food":10}',))
         self.assertEqual(forecast(1)['stability_report']['effects']['hunger'], -4)
@@ -101,7 +104,8 @@ class StabilityTests(SocialFixture, unittest.TestCase):
         set_policy(1, 'luxury', 'consume')
         consumed = forecast(1)
         self.assertEqual(consumed['stability_report']['effects']['luxuries'], 1)
-        self.assertEqual(consumed['stability'], 51.25)
+        self.assertEqual(consumed['stability_report']['effects']['prestige_rank'], 1)
+        self.assertEqual(consumed['stability'], 52.25)
         self.assert_reconciles(consumed)
 
     def test_limit_explains_actual_gain_and_loss(self):
@@ -112,14 +116,15 @@ class StabilityTests(SocialFixture, unittest.TestCase):
         r = high['stability_report']
         self.assertEqual(r['after'], 100)
         self.assertAlmostEqual(r['change'], .1)
-        self.assertAlmostEqual(r['limit_adjustment'], -.15)
+        self.assertAlmostEqual(r['limit_adjustment'], -1.15)
         with db.cursor() as c:
             c.execute("UPDATE provinces SET buildings_json='[]' WHERE owner_nation_id=1")
             c.execute("UPDATE nations SET stability=2,resources_json='{}' WHERE id=1")
         self.prefs(tax='normal', hunger_months=1)
         low = forecast(1)
-        self.assertEqual(low['stability_report']['after'], 0)
-        self.assertEqual(low['stability_report']['change'], -2)
+        # Prestige is awarded after the ordinary monthly effects reach zero.
+        self.assertEqual(low['stability_report']['after'], 1)
+        self.assertEqual(low['stability_report']['change'], -1)
         self.assertEqual(low['stability_report']['limit_adjustment'], 6)
         self.assert_reconciles(high)
         self.assert_reconciles(low)
@@ -138,7 +143,7 @@ class StabilityTests(SocialFixture, unittest.TestCase):
         self.assertEqual(self.query('SELECT months_spent FROM megaprojects')[0]['months_spent'], 0)
         self.assertEqual(projected['stability_report']['before'], 50)
         self.assertEqual(projected['stability_report']['effects']['projects'], 5)
-        self.assertAlmostEqual(projected['stability'], 54.71)
+        self.assertAlmostEqual(projected['stability'], 55.71)
         run_tick()
         saved = self.saved()
         self.assertEqual(saved['stability_report'], projected['stability_report'])
@@ -270,6 +275,8 @@ class StabilityUITests(SocialFixture, unittest.IsolatedAsyncioTestCase):
         with i18n.using_language('pl'):
             text = str(social_embed(n, p, preview, latest).to_dict())
             self.assertIn('Pierwszy miesiąc niedoboru', text)
-            self.assertIn('Limit 0–100: -0,15', text)
+            self.assertIn('Limit 0–100: -1,15', text)
+            self.assertIn('Top 3 prestiżu: +1,00 pkt', text)
+            self.assertNotIn('prestige_rank', text)
             self.assertIn('+0,10 pkt', text)
             self.assertNotIn('-0,00', change_text(preview['happiness_report']))

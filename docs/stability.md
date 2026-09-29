@@ -34,6 +34,12 @@ a 0 daje 50%. To osobny mnożnik, obok stabilności i premii budynków.
 | Głód | bez bezpośredniej zmiany | pierwszy miesiąc: 0; od drugiego: do −8 pkt, proporcjonalnie do brakującej żywności |
 | Zużycie jedwabiu i przypraw | bez bezpośredniej zmiany | łącznie do +1 pkt; samo magazynowanie nie wystarcza |
 | Aktywne mariaże | bez bezpośredniej zmiany | +0,25 pkt za każdy, łącznie do +0,5 pkt |
+| Trzy państwa prowadzące w prestiżu | bez bezpośredniej zmiany | +1 pkt na koniec ticka, do limitu 100 |
+
+Premia prestiżu jest liczona raz na miesiąc po pozostałych skutkach ticka.
+Przy remisie o trzech beneficjentach decydują kolejno nazwa państwa i ID.
+Ruiny nie otrzymują premii. Prognoza uwzględnia ją bez zapisywania zmian,
+a raport pokazuje ją osobno jako **Top 3 prestiżu**.
 
 Wpływy podatkowe używają zadowolenia z **początku** miesiąca. Potem podatki
 i polityka pracy zmieniają zadowolenie, a kara stabilności za wysokie podatki

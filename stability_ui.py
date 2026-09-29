@@ -51,6 +51,7 @@ def change_text(report, *, lang=None):
               'luxuries': tr('Zużyte luksusy', 'Consumed luxuries', lang),
               'treaties': tr('Skutki traktatów', 'Treaty consequences', lang),
               'projects': tr('Ukończone projekty', 'Completed projects', lang),
+              'prestige_rank': tr('Top 3 prestiżu', 'Prestige top 3', lang),
               'other': tr('Pozostałe skutki rozliczenia', 'Other settlement effects', lang)}
     points = tr('pkt', 'points', lang)
     lines = [f"**{number(report['before'], lang=lang)} → {number(report['after'], lang=lang)}/100** "
