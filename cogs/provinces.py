@@ -564,7 +564,7 @@ class ProvincesCog(commands.Cog):
         )
 
     # -------------------------------------------------- /province yield
-    @province_grp.command(name="buy", description="Buy an unclaimed province / Kup wolną prowincję")
+    @province_grp.command(name="buy", description="Buy an unclaimed neighboring province / Kup wolną sąsiednią prowincję")
     @app_commands.describe(cell_id="Azgaar cell ID / ID komórki")
     @i18n.localized
     async def province_buy(self, interaction: discord.Interaction, cell_id: int):

@@ -20,7 +20,7 @@ def _province(c,cell):
 
 
 def buy(cell, uid):
-    """Purchase an unclaimed land cell, charging the nation's treasury atomically."""
+    """Purchase adjacent unclaimed land, charging the nation's treasury atomically."""
     from nation_access import find_nation
     from economy_engine import lock_nation
     from world_service import activity
@@ -36,6 +36,15 @@ def buy(cell, uid):
             raise ValueError(tr('Ta prowincja ma już właściciela.', 'This province already has an owner.'))
         if p['terrain'] in ('water','sea','ocean'):
             raise ValueError(tr('Nie można kupić pola wodnego.', 'A water cell cannot be purchased.'))
+        c.execute('SELECT 1 FROM province_neighbors edge JOIN provinces owned '
+                  'ON owned.azgaar_cell_id=edge.neighbor_cell_id '
+                  'WHERE edge.cell_id=? AND owned.owner_nation_id=? AND owned.active=1 LIMIT 1',
+                  (cell,nation['id']))
+        if not c.fetchone():
+            raise ValueError(tr('Możesz kupić tylko prowincję sąsiadującą z aktywną prowincją swojego państwa. '
+                                'Jeśli mapa nie ma danych sąsiedztwa, poproś GM o ponowny import mapy.',
+                                'You can only buy a province adjacent to an active province of your nation. '
+                                'If map adjacency data is missing, ask a GM to reimport the map.'))
         c.execute('SELECT culture_id,religion_id FROM azgaar_cells WHERE cell_id=?',(cell,))
         target=c.fetchone()
         c.execute('SELECT a.culture_id,a.religion_id FROM provinces p JOIN azgaar_cells a '
