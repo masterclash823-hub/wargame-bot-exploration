@@ -34,7 +34,7 @@ GM_ROLE_ID = os.getenv("GM_ROLE_ID", "").strip()
 MESSAGE_CONTENT_INTENT = os.getenv("MESSAGE_CONTENT_INTENT", "false").strip().lower() in ("1", "true", "yes")
 
 # --- Google Gemini ---
-GEMINI_API_KEY = _require("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 GEMINI_FALLBACK_MODELS = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite,gemini-2.5-flash")
 

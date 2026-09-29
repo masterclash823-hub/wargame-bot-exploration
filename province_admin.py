@@ -19,6 +19,48 @@ def _province(c,cell):
     return row
 
 
+def buy(cell, uid):
+    """Purchase an unclaimed land cell, charging the nation's treasury atomically."""
+    from nation_access import find_nation
+    from economy_engine import lock_nation
+    from world_service import activity
+    with db.atomic() as c:
+        world_lock(c)
+        nation=find_nation(uid,c)
+        if not nation:
+            raise ValueError(tr('Nie masz państwa.', 'You have no nation.'))
+        nation=lock_nation(c,nation['id'])
+        # A co-op may manage the nation, but fallen nations cannot buy land.
+        p=_province(c,cell)
+        if p['owner_nation_id'] is not None:
+            raise ValueError(tr('Ta prowincja ma już właściciela.', 'This province already has an owner.'))
+        if p['terrain'] in ('water','sea','ocean'):
+            raise ValueError(tr('Nie można kupić pola wodnego.', 'A water cell cannot be purchased.'))
+        c.execute('SELECT culture_id,religion_id FROM azgaar_cells WHERE cell_id=?',(cell,))
+        target=c.fetchone()
+        c.execute('SELECT a.culture_id,a.religion_id FROM provinces p JOIN azgaar_cells a '
+                  'ON a.cell_id=p.azgaar_cell_id WHERE p.id=? AND p.owner_nation_id=? AND p.active=1',
+                  (nation['capital_province_id'],nation['id']))
+        capital=c.fetchone()
+        culture=bool(target and capital and target['culture_id']>0 and target['culture_id']==capital['culture_id'])
+        religion=bool(target and capital and target['religion_id']>0 and target['religion_id']==capital['religion_id'])
+        cost=500-100*int(culture)-100*int(religion)
+        if nation['treasury']<cost:
+            raise ValueError(tr(f'Potrzeba {cost} złota w skarbcu.',f'The treasury needs {cost} gold.'))
+        c.execute('UPDATE nations SET treasury=treasury-? WHERE id=? AND treasury>=?',(cost,nation['id'],cost))
+        if c.rowcount!=1:
+            raise ValueError(tr('Za mało złota.', 'Not enough gold.'))
+        c.execute('UPDATE provinces SET owner_nation_id=? WHERE id=? AND owner_nation_id IS NULL',
+                  (nation['id'],p['id']))
+        if c.rowcount!=1:
+            raise ValueError(tr('Prowincja została już zajęta.', 'The province is already taken.'))
+        totals(c,[nation['id']])
+        c.execute("INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,'system',?)",
+                  (nation['id'],f'Purchased province #{cell} for {cost} gold.'))
+        activity(c,'expansion',nation['id'],f'province-purchase:{p["id"]}',{'cell':cell})
+        return dict(nation=nation['name'],cell=cell,cost=cost,culture=culture,religion=religion)
+
+
 def edit(cell,*,population=None,biome=None,coastal=None):
     from cogs.provinces import BIOME_RESOURCES,_terrain_label
     if population is not None and (type(population) is not int or not 0<=population<=1_000_000_000):

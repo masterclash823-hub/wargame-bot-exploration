@@ -564,6 +564,25 @@ class ProvincesCog(commands.Cog):
         )
 
     # -------------------------------------------------- /province yield
+    @province_grp.command(name="buy", description="Buy an unclaimed province / Kup wolną prowincję")
+    @app_commands.describe(cell_id="Azgaar cell ID / ID komórki")
+    @i18n.localized
+    async def province_buy(self, interaction: discord.Interaction, cell_id: int):
+        await interaction.response.defer(ephemeral=True)
+        from province_admin import buy
+        from world_service import tr
+        try:
+            result=await asyncio.to_thread(buy,cell_id,interaction.user.id)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True)
+            return
+        discounts=[]
+        if result['culture']:discounts.append(tr('kultura','culture'))
+        if result['religion']:discounts.append(tr('religia','religion'))
+        detail=f" ({', '.join(discounts)}: -{100*len(discounts)})" if discounts else ''
+        await interaction.followup.send(tr('Kupiono prowincję', 'Purchased province')+
+                                        f" #{cell_id} · {result['cost']} "+tr('złota','gold')+detail,ephemeral=True)
+
     @province_grp.command(name="yield",
                           description="Total resource yield of your provinces / Laczna produkcja")
     @app_commands.describe(nation="Nation name (blank = your own, GM only for others)")

@@ -164,10 +164,16 @@ class EventAction(discord.ui.DynamicItem[discord.ui.Button],
             await interaction.response.send_modal(CustomAnswer(state))
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
-        if self.action == 'retry':
-            await retry_response(interaction, state, deferred=True)
-        else:
-            await respond(interaction, state, choice=int(self.action), deferred=True)
+        try:
+            if self.action == 'retry':
+                await retry_response(interaction, state, deferred=True)
+            else:
+                await respond(interaction, state, choice=int(self.action), deferred=True)
+        except Exception:
+            logging.exception('Event button failed for %s', self.event_id)
+            await interaction.followup.send(adventure.tr(state['lang'],
+                'Nie udało się obsłużyć kliknięcia. Otwórz aktualny stan przez /event play.',
+                'Could not process the click. Open the current state with /event play.'),ephemeral=True)
 
 
 class CustomAnswer(discord.ui.Modal):

@@ -68,6 +68,26 @@ class RankingTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
         rows=rankings.rank_rows([dict(id=2,name='B',value=1.001),dict(id=1,name='A',value=1.002)])
         self.assertEqual([(r['id'],r['place']) for r in rows],[(1,1),(2,1)])
 
+    async def test_prestige_leaders_gain_one_stability_each_tick(self):
+        with db.cursor() as c:
+            for uid,name in (('3','C'),('4','D')):
+                c.execute('INSERT INTO nations(owner_id,name,stability) VALUES(?,?,?)',(uid,name,50))
+            for nid,points in ((1,30),(2,20),(3,10),(4,0)):
+                c.execute('INSERT INTO nation_profiles(nation_id,prestige) VALUES(?,?)',(nid,points))
+            c.execute('UPDATE nations SET stability=100 WHERE id=1')
+        run_tick()
+        with db.cursor() as c:
+            c.execute('SELECT id,stability FROM nations ORDER BY id')
+            values={r['id']:r['stability'] for r in c.fetchall()}
+        self.assertEqual(values[1],100)
+        self.assertEqual(values[2],51)
+        self.assertEqual(values[3],51)
+        self.assertEqual(values[4],50)
+        with db.cursor() as c:
+            c.execute('SELECT report_json FROM economy_months ORDER BY month_index DESC LIMIT 1')
+            saved=json.loads(c.fetchone()['report_json'])
+        self.assertEqual(saved['2']['stability_report']['effects']['prestige_rank'],1)
+
     async def test_income_uses_one_world_forecast_and_rolls_everything_back(self):
         with db.cursor() as c:
             c.execute('INSERT INTO provinces(azgaar_cell_id,owner_nation_id,population,buildings_json) VALUES(10,1,2000,?)',('["farm"]',))

@@ -78,8 +78,8 @@ def _build_nation_context(nat, topic=None, *, compact=False) -> str:
         )
         history = c.fetchall()
     history_str = "\n".join(
-        f"[{short_date(r['timestamp'])} {r['source'].upper()}] {r['entry_text'][:400 if compact else 1200]}"
-        for r in reversed(history[:6] if compact else history)
+        f"[{short_date(r['timestamp'])} {r['source'].upper()}] {r['entry_text'][:240 if compact else 1200]}"
+        for r in reversed(history[:3] if compact else history)
     ) or "No recorded history yet."
 
     # Relations
@@ -92,7 +92,7 @@ def _build_nation_context(nat, topic=None, *, compact=False) -> str:
             (nat["id"], nat["id"], nat["id"])
         )
         relations = c.fetchall()
-    rel_str = ", ".join(f"{r['other']} ({r['status']})" for r in relations) or "None on record."
+    rel_str = ", ".join(f"{r['other']} ({r['status']})" for r in (relations[:12] if compact else relations)) or "None on record."
 
     # Current in-game date
     month = _cfg("current_month", "?")
@@ -105,15 +105,15 @@ def _build_nation_context(nat, topic=None, *, compact=False) -> str:
         mname = i18n.text('Month {p0}', p0=month)
 
     from world_service import memories
-    remembered=json.dumps(memories(nat['id'],event_variety.TOPICS.get(topic,''),limit=2 if compact else 6),ensure_ascii=False)
+    remembered=json.dumps(memories(nat['id'],event_variety.TOPICS.get(topic,''),limit=1 if compact else 6),ensure_ascii=False)
     from labor_regimes import state as labor_state
     with db.cursor() as c:
         labor=labor_state(c,nat['id'])
         c.execute("SELECT m.proposer_person,m.recipient_person,a.name AS proposer,b.name AS recipient FROM dynastic_marriages m "
                   "JOIN treaties t ON t.id=m.treaty_id JOIN nations a ON a.id=m.proposer_id JOIN nations b ON b.id=m.recipient_id "
-                  "WHERE m.status='active' AND t.status='active' AND (m.proposer_id=? OR m.recipient_id=?)",(nat['id'],nat['id']))
+                  "WHERE m.status='active' AND t.status='active' AND (m.proposer_id=? OR m.recipient_id=?) LIMIT 8",(nat['id'],nat['id']))
         marriages=json.dumps(c.fetchall(),ensure_ascii=False)
-        c.execute("SELECT state_json FROM explorations WHERE nation_id=? AND status='resolved' ORDER BY id DESC LIMIT 3",(nat['id'],))
+        c.execute("SELECT state_json FROM explorations WHERE nation_id=? AND status='resolved' ORDER BY id DESC LIMIT ?",(nat['id'],2 if compact else 3))
         expeditions=[{'text':s['text'][:300] if compact else s['text'],'success':s['success']}
                      for row in c.fetchall() for s in [json.loads(row['state_json'])]]
     institutions=[

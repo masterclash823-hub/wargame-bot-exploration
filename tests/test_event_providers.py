@@ -56,6 +56,12 @@ class ProviderTests(ModelFixture, unittest.IsolatedAsyncioTestCase):
                 await ai.generate_text('Prompt')
             google.assert_not_awaited(); chat.assert_not_awaited()
 
+    async def test_groq_can_serve_events_without_a_gemini_key(self):
+        with patch.object(config,'GEMINI_API_KEY',''), patch.object(config,'EVENT_AI_PROVIDERS','groq'), \
+                patch.object(ai,'_chat_request',AsyncMock(return_value='Recovered')) as chat:
+            self.assertEqual(await ai.generate_text('Prompt'),'Recovered')
+        self.assertEqual(chat.call_args.args[0].provider,'groq')
+
     async def test_all_exhausted_models_are_not_retried_by_next_event(self):
         google = AsyncMock(side_effect=ai.EventAIError(429, 3600))
         chat = AsyncMock(side_effect=ai.EventAIError(429, 3600))
