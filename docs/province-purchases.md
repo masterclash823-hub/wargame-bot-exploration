@@ -2,6 +2,7 @@
 
 `/province buy` otwiera prywatną listę wolnych prowincji lądowych sąsiadujących
 z aktywną prowincją własnego państwa. Lista ma strony po 25 pozycji.
+To samo menu jest dostępne przez **Panel → Terytorium → Kup prowincję**.
 
 Wybierz prowincję z listy, aby zobaczyć jej nazwę i ID, teren, biom, ludność,
 kulturę, religię, fortyfikacje, budynki, zasoby bazowe i pełną cenę.
