@@ -19,7 +19,43 @@ def _province(c,cell):
     return row
 
 
-def buy(cell, uid):
+def _capital_identity(c,nation):
+    c.execute('SELECT a.culture_id,a.religion_id FROM provinces p JOIN azgaar_cells a '
+              'ON a.cell_id=p.azgaar_cell_id WHERE p.id=? AND p.owner_nation_id=? AND p.active=1',
+              (nation['capital_province_id'],nation['id']))
+    return c.fetchone()
+
+
+def _price(target,capital):
+    culture=bool(target and capital and (target['culture_id'] or 0)>0 and target['culture_id']==capital['culture_id'])
+    religion=bool(target and capital and (target['religion_id'] or 0)>0 and target['religion_id']==capital['religion_id'])
+    return dict(cost=500-100*int(culture)-100*int(religion),culture=culture,religion=religion)
+
+
+def purchase_options(uid,nation_id=None):
+    """Read the player's current border and prices without reserving or buying land."""
+    from nation_access import find_nation,can_manage
+    with db.cursor() as c:
+        nation=find_nation(uid,c)
+        if not nation or (nation_id is not None and nation['id']!=nation_id) or not can_manage(nation['id'],uid,c):
+            raise ValueError(tr('Brak dostępu do państwa. Otwórz ponownie /province buy.',
+                                'Nation access unavailable. Open /province buy again.'))
+        capital=_capital_identity(c,nation)
+        c.execute('SELECT p.*,a.culture_id,a.religion_id,culture.data_json AS culture_json,'
+                  'religion.data_json AS religion_json FROM provinces p '
+                  'LEFT JOIN azgaar_cells a ON a.cell_id=p.azgaar_cell_id '
+                  "LEFT JOIN azgaar_entities culture ON culture.kind='cultures' AND culture.entity_id=a.culture_id "
+                  "LEFT JOIN azgaar_entities religion ON religion.kind='religions' AND religion.entity_id=a.religion_id "
+                  "WHERE p.active=1 AND p.owner_nation_id IS NULL AND p.terrain NOT IN ('water','sea','ocean') "
+                  'AND EXISTS (SELECT 1 FROM province_neighbors edge JOIN provinces owned '
+                  'ON owned.azgaar_cell_id=edge.neighbor_cell_id WHERE edge.cell_id=p.azgaar_cell_id '
+                  'AND owned.owner_nation_id=? AND owned.active=1) ORDER BY p.azgaar_cell_id',(nation['id'],))
+        rows=c.fetchall()
+        for row in rows:row.update(_price(row,capital))
+        return nation,rows
+
+
+def buy(cell, uid, *, nation_id=None, expected_cost=None):
     """Purchase adjacent unclaimed land, charging the nation's treasury atomically."""
     from nation_access import find_nation
     from economy_engine import lock_nation
@@ -29,6 +65,9 @@ def buy(cell, uid):
         nation=find_nation(uid,c)
         if not nation:
             raise ValueError(tr('Nie masz państwa.', 'You have no nation.'))
+        if nation_id is not None and nation['id']!=nation_id:
+            raise ValueError(tr('Zmieniło się twoje państwo. Otwórz ponownie /province buy.',
+                                'Your nation changed. Open /province buy again.'))
         nation=lock_nation(c,nation['id'])
         # A co-op may manage the nation, but fallen nations cannot buy land.
         p=_province(c,cell)
@@ -47,13 +86,11 @@ def buy(cell, uid):
                                 'If map adjacency data is missing, ask a GM to reimport the map.'))
         c.execute('SELECT culture_id,religion_id FROM azgaar_cells WHERE cell_id=?',(cell,))
         target=c.fetchone()
-        c.execute('SELECT a.culture_id,a.religion_id FROM provinces p JOIN azgaar_cells a '
-                  'ON a.cell_id=p.azgaar_cell_id WHERE p.id=? AND p.owner_nation_id=? AND p.active=1',
-                  (nation['capital_province_id'],nation['id']))
-        capital=c.fetchone()
-        culture=bool(target and capital and target['culture_id']>0 and target['culture_id']==capital['culture_id'])
-        religion=bool(target and capital and target['religion_id']>0 and target['religion_id']==capital['religion_id'])
-        cost=500-100*int(culture)-100*int(religion)
+        quote=_price(target,_capital_identity(c,nation))
+        cost=quote['cost']
+        if expected_cost is not None and cost!=expected_cost:
+            raise ValueError(tr('Cena zmieniła się. Odśwież podgląd przed potwierdzeniem zakupu.',
+                                'The price changed. Refresh the preview before confirming the purchase.'))
         if nation['treasury']<cost:
             raise ValueError(tr(f'Potrzeba {cost} złota w skarbcu.',f'The treasury needs {cost} gold.'))
         c.execute('UPDATE nations SET treasury=treasury-? WHERE id=? AND treasury>=?',(cost,nation['id'],cost))
@@ -67,7 +104,7 @@ def buy(cell, uid):
         c.execute("INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,'system',?)",
                   (nation['id'],f'Purchased province #{cell} for {cost} gold.'))
         activity(c,'expansion',nation['id'],f'province-purchase:{p["id"]}',{'cell':cell})
-        return dict(nation=nation['name'],cell=cell,cost=cost,culture=culture,religion=religion)
+        return dict(nation=nation['name'],cell=cell,**quote)
 
 
 def edit(cell,*,population=None,biome=None,coastal=None):

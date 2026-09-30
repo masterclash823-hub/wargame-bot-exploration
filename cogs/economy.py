@@ -403,6 +403,7 @@ HELP_SECTIONS = {
         "fields": [
             ("/province info <cell_id>", "View a province by Azgaar cell ID."),
             ("/province list <nation>", "List all provinces owned by a nation."),
+            ("/province buy [cell_id]", "Choose neighboring land from a dropdown, preview its details and price, then confirm purchase."),
             ("/province yield [nation]", "View total resource yield from all your provinces per tick."),
         ],
     },
@@ -580,6 +581,7 @@ HELP_SECTIONS_PL = {
         "fields": [
             ("/province info <id>", "Szczegóły prowincji po ID komórki Azgaar."),
             ("/province list <naród>", "Lista prowincji należących do narodu."),
+            ("/province buy [cell_id]", "Wybierz sąsiednią prowincję z listy, sprawdź szczegóły i cenę, a następnie potwierdź zakup."),
             ("/province yield [naród]", "Łączna produkcja zasobów ze wszystkich prowincji na tick."),
         ],
     },

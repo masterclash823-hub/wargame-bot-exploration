@@ -2,10 +2,10 @@ import unittest
 
 from test_regressions import DatabaseFixture
 import db
-from province_admin import buy
+from province_admin import buy, purchase_options
 
 
-class ProvincePurchaseTests(DatabaseFixture, unittest.TestCase):
+class ProvincePurchaseFixture(DatabaseFixture):
     def setUp(self):
         super().setUp()
         with db.cursor() as c:
@@ -22,6 +22,8 @@ class ProvincePurchaseTests(DatabaseFixture, unittest.TestCase):
                 c.executemany('INSERT INTO province_neighbors(cell_id,neighbor_cell_id) VALUES(?,?)',
                               ((first,second),(second,first)))
 
+
+class ProvincePurchaseTests(ProvincePurchaseFixture, unittest.TestCase):
     def test_discounts_stack_and_balance_population_update(self):
         for cell,cost in ((20,300),(21,400)):
             self.assertEqual(buy(cell,1)['cost'],cost)
@@ -70,3 +72,28 @@ class ProvincePurchaseTests(DatabaseFixture, unittest.TestCase):
         with db.cursor() as c:
             c.execute('DELETE FROM province_neighbors')
         self.assert_rejected_without_changes(20)
+
+    def test_options_are_read_only_and_match_the_purchase_price(self):
+        before=self.balances()
+        nation,rows=purchase_options(1)
+        self.assertEqual(self.balances(),before)
+        self.assertEqual(nation['id'],1)
+        self.assertEqual([(p['azgaar_cell_id'],p['cost']) for p in rows],[(20,300),(22,400),(23,500)])
+        self.assertEqual(buy(20,1,nation_id=1,expected_cost=rows[0]['cost'])['cost'],300)
+
+    def test_preview_cannot_authorize_a_changed_price_or_different_nation(self):
+        before=self.balances()
+        with db.cursor() as c:
+            c.execute('UPDATE azgaar_cells SET culture_id=9 WHERE cell_id=10')
+        with self.assertRaisesRegex(ValueError,'price changed'):
+            buy(20,1,nation_id=1,expected_cost=300)
+        with self.assertRaisesRegex(ValueError,'nation changed'):
+            buy(20,1,nation_id=2,expected_cost=400)
+        self.assertEqual(self.balances(),before)
+
+    def test_options_exclude_owned_inactive_and_water_cells(self):
+        with db.cursor() as c:
+            c.execute('UPDATE provinces SET owner_nation_id=2 WHERE azgaar_cell_id=20')
+            c.execute('UPDATE provinces SET active=0 WHERE azgaar_cell_id=22')
+            c.execute("UPDATE provinces SET terrain='water' WHERE azgaar_cell_id=23")
+        self.assertEqual(purchase_options(1)[1],[])
