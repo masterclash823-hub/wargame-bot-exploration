@@ -506,6 +506,27 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
         finish_companies(c,reports)
         for nid,result in reports.items():
             progress_goals(c,int(nid),target,result)
+        # Reward the current leaders once per committed month, after all monthly
+        # effects have been applied. Ties use the same deterministic order as ranking.
+        c.execute("SELECT n.id,COALESCE(p.prestige,0) AS prestige FROM nations n "
+                  "LEFT JOIN nation_profiles p ON p.nation_id=n.id "
+                  "WHERE NOT EXISTS (SELECT 1 FROM nation_decay d WHERE d.nation_id=n.id AND d.status='ruins') "
+                  "ORDER BY prestige DESC,n.name COLLATE NOCASE,n.id LIMIT 3" if not db.USE_POSTGRES else
+                  "SELECT n.id,COALESCE(p.prestige,0) AS prestige FROM nations n "
+                  "LEFT JOIN nation_profiles p ON p.nation_id=n.id "
+                  "WHERE NOT EXISTS (SELECT 1 FROM nation_decay d WHERE d.nation_id=n.id AND d.status='ruins') "
+                  "ORDER BY prestige DESC,LOWER(n.name),n.id LIMIT 3")
+        leaders=[row['id'] for row in c.fetchall()]
+        for nid in leaders:
+            c.execute('UPDATE nations SET stability=MIN(100,stability+1) WHERE id=?' if not db.USE_POSTGRES else
+                      'UPDATE nations SET stability=LEAST(100,stability+1) WHERE id=?',(nid,))
+            if str(nid) in reports:
+                result=reports[str(nid)]
+                before=result['stability']
+                result['stability']=min(100,before+1)
+                result['stability_report']['effects']['prestige_rank']=1
+                result['stability_report']=social_change(result['stability_report']['before'],result['stability'],
+                                                         result['stability_report']['effects'])
         year,month=target//12,target%12+1
         _set(c,'current_month',month); _set(c,'current_year',year)
         if scheduled_at is not None: _set(c,'last_tick_ts',(last+timedelta(hours=hours)).isoformat())

@@ -50,8 +50,8 @@ Osoby z ustawionym językiem angielskim nadal otrzymują angielskie eventy.
 
 ## Mniejsze zużycie i oczekiwanie
 
-- Kontekst generowania zawiera do 6 ostatnich wpisów historii po 400 znaków
-  oraz 2 zapamiętane decyzje. Historia wyborów i pamięć nie są kopiowane drugi
+- Kontekst generowania zawiera do 3 ostatnich wpisów historii po 240 znaków
+  oraz 1 zapamiętaną decyzję. Historia wyborów i pamięć nie są kopiowane drugi
   raz w tym samym prompcie.
 - Zachowany jest cały liczbowy bilans żywności: zapas, produkcja, potrzeby,
   zmiana netto, zapas końcowy, niedobór i psucie. Stan gospodarki odświeża się
