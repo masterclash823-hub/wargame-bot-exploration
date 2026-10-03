@@ -504,7 +504,10 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
                 tick_colonies(nid,1)
             reports[str(nid)]=result
         finish_companies(c,reports)
+        from terraforming import tick as terraform_tick
+        terraforming=terraform_tick(c,target)
         for nid,result in reports.items():
+            result['terraforming']=terraforming.get(int(nid),[])
             progress_goals(c,int(nid),target,result)
         # Reward the current leaders once per committed month, after all monthly
         # effects have been applied. Ties use the same deterministic order as ranking.

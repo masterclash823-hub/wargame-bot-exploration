@@ -24,6 +24,38 @@ def _safe(text,limit=200):
     return discord.utils.escape_mentions(discord.utils.escape_markdown(str(text)))[:limit]
 
 
+def _identity_label(province,kind):
+    entity_id=province[kind+'_id']
+    if entity_id is None:return tr('Brak danych','No data')
+    if entity_id==0:return tr('Brak przypisania','Unassigned')
+    return _json(province[kind+'_json'],{}).get('name') or f'ID {entity_id}'
+
+
+def _location_label(province,compact=False):
+    location=province.get('location')
+    if not location:return tr('Brak położenia na mapie','No map location')
+    x,y=location['point']
+    coordinates=f'x={x:.1f}, y={y:.1f}'
+    origin=location['reference']
+    if not origin:return coordinates if compact else tr('Współrzędne: ','Coordinates: ')+coordinates
+    kind=origin['kind']
+    reference=(tr('stolica','capital') if kind=='capital' else
+               tr('stolica mapy','map capital') if kind=='map_capital' else tr('centrum państwa','nation center'))
+    if origin['cell'] is not None:reference+=f" #{origin['cell']}"
+    directions={
+        'N':('↑','północ','north'),'NE':('↗','północny wschód','northeast'),
+        'E':('→','wschód','east'),'SE':('↘','południowy wschód','southeast'),
+        'S':('↓','południe','south'),'SW':('↙','południowy zachód','southwest'),
+        'W':('←','zachód','west'),'NW':('↖','północny zachód','northwest'),
+        'center':('●','punkt odniesienia','reference point')}
+    arrow,pl,en=directions[location['direction']]
+    direction=f'{arrow} '+tr(pl,en)
+    if compact:return f'{direction} · {reference}'
+    return (f'{direction}\n'+tr('Punkt odniesienia: ','Reference: ')+reference+'\n'+
+            tr('Odległość na mapie: ','Map distance: ')+f"{location['distance']:.1f} "+
+            tr('jedn. mapy','map units')+'\n'+tr('Współrzędne: ','Coordinates: ')+coordinates)
+
+
 def preview_embed(nation,rows,selected,page):
     embed=discord.Embed(title=tr('Zakup prowincji — ','Buy a province — ')+_safe(nation['name'],120),
                         color=discord.Color.gold())
@@ -39,12 +71,13 @@ def preview_embed(nation,rows,selected,page):
     else:
         p=selected
         embed.description=f"**#{p['azgaar_cell_id']} · {_safe(p['name'] or tr('Prowincja','Province'))}**"
+        embed.add_field(name=tr('Położenie','Location'),value=_location_label(p),inline=False)
         for label,value in (
             (tr('Teren','Terrain'),i18n.term(p['terrain'])),
             (tr('Biom','Biome'),i18n.term(p['biome'])),
             (tr('Ludność','Population'),str(p['population'])),
-            (tr('Kultura','Culture'),_json(p['culture_json'],{}).get('name') or '—'),
-            (tr('Religia','Religion'),_json(p['religion_json'],{}).get('name') or '—'),
+            (tr('Kultura','Culture'),_identity_label(p,'culture')),
+            (tr('Religia','Religion'),_identity_label(p,'religion')),
             (tr('Fortyfikacje','Fortification'),str(p['fortification_level'])),
         ):
             embed.add_field(name=label,value=_safe(value))
@@ -54,8 +87,8 @@ def preview_embed(nation,rows,selected,page):
         buildings=_json(p['buildings_json'],[])
         embed.add_field(name=tr('Budynki','Buildings'),value=(', '.join(i18n.term(str(b)) for b in buildings) or '—')[:1000],inline=False)
         price=[tr('Cena bazowa: 500 złota','Base price: 500 gold'),
-               tr('Zgodna kultura ze stolicą: ','Same culture as the capital: ')+('-100' if p['culture'] else '0'),
-               tr('Zgodna religia ze stolicą: ','Same religion as the capital: ')+('-100' if p['religion'] else '0'),
+               tr('Kultura obecna w państwie: ','Culture present in your nation: ')+('-100' if p['culture'] else '0'),
+               tr('Religia obecna w państwie: ','Religion present in your nation: ')+('-100' if p['religion'] else '0'),
                tr('Do zapłaty: ','Total: ')+f"**{p['cost']} 🪙**"]
         if nation['treasury']<p['cost']:
             price.append(tr('Brakuje złota: ','Missing gold: ')+f"{p['cost']-nation['treasury']:.2f}")
@@ -81,7 +114,7 @@ class ProvincePurchaseView(discord.ui.View):
         if visible:
             select=discord.ui.Select(placeholder=tr('Wybierz prowincję do podglądu','Choose a province to preview'),row=0,
                 options=[discord.SelectOption(label=f"#{p['azgaar_cell_id']} · {p['name'] or tr('Prowincja','Province')}"[:100],
-                    description=f"{p['cost']} 🪙 · {i18n.term(p['terrain'])} · {tr('Ludność','Population')}: {p['population']}"[:100],
+                    description=f"{p['cost']} 🪙 · {_location_label(p,compact=True)}"[:100],
                     value=str(p['azgaar_cell_id']),default=p['azgaar_cell_id']==cell) for p in visible])
             async def selected(i):
                 await self.browse(i,cell=int(select.values[0]))

@@ -20,8 +20,12 @@ Jeżeli na początku wgrasz tylko Full Data JSON, później możesz dodać proje
 - Nowe państwa utworzone tylko w bocie otrzymują trwałe ID przy eksporcie. Przed pierwszym eksportem powiąż je z istniejącym państwem mapy, jeżeli ma to być ten sam kraj.
 - Kultura i religia są zapisane **dla każdego pola**, a nie tylko całego państwa. Nazwy i metadane (kolory, bóstwa, pochodzenie itd.) są zachowywane.
 - `/province info cell_id:ID` pokazuje kulturę i religię. GM może je zmienić przez `/province identity cell_id:ID culture_id:ID religion_id:ID`; pominięty parametr pozostaje bez zmian, ID 0 oznacza brak przypisania.
+- `/admin map_strength kind:cultures entity_id:ID strength:1.5` zmienia siłę ekspansji kultury; `kind:religions` działa tak samo dla religii. Dozwolona jest skończona liczba od 0 wzwyż. ID 0 i usunięte pozycje nie podlegają edycji.
+- W **Panelu administratora → Mapa Azgaara → Siła kultury / Siła religii** wybierz pozycję z listy i wpisz nową wartość. Formularz pokazuje obecną siłę i przyjmuje także przecinek dziesiętny. Uprawnienia GM są sprawdzane również przy zapisie. Aktualna siła jest widoczna na listach kultur i religii.
 
-Kultury i religie są na razie danymi mapy: ten PR nie dodaje bonusów gospodarczych, nawracania ani asymilacji.
+Siła odpowiada parametrowi `expansionism` Azgaara. Zapisuje się w bazie i obu formatach eksportu (`.map` i JSON), zachowując nazwę, kolor i pozostałe dane. Zmiana wartości nie przerysowuje automatycznie zasięgu kultur ani religii w grze; aktualne przypisania pól zmienia się przez edycję mapy i import lub `/province identity`. Kolejny import przyjmuje siłę z importowanego pliku.
+
+Kultura i religia obecne we własnym państwie dają zniżki przy zakupie prowincji. Sama wartość siły ekspansji nie zmienia ceny zakupu.
 
 ## Bot → Azgaar
 
@@ -37,7 +41,7 @@ Po zmianach politycznych, kultur lub religii zapisz projekt i użyj `/admin map_
 
 Domyślnie granice istniejących prowincji gry pozostają zachowane. Aby świadomie zastąpić je granicami z Azgaara, dodaj **`sync_owners:true`** i potwierdź podsumowanie. Pola niepowiązanych państw staną się wtedy nieprzypisane w grze. Dlatego przed takim importem powiąż państwa przez `map_bind`.
 
-Każdy import aktualizuje kultury i religie. Istniejące budynki, fortyfikacje, populacja, biom, naturalne zasoby, skarbiec i postęp gry pozostają zachowane. Nowe pola lądowe otrzymują dotychczasowe uśrednianie populacji gry; pola wodne mają 0 mieszkańców. Populacja mapy Azgaara i populacja gospodarki bota używają różnych skal — eksport zachowuje populację Azgaara.
+Każdy import aktualizuje kultury i religie. Istniejące budynki, fortyfikacje, populacja państw, biom, naturalne zasoby, skarbiec i postęp gry pozostają zachowane. Po ustaleniu własności aktywne wolne pola lądowe są normalizowane do średnio 2000 mieszkańców (500–4000 na pole), także przy starszych zerowych populacjach. Wolna woda ma 0 mieszkańców. Populacja mapy Azgaara i populacja gospodarki bota używają różnych skal — eksport zachowuje populację Azgaara. Ukończona [terraformacja](terraforming.md) zmienia biom w eksporcie JSON i `.map`, zachowując geometrię.
 
 Import wykonuje się w jednej transakcji: błędny plik nie pozostawia połowy zmian. Przycisk potwierdzenia ponownie sprawdza uprawnienia GM i nie pozwala wykonać importu drugi raz.
 

@@ -88,6 +88,17 @@ class MapExchangeTests(unittest.TestCase):
         self.assertEqual(service.catalog('states')[2]['linked'],0)
         self.assertEqual(json.loads(rows[1]['base_resources_json'])['horses'],4)
 
+    def test_purchase_recognizes_imported_identity_without_an_assigned_capital(self):
+        from province_admin import buy,purchase_options
+        service.import_map(self.raw,self.map)
+        nation,rows=purchase_options(1)
+        self.assertIsNone(nation['capital_province_id'])
+        self.assertEqual([(p['azgaar_cell_id'],p['cost']) for p in rows],[(3,300)])
+        self.assertEqual(json.loads(rows[0]['culture_json'])['name'],'Culture A')
+        self.assertEqual(json.loads(rows[0]['religion_json'])['name'],'Religion A')
+        self.assertEqual(buy(3,1,expected_cost=rows[0]['cost'])['cost'],300)
+        self.assertEqual(self.rows('SELECT treasury FROM nations WHERE id=1')[0]['treasury'],699)
+
     def test_roundtrip_borders_cultures_religions_capitals_and_economy(self):
         service.import_map(self.raw,self.map)
         with db.cursor() as c:
@@ -220,7 +231,7 @@ class MapCommandTests(unittest.IsolatedAsyncioTestCase):
             reader.assert_not_awaited()
         with i18n.using_language('pl'):
             view=ImportConfirmation(1,b'data',None,False,False)
-        with patch('azgaar_ui.gm_only',return_value=True),patch('i18n.get_user_language',return_value='pl'),patch.object(service,'import_map',return_value=dict(inserted=4,updated=0,states=2,cultures=1,religions=1,pending=1,owners_changed=0)) as apply:
+        with patch('azgaar_ui.gm_only',return_value=True),patch('i18n.get_user_language',return_value='pl'),patch.object(service,'import_map',return_value=dict(inserted=4,updated=0,states=2,cultures=1,religions=1,pending=1,owners_changed=0,unclaimed_population=dict(changed=1))) as apply:
             await view.children[0].callback(self.interaction(2));apply.assert_not_called()
             await view.children[0].callback(i);await view.children[0].callback(i)
             self.assertEqual(apply.call_count,1)

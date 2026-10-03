@@ -31,7 +31,8 @@ class AdminPanel(i18n.LocalizedView):
                       ('post_public','Opublikuj publicznie','Publish publicly'),('image','Ilustracja z pliku','Upload illustration')],
             'map':[('map_import','Jak wgrać mapę','How to import'),('map_export','Eksportuj .map','Export .map'),
                    ('map_states','Państwa mapy','Map states'),('map_cultures','Kultury','Cultures'),
-                   ('map_religions','Religie','Religions'),('map_bind','Powiąż państwo','Link nation'),('identity','Kultura i religia pola','Cell culture & religion')],
+                   ('map_religions','Religie','Religions'),('map_bind','Powiąż państwo','Link nation'),('identity','Kultura i religia pola','Cell culture & religion'),
+                   ('culture_strength','Siła kultury','Culture strength'),('religion_strength','Siła religii','Religion strength')],
             'world':[('calendar_status','Data i stan','Date & status'),('calendar_start','Uruchom kalendarz','Start calendar'),
                      ('calendar_stop','Zatrzymaj kalendarz','Pause calendar'),('tick','Rozlicz miesiące','Settle months'),
                      ('plans','Oczekujące plany bitew','Pending battle plans')],
@@ -70,6 +71,9 @@ class AdminPanel(i18n.LocalizedView):
             'Colonies keep their population. Changing a biome updates terrain and natural resources.')
         if self.section=='events':e.description+='\n\n'+tr('Kanał publiczny ustaw przez /event channel. Własny obrazek wgraj przez /event image file.',
                                                                            'Set a public channel with /event channel. Upload your own image using /event image file.')
+        if self.section=='map':e.description+='\n\n'+tr(
+            'Siła kultury i religii określa parametr ekspansji zapisywany w mapie i eksporcie do Azgaara.',
+            'Culture and religion strength is the expansion parameter saved in the map and exported to Azgaar.')
         return e
 
     async def open(self,i,**changes):
@@ -136,6 +140,20 @@ class AdminPanel(i18n.LocalizedView):
         elif key=='map_export':await self.call(i,'ProvincesCog','map_export')
         elif key in ('map_states','map_cultures','map_religions'):
             await self.call(i,'ProvincesCog','map_entities',key[4:])
+        elif key in ('culture_strength','religion_strength'):
+            from azgaar_service import catalog
+            kind='cultures' if key=='culture_strength' else 'religions'
+            entries={str(row['state_id']):row['entity'] for row in catalog(kind) if row['state_id']>0}
+            async def choose(j,value):
+                entity=entries[value]
+                async def submit(k,strength):
+                    await self.call(k,'ProvincesCog','map_strength',kind,int(value),float(strength.replace(',','.')))
+                current=entity.get('expansionism')
+                await self.form(j,tr('Siła kultury','Culture strength') if kind=='cultures' else tr('Siła religii','Religion strength'),[
+                    dict(label=tr('Siła ekspansji (co najmniej 0)','Expansion strength (at least 0)'),
+                         default=str(current) if current is not None else None,placeholder='1.5',max_length=30)],submit)
+            await self.picker(i,[(key,f"#{key} {str(entity.get('name') or '—')[:60]} · "+
+                tr('siła: ','strength: ')+str(entity.get('expansionism','—'))) for key,entity in entries.items()],choose)
         elif key=='map_bind':
             name=self.nation()['name']
             async def submit(j,value):await self.call(j,'ProvincesCog','map_bind',int(value),name)

@@ -1,6 +1,7 @@
 """Atomic province edits shared by GM slash commands and the admin panel."""
 import json
 import db
+import province_geography as geography
 from world_service import world_lock,tr
 
 
@@ -19,16 +20,22 @@ def _province(c,cell):
     return row
 
 
-def _capital_identity(c,nation):
-    c.execute('SELECT a.culture_id,a.religion_id FROM provinces p JOIN azgaar_cells a '
-              'ON a.cell_id=p.azgaar_cell_id WHERE p.id=? AND p.owner_nation_id=? AND p.active=1',
-              (nation['capital_province_id'],nation['id']))
-    return c.fetchone()
+def _owned_land(c,nation,cells):
+    c.execute('SELECT p.id,p.azgaar_cell_id,p.terrain,p.biome,a.culture_id,a.religion_id '
+              'FROM provinces p LEFT JOIN azgaar_cells a ON a.cell_id=p.azgaar_cell_id '
+              'WHERE p.owner_nation_id=? AND p.active=1',(nation['id'],))
+    return [row for row in c.fetchall() if not geography.is_water(row,cells)]
 
 
-def _price(target,capital):
-    culture=bool(target and capital and (target['culture_id'] or 0)>0 and target['culture_id']==capital['culture_id'])
-    religion=bool(target and capital and (target['religion_id'] or 0)>0 and target['religion_id']==capital['religion_id'])
+def _nation_identity(rows):
+    """Identity present in currently owned land, independent of capital selection."""
+    return {key:{row[key] for row in rows if (row[key] or 0)>0}
+            for key in ('culture_id','religion_id')}
+
+
+def _price(target,identity):
+    culture=bool(target and target['culture_id'] in identity['culture_id'])
+    religion=bool(target and target['religion_id'] in identity['religion_id'])
     return dict(cost=500-100*int(culture)-100*int(religion),culture=culture,religion=religion)
 
 
@@ -40,7 +47,10 @@ def purchase_options(uid,nation_id=None):
         if not nation or (nation_id is not None and nation['id']!=nation_id) or not can_manage(nation['id'],uid,c):
             raise ValueError(tr('Brak dostępu do państwa. Otwórz ponownie /province buy.',
                                 'Nation access unavailable. Open /province buy again.'))
-        capital=_capital_identity(c,nation)
+        cells,burgs=geography.load(c)
+        owned=_owned_land(c,nation,cells)
+        identity=_nation_identity(owned)
+        origin=geography.reference(c,nation,owned,cells,burgs)
         c.execute('SELECT p.*,a.culture_id,a.religion_id,culture.data_json AS culture_json,'
                   'religion.data_json AS religion_json FROM provinces p '
                   'LEFT JOIN azgaar_cells a ON a.cell_id=p.azgaar_cell_id '
@@ -50,8 +60,10 @@ def purchase_options(uid,nation_id=None):
                   'AND EXISTS (SELECT 1 FROM province_neighbors edge JOIN provinces owned '
                   'ON owned.azgaar_cell_id=edge.neighbor_cell_id WHERE edge.cell_id=p.azgaar_cell_id '
                   'AND owned.owner_nation_id=? AND owned.active=1) ORDER BY p.azgaar_cell_id',(nation['id'],))
-        rows=c.fetchall()
-        for row in rows:row.update(_price(row,capital))
+        rows=[row for row in c.fetchall() if not geography.is_water(row,cells)]
+        for row in rows:
+            row.update(_price(row,identity))
+            row['location']=geography.location(row,cells,origin)
         return nation,rows
 
 
@@ -73,7 +85,8 @@ def buy(cell, uid, *, nation_id=None, expected_cost=None):
         p=_province(c,cell)
         if p['owner_nation_id'] is not None:
             raise ValueError(tr('Ta prowincja ma już właściciela.', 'This province already has an owner.'))
-        if p['terrain'] in ('water','sea','ocean'):
+        cells,_=geography.load(c)
+        if geography.is_water(p,cells):
             raise ValueError(tr('Nie można kupić pola wodnego.', 'A water cell cannot be purchased.'))
         c.execute('SELECT 1 FROM province_neighbors edge JOIN provinces owned '
                   'ON owned.azgaar_cell_id=edge.neighbor_cell_id '
@@ -86,7 +99,7 @@ def buy(cell, uid, *, nation_id=None, expected_cost=None):
                                 'If map adjacency data is missing, ask a GM to reimport the map.'))
         c.execute('SELECT culture_id,religion_id FROM azgaar_cells WHERE cell_id=?',(cell,))
         target=c.fetchone()
-        quote=_price(target,_capital_identity(c,nation))
+        quote=_price(target,_nation_identity(_owned_land(c,nation,cells)))
         cost=quote['cost']
         if expected_cost is not None and cost!=expected_cost:
             raise ValueError(tr('Cena zmieniła się. Odśwież podgląd przed potwierdzeniem zakupu.',
@@ -107,8 +120,30 @@ def buy(cell, uid, *, nation_id=None, expected_cost=None):
         return dict(nation=nation['name'],cell=cell,**quote)
 
 
-def edit(cell,*,population=None,biome=None,coastal=None):
+def biome_result(province,biome):
+    """Replace biome yields once; retain deposits and geographic additions."""
     from cogs.provinces import BIOME_RESOURCES,_terrain_label
+    resources=json.loads(province['base_resources_json'])
+    source=next((key for key in BIOME_RESOURCES if key.casefold()==province['biome'].strip().casefold()),None)
+    old=BIOME_RESOURCES.get(source,{});new=BIOME_RESOURCES[biome]
+    for key in old.keys()|new.keys():
+        resources[key]=max(0,resources.get(key,0)-old.get(key,0))+new.get(key,0)
+        if not resources[key]:resources.pop(key)
+    previous_terrain=province['terrain'].strip().casefold()
+    terrain=previous_terrain if previous_terrain in ('mountains','hills') else _terrain_label(20,biome)
+    if biome=='Marine':terrain='water'
+    return dict(biome=biome,terrain=terrain,base_resources_json=json.dumps(resources))
+
+
+def apply_biome(c,province,biome):
+    changed=biome_result(province,biome)
+    c.execute('UPDATE provinces SET biome=?,terrain=?,base_resources_json=? WHERE id=?',
+              (changed['biome'],changed['terrain'],changed['base_resources_json'],province['id']))
+    return changed
+
+
+def edit(cell,*,population=None,biome=None,coastal=None):
+    from cogs.provinces import BIOME_RESOURCES
     if population is not None and (type(population) is not int or not 0<=population<=1_000_000_000):
         raise ValueError(tr('Populacja: liczba całkowita od 0 do 1 000 000 000.', 'Population: whole number from 0 to 1,000,000,000.'))
     if biome is not None:
@@ -120,16 +155,7 @@ def edit(cell,*,population=None,biome=None,coastal=None):
         if population is not None:
             c.execute('UPDATE provinces SET population=? WHERE id=?',(population,p['id']))
         if biome is not None:
-            # Preserve geographic mineral/river additions and GM deposits; replace only biome yield.
-            resources=json.loads(p['base_resources_json'])
-            old=BIOME_RESOURCES.get(p['biome'],{});new=BIOME_RESOURCES[biome]
-            for key in old.keys()|new.keys():
-                resources[key]=max(0,resources.get(key,0)-old.get(key,0))+new.get(key,0)
-                if not resources[key]:resources.pop(key)
-            terrain=p['terrain'] if p['terrain'] in ('mountains','hills') else _terrain_label(20,biome)
-            if biome=='Marine':terrain='water'
-            c.execute('UPDATE provinces SET biome=?,terrain=?,base_resources_json=? WHERE id=?',
-                      (biome,terrain,json.dumps(resources),p['id']))
+            apply_biome(c,p,biome)
         if coastal is not None:
             if type(coastal) is not bool:raise ValueError('Invalid coastline')
             if coastal and (biome=='Marine' or (biome is None and p['terrain'] in ('water','sea','ocean'))):
