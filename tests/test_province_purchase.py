@@ -81,6 +81,62 @@ class ProvincePurchaseTests(ProvincePurchaseFixture, unittest.TestCase):
         self.assertEqual([(p['azgaar_cell_id'],p['cost']) for p in rows],[(20,300),(22,400),(23,500)])
         self.assertEqual(buy(20,1,nation_id=1,expected_cost=rows[0]['cost'])['cost'],300)
 
+    def test_discounts_do_not_require_a_capital(self):
+        with db.cursor() as c:
+            c.execute('UPDATE nations SET capital_province_id=NULL WHERE id=1')
+        rows=purchase_options(1)[1]
+        self.assertEqual([(p['azgaar_cell_id'],p['cost']) for p in rows],[(20,300),(22,400),(23,500)])
+        self.assertEqual(buy(20,1,expected_cost=rows[0]['cost'])['cost'],300)
+
+    def test_culture_and_religion_can_be_present_in_different_owned_provinces(self):
+        with db.cursor() as c:
+            c.execute('UPDATE azgaar_cells SET culture_id=9,religion_id=9 WHERE cell_id=10')
+            for cell,culture,religion in ((30,2,8),(31,7,3),(32,2,8)):
+                c.execute('INSERT INTO provinces(azgaar_cell_id,owner_nation_id) VALUES(?,1)',(cell,))
+                c.execute('INSERT INTO azgaar_cells(cell_id,state_id,culture_id,religion_id) VALUES(?,1,?,?)',
+                          (cell,culture,religion))
+        rows=purchase_options(1)[1]
+        self.assertEqual([(p['azgaar_cell_id'],p['cost']) for p in rows],[(20,300),(22,400),(23,500)])
+        self.assertEqual(buy(20,1,expected_cost=rows[0]['cost'])['cost'],300)
+
+    def test_unowned_foreign_inactive_and_water_provinces_do_not_grant_discounts(self):
+        with db.cursor() as c:
+            c.execute('UPDATE azgaar_cells SET culture_id=9,religion_id=9 WHERE cell_id=10')
+            c.execute('INSERT INTO provinces(azgaar_cell_id) VALUES(30)')
+            c.execute('INSERT INTO azgaar_cells(cell_id,state_id,culture_id,religion_id) VALUES(30,1,2,3)')
+        for owner,active,terrain in ((None,1,'plains'),(2,1,'plains'),(1,0,'plains'),(1,1,'water')):
+            with self.subTest(owner=owner,active=active,terrain=terrain):
+                with db.cursor() as c:
+                    c.execute('UPDATE provinces SET owner_nation_id=?,active=?,terrain=? WHERE azgaar_cell_id=30',
+                              (owner,active,terrain))
+                row=purchase_options(1)[1][0]
+                self.assertEqual((row['cost'],row['culture'],row['religion']),(500,False,False))
+                with self.assertRaisesRegex(ValueError,'price changed'):
+                    buy(20,1,expected_cost=300)
+        self.assertEqual(self.balances()[0]['treasury'],1000)
+
+    def test_unassigned_identity_never_grants_a_discount(self):
+        with db.cursor() as c:
+            c.execute('UPDATE azgaar_cells SET culture_id=0,religion_id=0')
+        row=purchase_options(1)[1][0]
+        self.assertEqual((row['cost'],row['culture'],row['religion']),(500,False,False))
+        self.assertEqual(buy(20,1,expected_cost=500)['cost'],500)
+
+    def test_losing_a_noncapital_identity_invalidates_the_preview(self):
+        with db.cursor() as c:
+            c.execute('UPDATE azgaar_cells SET culture_id=9,religion_id=9 WHERE cell_id=10')
+            c.execute('INSERT INTO provinces(azgaar_cell_id,owner_nation_id) VALUES(30,1)')
+            c.execute('INSERT INTO azgaar_cells(cell_id,state_id,culture_id,religion_id) VALUES(30,1,2,3)')
+        row=purchase_options(1)[1][0]
+        self.assertEqual(row['cost'],300)
+        with db.cursor() as c:
+            c.execute('UPDATE provinces SET owner_nation_id=2 WHERE azgaar_cell_id=30')
+        before=self.balances()
+        with self.assertRaisesRegex(ValueError,'price changed'):
+            buy(20,1,expected_cost=row['cost'])
+        self.assertEqual(self.balances(),before)
+        self.assertEqual(purchase_options(1)[1][0]['cost'],500)
+
     def test_preview_cannot_authorize_a_changed_price_or_different_nation(self):
         before=self.balances()
         with db.cursor() as c:

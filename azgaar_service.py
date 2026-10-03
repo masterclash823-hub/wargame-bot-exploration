@@ -1,6 +1,7 @@
 """Transactional map exchange. Game ownership and economy stay authoritative by default."""
 import copy
 import json
+import math
 from collections import Counter, defaultdict
 
 import db
@@ -101,10 +102,12 @@ def import_map(raw, map_raw=None, *, resync=False, sync_owners=False):
         c.execute('INSERT INTO azgaar_world(id,data_json,map_text,geometry_hash) VALUES(1,?,?,?) '
                   'ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json,map_text=excluded.map_text,geometry_hash=excluded.geometry_hash',
                   (dumps(data), map_text, fingerprint))
+        from province_population import normalize as normalize_unclaimed
+        free_population=normalize_unclaimed(c,{row['i']:row for row in data['pack']['cells']})
         totals(c, [n['id'] for n in nations])
         stats.update(states=sum(bool(s['i']) and not s.get('removed', False) for s in data['pack']['states']),
                      cultures=len(data['pack']['cultures'])-1, religions=len(data['pack']['religions'])-1,
-                     owners_changed=changed, native=bool(native),
+                     owners_changed=changed, native=bool(native),unclaimed_population=free_population,
                      pending=sum(bool(s['i']) and not s.get('removed', False) and not mapping[s['i']]['linked'] for s in data['pack']['states']))
         return stats
 
@@ -150,6 +153,35 @@ def set_identity(cell_id, culture_id=None, religion_id=None):
             if not entity or json.loads(entity['data_json']).get('removed'):
                 error('Nie ma takiej kultury lub religii. Sprawdź /admin map_entities.', 'Unknown culture or religion. Check /admin map_entities.')
             c.execute(f'UPDATE azgaar_cells SET {column}=? WHERE cell_id=?', (value, cell_id))
+
+
+def set_entity_strength(kind,entity_id,strength):
+    """Edit Azgaar expansionism while preserving the entity's other metadata."""
+    if kind not in ('cultures','religions'):
+        error('Wybierz kulturę lub religię.','Choose a culture or religion.')
+    if type(entity_id) is not int or entity_id<=0:
+        error('Wybierz istniejącą kulturę lub religię o ID większym od 0.',
+              'Choose an existing culture or religion with an ID greater than 0.')
+    try:
+        if type(strength) not in (int,float):raise ValueError
+        value=float(strength)
+        if not math.isfinite(value) or value<0:raise ValueError
+    except (ValueError,OverflowError):
+        error('Siła musi być skończoną liczbą nieujemną, np. 1,5.',
+              'Strength must be a finite nonnegative number, such as 1.5.')
+    with db.atomic() as c:
+        world_lock(c)
+        c.execute('SELECT data_json FROM azgaar_entities WHERE kind=? AND entity_id=?',(kind,entity_id))
+        row=c.fetchone()
+        entity=json.loads(row['data_json']) if row else None
+        if not entity or entity.get('removed'):
+            error('Nie ma takiej aktywnej kultury lub religii. Odśwież listę.',
+                  'This active culture or religion does not exist. Refresh the list.')
+        previous=entity.get('expansionism')
+        entity['expansionism']=value
+        c.execute('UPDATE azgaar_entities SET data_json=? WHERE kind=? AND entity_id=?',
+                  (dumps(entity),kind,entity_id))
+        return dict(name=entity.get('name') or f'ID {entity_id}',previous=previous,strength=value)
 
 
 def identity(cell_id):
@@ -310,6 +342,10 @@ def export_map(*, native_format=True, map_raw=None):
             pack[kind] = [json.loads(r['data_json']) for r in c.fetchall()]
         c.execute('SELECT p.*,a.state_id,a.culture_id,a.religion_id FROM provinces p JOIN azgaar_cells a ON a.cell_id=p.azgaar_cell_id')
         provinces = {p['azgaar_cell_id']: p for p in c.fetchall()}
+        from azgaar_format import biome_ids
+        biomes=biome_ids(data)
+        c.execute("SELECT DISTINCT province_id FROM province_terraforming WHERE status='complete'")
+        terraformed={r['province_id'] for r in c.fetchall()}
         for row in pack['cells']:
             p = provinces.get(row['i'])
             if not p or not p['active']:
@@ -320,6 +356,12 @@ def export_map(*, native_format=True, map_raw=None):
                 original = states.get(p['state_id'], {})
                 sid = p['state_id'] if original and not original['linked'] and not json.loads(original['data_json']).get('removed') else 0
             row.update(state=sid, culture=p['culture_id'], religion=p['religion_id'])
+            if p['id'] in terraformed:
+                biome=biomes.get(p['biome'].strip().casefold())
+                if biome is None:
+                    error('Brak biomu terraformowanej prowincji w katalogu mapy: '+p['biome'],
+                          'Terraformed province biome is missing from the map catalogue: '+p['biome'])
+                row['biome']=biome
         by_province_id = {p['id']: p for p in provinces.values()}
         capital_cells = {}
         for n in nations:

@@ -74,6 +74,7 @@ class ImportConfirmation(i18n.LocalizedView):
             tr('Nowe / istniejące pola: ', 'New / existing cells: ') + f"{stats['inserted']} / {stats['updated']}\n" +
             tr('Państwa / kultury / religie: ', 'States / cultures / religions: ') + f"{stats['states']} / {stats['cultures']} / {stats['religions']}\n" +
             tr('Zmienione przypisania pól: ', 'Changed cell owners: ') + str(stats['owners_changed']) + '\n' +
+            tr('Zmienione populacje wolnych pól: ', 'Unclaimed cell populations changed: ') + str(stats['unclaimed_population']['changed']) + '\n' +
             tr('Państwa oczekujące na powiązanie: ', 'States waiting to be linked: ') + str(stats['pending']) + '\n\n' +
             tr('Lista ID: /admin map_entities. Utwórz państwo dla gracza przez /nation found, następnie połącz je przez /admin map_bind. Eksport: /admin map_export.',
                'IDs: /admin map_entities. Create a player nation with /nation found, then link it with /admin map_bind. Export: /admin map_export.'), view=self)
@@ -91,8 +92,10 @@ async def import_command(i, file, url, map_file, resync, sync_owners):
         data, native, _ = await asyncio.to_thread(service.prepare, raw, map_raw)
         count = len(data['pack']['cells'])
         message = tr('Mapa gotowa do importu: ', 'Map ready to import: ') + f"{count:,}" + tr(' pól.', ' cells.')
-        message += '\n' + tr('Kultury i religie zostaną odczytane z pliku. Budynki, ludność i zasoby istniejących prowincji pozostaną w grze.',
-                             'Cultures and religions will be read from the file. Existing province buildings, population and resources stay in the game.')
+        message += '\n' + tr('Kultury i religie zostaną odczytane z pliku. Budynki i zasoby pozostaną w grze. Ludność prowincji należących do państw zostanie zachowana.',
+                             'Cultures and religions will be read from the file. Buildings and resources stay in the game. Population in nation-owned provinces is preserved.')
+        message += '\n' + tr('Po ustaleniu własności wolny ląd otrzyma średnio 2000 mieszkańców (500–4000 na pole), a wolna woda 0.',
+                             'After ownership is resolved, unclaimed land will average 2000 people (500–4000 per cell); unclaimed water will have 0.')
         message += '\n' + (tr('⚠️ Granice gry zostaną zastąpione granicami z pliku. Pola niepowiązanych państw staną się nieprzypisane.',
                                '⚠️ Game borders will be replaced by file borders. Cells of unlinked states become unclaimed.') if sync_owners else
                             tr('Obecne granice gry zostaną zachowane.', 'Current game borders will be preserved.'))
@@ -141,8 +144,11 @@ async def entities_command(i, kind, page):
         suffix = ''
         if kind == 'states' and r['state_id']:
             suffix = ' → ' + (r['nation'] or (tr('usunięte z gry', 'deleted from game') if r['linked'] else tr('do powiązania', 'unlinked')))
+        elif kind in ('cultures','religions') and r['state_id']:
+            suffix=' · '+tr('siła: ','strength: ')+str(r['entity'].get('expansionism','—'))
         lines.append(f"**{r['state_id']}** · {name}{suffix}")
     title = {'states': tr('Państwa mapy', 'Map states'), 'cultures': tr('Kultury', 'Cultures'), 'religions': tr('Religie', 'Religions')}[kind]
     e = discord.Embed(title=title, description='\n'.join(lines) or '—')
-    e.set_footer(text=f"{page}/{max(1, (len(rows)+14)//15)} · /admin map_bind · /province identity")
+    e.set_footer(text=f"{page}/{max(1, (len(rows)+14)//15)} · "+
+                 ('/admin map_bind' if kind=='states' else '/admin map_strength · /province identity'))
     await i.response.send_message(embed=e, ephemeral=True)

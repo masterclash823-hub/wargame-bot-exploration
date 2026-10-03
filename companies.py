@@ -336,6 +336,8 @@ def investment_quote(c, nid, s, cell, key, target, context=None):
         raise ValueError(tr('Budynek ma już poziom 3.', 'The building is already level 3.'))
     if not definition:
         raise ValueError(tr('Nie znaleziono typu budynku.', 'Building type not found.'))
+    from terraforming import require_compatible_build
+    require_compatible_build(c,p,definition)
     from coastal import require_coast
     require_coast(c,p,key)
     host = n if p['owner_nation_id'] == nid else lock_nation(c, p['owner_nation_id'])

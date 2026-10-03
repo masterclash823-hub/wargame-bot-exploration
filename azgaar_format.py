@@ -25,6 +25,14 @@ def dumps(value):
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'), allow_nan=False)
 
 
+def biome_ids(data):
+    """Resolve biome names without inventing IDs or changing the map catalogue."""
+    raw=data.get('pack',data).get('biomes',data.get('biomesData',{}))
+    entries=raw.get('name',[]) if isinstance(raw,dict) else raw
+    return {str(item.get('name','') if isinstance(item,dict) else item).strip().casefold():index
+            for index,item in enumerate(entries)}
+
+
 def decode(raw):
     if len(raw) > MAX_BYTES:
         error('Plik mapy może mieć najwyżej 24 MB.', 'Map files must be at most 24 MB.')

@@ -52,6 +52,8 @@ class PurchaseUITests(ProvincePurchaseFixture,unittest.IsolatedAsyncioTestCase):
         details=str(selected.embed.to_dict())
         for text in ('Border forest','Kultura A','Religia A','Ludność','Zasoby bazowe','300','-100'):
             self.assertIn(text,details)
+        self.assertIn('Kultura obecna w państwie: -100',details)
+        self.assertIn('Religia obecna w państwie: -100',details)
         self.assertFalse(selected.confirm_button.disabled)
         self.assertEqual(before,self.balances())
         confirmation=component()
@@ -60,6 +62,32 @@ class PurchaseUITests(ProvincePurchaseFixture,unittest.IsolatedAsyncioTestCase):
         self.assertIn('Kupiono prowincję #20',confirmation.edit_original_response.call_args.kwargs['content'])
         await selected.confirm_button.callback(component())
         self.assertEqual(self.balances()[0]['treasury'],700)
+
+    async def test_preview_distinguishes_unnamed_unassigned_and_missing_identity(self):
+        for lang,culture,religion,unassigned,missing in (
+                ('pl','Kultura','Religia','Brak przypisania','Brak danych'),
+                ('en','Culture','Religion','Unassigned','No data')):
+            with self.subTest(lang=lang),i18n.using_language(lang):
+                with db.cursor() as c:
+                    c.execute('UPDATE azgaar_cells SET culture_id=2,religion_id=3 WHERE cell_id=20')
+                view=self.view(20)
+                fields={field.name:field.value for field in view.embed.fields}
+                self.assertEqual((fields[culture],fields[religion]),('ID 2','ID 3'))
+                self.assertEqual(view.selected['cost'],300)
+                with db.cursor() as c:
+                    c.execute('UPDATE azgaar_cells SET culture_id=0,religion_id=0 WHERE cell_id=20')
+                view=self.view(20)
+                fields={field.name:field.value for field in view.embed.fields}
+                self.assertEqual((fields[culture],fields[religion]),(unassigned,unassigned))
+                self.assertEqual(view.selected['cost'],500)
+                with db.cursor() as c:
+                    c.execute('DELETE FROM azgaar_cells WHERE cell_id=20')
+                view=self.view(20)
+                fields={field.name:field.value for field in view.embed.fields}
+                self.assertEqual((fields[culture],fields[religion]),(missing,missing))
+                self.assertEqual(view.selected['cost'],500)
+                with db.cursor() as c:
+                    c.execute('INSERT INTO azgaar_cells(cell_id,state_id,culture_id,religion_id) VALUES(20,1,2,3)')
 
     async def test_optional_cell_opens_preview_and_cancel_never_buys(self):
         before=self.balances();i=component()
@@ -70,6 +98,22 @@ class PurchaseUITests(ProvincePurchaseFixture,unittest.IsolatedAsyncioTestCase):
         await view.cancel(component())
         await view.confirm(component())
         self.assertEqual(self.balances(),before)
+
+    async def test_dropdown_and_preview_show_position_in_both_languages(self):
+        from test_province_geography import map_data,save_map
+        save_map(map_data())
+        for lang,direction,capital,location,units in (
+                ('pl','północny wschód','stolica #10','Położenie','jedn. mapy'),
+                ('en','northeast','capital #10','Location','map units')):
+            with self.subTest(lang=lang),i18n.using_language(lang):
+                view=self.view(20)
+                self.assertIn(direction,view.children[0].options[0].description)
+                self.assertIn(capital,view.children[0].options[0].description)
+                self.assertTrue(all(len(option.description)<=100 for option in view.children[0].options))
+                fields={field.name:field.value for field in view.embed.fields}
+                for text in (direction,capital,units,'x=110.0, y=90.0','14.1'):
+                    self.assertIn(text,fields[location])
+                self.assertLess(len(view.embed),6000)
 
     async def test_pages_reach_all_neighbors_and_respect_discord_limits(self):
         with db.cursor() as c:

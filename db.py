@@ -133,6 +133,26 @@ CREATE TABLE IF NOT EXISTS province_coasts (
     coastal INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS province_terraforming (
+    id SERIAL PRIMARY KEY,
+    nation_id INTEGER REFERENCES nations(id) ON DELETE SET NULL,
+    province_id INTEGER NOT NULL REFERENCES provinces(id) ON DELETE CASCADE,
+    project_key TEXT NOT NULL,
+    source_biome TEXT NOT NULL,
+    source_terrain TEXT NOT NULL,
+    target_biome TEXT NOT NULL,
+    target_terrain TEXT NOT NULL,
+    cost_json TEXT NOT NULL,
+    started_month INTEGER NOT NULL,
+    due_month INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'building',
+    finished_month INTEGER,
+    reason TEXT NOT NULL DEFAULT ''
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_terraform_nation_active ON province_terraforming(nation_id) WHERE status='building';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_terraform_province_active ON province_terraforming(province_id) WHERE status='building';
+CREATE INDEX IF NOT EXISTS idx_terraform_cooldown ON province_terraforming(province_id,finished_month);
+
 CREATE TABLE IF NOT EXISTS province_neighbors (
     cell_id          INTEGER NOT NULL REFERENCES provinces(azgaar_cell_id) ON DELETE CASCADE,
     neighbor_cell_id INTEGER NOT NULL REFERENCES provinces(azgaar_cell_id) ON DELETE CASCADE,
@@ -761,4 +781,6 @@ def init_db() -> None:
                 # Fractional market payments must not disappear in float32 balances.
                 cur.execute('ALTER TABLE nations ALTER COLUMN treasury TYPE DOUBLE PRECISION')
                 cur.execute("INSERT INTO economy_meta(key,value) VALUES('treasury_double_v1','1') ON CONFLICT(key) DO NOTHING")
+    from province_population import migrate
+    migrate()
     print(f"[DB] init_db complete ({'PostgreSQL/Supabase' if USE_POSTGRES else 'SQLite'})", flush=True)

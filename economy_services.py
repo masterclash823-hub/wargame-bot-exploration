@@ -30,6 +30,8 @@ def build(nid,cell,key,upgrade=False,uid=None):
         if not p: raise ValueError(i18n.text('Province not found or not yours.'))
         c.execute('SELECT * FROM building_defs WHERE key=?',(key,)); b=c.fetchone()
         if not b: raise ValueError(i18n.text('Unknown building.'))
+        from terraforming import require_compatible_build
+        require_compatible_build(c,p,b)
         from coastal import require_coast
         require_coast(c,p,key)
         buildings=read_json(p['buildings_json'],[])
