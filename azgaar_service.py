@@ -102,10 +102,12 @@ def import_map(raw, map_raw=None, *, resync=False, sync_owners=False):
         c.execute('INSERT INTO azgaar_world(id,data_json,map_text,geometry_hash) VALUES(1,?,?,?) '
                   'ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json,map_text=excluded.map_text,geometry_hash=excluded.geometry_hash',
                   (dumps(data), map_text, fingerprint))
+        from province_population import normalize as normalize_unclaimed
+        free_population=normalize_unclaimed(c,{row['i']:row for row in data['pack']['cells']})
         totals(c, [n['id'] for n in nations])
         stats.update(states=sum(bool(s['i']) and not s.get('removed', False) for s in data['pack']['states']),
                      cultures=len(data['pack']['cultures'])-1, religions=len(data['pack']['religions'])-1,
-                     owners_changed=changed, native=bool(native),
+                     owners_changed=changed, native=bool(native),unclaimed_population=free_population,
                      pending=sum(bool(s['i']) and not s.get('removed', False) and not mapping[s['i']]['linked'] for s in data['pack']['states']))
         return stats
 
@@ -340,6 +342,10 @@ def export_map(*, native_format=True, map_raw=None):
             pack[kind] = [json.loads(r['data_json']) for r in c.fetchall()]
         c.execute('SELECT p.*,a.state_id,a.culture_id,a.religion_id FROM provinces p JOIN azgaar_cells a ON a.cell_id=p.azgaar_cell_id')
         provinces = {p['azgaar_cell_id']: p for p in c.fetchall()}
+        from azgaar_format import biome_ids
+        biomes=biome_ids(data)
+        c.execute("SELECT DISTINCT province_id FROM province_terraforming WHERE status='complete'")
+        terraformed={r['province_id'] for r in c.fetchall()}
         for row in pack['cells']:
             p = provinces.get(row['i'])
             if not p or not p['active']:
@@ -350,6 +356,12 @@ def export_map(*, native_format=True, map_raw=None):
                 original = states.get(p['state_id'], {})
                 sid = p['state_id'] if original and not original['linked'] and not json.loads(original['data_json']).get('removed') else 0
             row.update(state=sid, culture=p['culture_id'], religion=p['religion_id'])
+            if p['id'] in terraformed:
+                biome=biomes.get(p['biome'].strip().casefold())
+                if biome is None:
+                    error('Brak biomu terraformowanej prowincji w katalogu mapy: '+p['biome'],
+                          'Terraformed province biome is missing from the map catalogue: '+p['biome'])
+                row['biome']=biome
         by_province_id = {p['id']: p for p in provinces.values()}
         capital_cells = {}
         for n in nations:

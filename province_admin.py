@@ -120,8 +120,30 @@ def buy(cell, uid, *, nation_id=None, expected_cost=None):
         return dict(nation=nation['name'],cell=cell,**quote)
 
 
-def edit(cell,*,population=None,biome=None,coastal=None):
+def biome_result(province,biome):
+    """Replace biome yields once; retain deposits and geographic additions."""
     from cogs.provinces import BIOME_RESOURCES,_terrain_label
+    resources=json.loads(province['base_resources_json'])
+    source=next((key for key in BIOME_RESOURCES if key.casefold()==province['biome'].strip().casefold()),None)
+    old=BIOME_RESOURCES.get(source,{});new=BIOME_RESOURCES[biome]
+    for key in old.keys()|new.keys():
+        resources[key]=max(0,resources.get(key,0)-old.get(key,0))+new.get(key,0)
+        if not resources[key]:resources.pop(key)
+    previous_terrain=province['terrain'].strip().casefold()
+    terrain=previous_terrain if previous_terrain in ('mountains','hills') else _terrain_label(20,biome)
+    if biome=='Marine':terrain='water'
+    return dict(biome=biome,terrain=terrain,base_resources_json=json.dumps(resources))
+
+
+def apply_biome(c,province,biome):
+    changed=biome_result(province,biome)
+    c.execute('UPDATE provinces SET biome=?,terrain=?,base_resources_json=? WHERE id=?',
+              (changed['biome'],changed['terrain'],changed['base_resources_json'],province['id']))
+    return changed
+
+
+def edit(cell,*,population=None,biome=None,coastal=None):
+    from cogs.provinces import BIOME_RESOURCES
     if population is not None and (type(population) is not int or not 0<=population<=1_000_000_000):
         raise ValueError(tr('Populacja: liczba całkowita od 0 do 1 000 000 000.', 'Population: whole number from 0 to 1,000,000,000.'))
     if biome is not None:
@@ -133,16 +155,7 @@ def edit(cell,*,population=None,biome=None,coastal=None):
         if population is not None:
             c.execute('UPDATE provinces SET population=? WHERE id=?',(population,p['id']))
         if biome is not None:
-            # Preserve geographic mineral/river additions and GM deposits; replace only biome yield.
-            resources=json.loads(p['base_resources_json'])
-            old=BIOME_RESOURCES.get(p['biome'],{});new=BIOME_RESOURCES[biome]
-            for key in old.keys()|new.keys():
-                resources[key]=max(0,resources.get(key,0)-old.get(key,0))+new.get(key,0)
-                if not resources[key]:resources.pop(key)
-            terrain=p['terrain'] if p['terrain'] in ('mountains','hills') else _terrain_label(20,biome)
-            if biome=='Marine':terrain='water'
-            c.execute('UPDATE provinces SET biome=?,terrain=?,base_resources_json=? WHERE id=?',
-                      (biome,terrain,json.dumps(resources),p['id']))
+            apply_biome(c,p,biome)
         if coastal is not None:
             if type(coastal) is not bool:raise ValueError('Invalid coastline')
             if coastal and (biome=='Marine' or (biome is None and p['terrain'] in ('water','sea','ocean'))):

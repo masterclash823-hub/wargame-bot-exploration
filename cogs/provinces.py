@@ -592,6 +592,13 @@ class ProvincesCog(commands.Cog):
         from province_purchase_ui import show
         await show(interaction,cell_id)
 
+    @province_grp.command(name="terraform", description="Plan paid terraforming / Zaplanuj płatną terraformację")
+    @app_commands.describe(cell_id="Optional cell to preview / Opcjonalne ID prowincji do podglądu")
+    @i18n.localized
+    async def province_terraform(self, interaction: discord.Interaction, cell_id: int | None = None):
+        from terraforming_ui import show
+        await show(interaction,cell_id)
+
     @province_grp.command(name="yield",
                           description="Total resource yield of your provinces / Laczna produkcja")
     @app_commands.describe(nation="Nation name (blank = your own, GM only for others)")
