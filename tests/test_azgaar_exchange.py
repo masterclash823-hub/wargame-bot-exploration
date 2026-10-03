@@ -88,6 +88,17 @@ class MapExchangeTests(unittest.TestCase):
         self.assertEqual(service.catalog('states')[2]['linked'],0)
         self.assertEqual(json.loads(rows[1]['base_resources_json'])['horses'],4)
 
+    def test_purchase_recognizes_imported_identity_without_an_assigned_capital(self):
+        from province_admin import buy,purchase_options
+        service.import_map(self.raw,self.map)
+        nation,rows=purchase_options(1)
+        self.assertIsNone(nation['capital_province_id'])
+        self.assertEqual([(p['azgaar_cell_id'],p['cost']) for p in rows],[(3,300)])
+        self.assertEqual(json.loads(rows[0]['culture_json'])['name'],'Culture A')
+        self.assertEqual(json.loads(rows[0]['religion_json'])['name'],'Religion A')
+        self.assertEqual(buy(3,1,expected_cost=rows[0]['cost'])['cost'],300)
+        self.assertEqual(self.rows('SELECT treasury FROM nations WHERE id=1')[0]['treasury'],699)
+
     def test_roundtrip_borders_cultures_religions_capitals_and_economy(self):
         service.import_map(self.raw,self.map)
         with db.cursor() as c:

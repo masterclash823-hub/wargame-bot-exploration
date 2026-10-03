@@ -19,16 +19,19 @@ def _province(c,cell):
     return row
 
 
-def _capital_identity(c,nation):
-    c.execute('SELECT a.culture_id,a.religion_id FROM provinces p JOIN azgaar_cells a '
-              'ON a.cell_id=p.azgaar_cell_id WHERE p.id=? AND p.owner_nation_id=? AND p.active=1',
-              (nation['capital_province_id'],nation['id']))
-    return c.fetchone()
+def _nation_identity(c,nation):
+    """Identity present in currently owned land, independent of capital selection."""
+    c.execute('SELECT DISTINCT a.culture_id,a.religion_id FROM provinces p JOIN azgaar_cells a '
+              'ON a.cell_id=p.azgaar_cell_id WHERE p.owner_nation_id=? AND p.active=1 '
+              "AND p.terrain NOT IN ('water','sea','ocean')",(nation['id'],))
+    rows=c.fetchall()
+    return {key:{row[key] for row in rows if (row[key] or 0)>0}
+            for key in ('culture_id','religion_id')}
 
 
-def _price(target,capital):
-    culture=bool(target and capital and (target['culture_id'] or 0)>0 and target['culture_id']==capital['culture_id'])
-    religion=bool(target and capital and (target['religion_id'] or 0)>0 and target['religion_id']==capital['religion_id'])
+def _price(target,identity):
+    culture=bool(target and target['culture_id'] in identity['culture_id'])
+    religion=bool(target and target['religion_id'] in identity['religion_id'])
     return dict(cost=500-100*int(culture)-100*int(religion),culture=culture,religion=religion)
 
 
@@ -40,7 +43,7 @@ def purchase_options(uid,nation_id=None):
         if not nation or (nation_id is not None and nation['id']!=nation_id) or not can_manage(nation['id'],uid,c):
             raise ValueError(tr('Brak dostępu do państwa. Otwórz ponownie /province buy.',
                                 'Nation access unavailable. Open /province buy again.'))
-        capital=_capital_identity(c,nation)
+        identity=_nation_identity(c,nation)
         c.execute('SELECT p.*,a.culture_id,a.religion_id,culture.data_json AS culture_json,'
                   'religion.data_json AS religion_json FROM provinces p '
                   'LEFT JOIN azgaar_cells a ON a.cell_id=p.azgaar_cell_id '
@@ -51,7 +54,7 @@ def purchase_options(uid,nation_id=None):
                   'ON owned.azgaar_cell_id=edge.neighbor_cell_id WHERE edge.cell_id=p.azgaar_cell_id '
                   'AND owned.owner_nation_id=? AND owned.active=1) ORDER BY p.azgaar_cell_id',(nation['id'],))
         rows=c.fetchall()
-        for row in rows:row.update(_price(row,capital))
+        for row in rows:row.update(_price(row,identity))
         return nation,rows
 
 
@@ -86,7 +89,7 @@ def buy(cell, uid, *, nation_id=None, expected_cost=None):
                                 'If map adjacency data is missing, ask a GM to reimport the map.'))
         c.execute('SELECT culture_id,religion_id FROM azgaar_cells WHERE cell_id=?',(cell,))
         target=c.fetchone()
-        quote=_price(target,_capital_identity(c,nation))
+        quote=_price(target,_nation_identity(c,nation))
         cost=quote['cost']
         if expected_cost is not None and cost!=expected_cost:
             raise ValueError(tr('Cena zmieniła się. Odśwież podgląd przed potwierdzeniem zakupu.',

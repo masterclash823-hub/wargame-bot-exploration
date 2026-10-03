@@ -24,6 +24,13 @@ def _safe(text,limit=200):
     return discord.utils.escape_mentions(discord.utils.escape_markdown(str(text)))[:limit]
 
 
+def _identity_label(province,kind):
+    entity_id=province[kind+'_id']
+    if entity_id is None:return tr('Brak danych','No data')
+    if entity_id==0:return tr('Brak przypisania','Unassigned')
+    return _json(province[kind+'_json'],{}).get('name') or f'ID {entity_id}'
+
+
 def preview_embed(nation,rows,selected,page):
     embed=discord.Embed(title=tr('Zakup prowincji — ','Buy a province — ')+_safe(nation['name'],120),
                         color=discord.Color.gold())
@@ -43,8 +50,8 @@ def preview_embed(nation,rows,selected,page):
             (tr('Teren','Terrain'),i18n.term(p['terrain'])),
             (tr('Biom','Biome'),i18n.term(p['biome'])),
             (tr('Ludność','Population'),str(p['population'])),
-            (tr('Kultura','Culture'),_json(p['culture_json'],{}).get('name') or '—'),
-            (tr('Religia','Religion'),_json(p['religion_json'],{}).get('name') or '—'),
+            (tr('Kultura','Culture'),_identity_label(p,'culture')),
+            (tr('Religia','Religion'),_identity_label(p,'religion')),
             (tr('Fortyfikacje','Fortification'),str(p['fortification_level'])),
         ):
             embed.add_field(name=label,value=_safe(value))
@@ -54,8 +61,8 @@ def preview_embed(nation,rows,selected,page):
         buildings=_json(p['buildings_json'],[])
         embed.add_field(name=tr('Budynki','Buildings'),value=(', '.join(i18n.term(str(b)) for b in buildings) or '—')[:1000],inline=False)
         price=[tr('Cena bazowa: 500 złota','Base price: 500 gold'),
-               tr('Zgodna kultura ze stolicą: ','Same culture as the capital: ')+('-100' if p['culture'] else '0'),
-               tr('Zgodna religia ze stolicą: ','Same religion as the capital: ')+('-100' if p['religion'] else '0'),
+               tr('Kultura obecna w państwie: ','Culture present in your nation: ')+('-100' if p['culture'] else '0'),
+               tr('Religia obecna w państwie: ','Religion present in your nation: ')+('-100' if p['religion'] else '0'),
                tr('Do zapłaty: ','Total: ')+f"**{p['cost']} 🪙**"]
         if nation['treasury']<p['cost']:
             price.append(tr('Brakuje złota: ','Missing gold: ')+f"{p['cost']-nation['treasury']:.2f}")
