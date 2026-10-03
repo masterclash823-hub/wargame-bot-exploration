@@ -355,6 +355,27 @@ class ProvincesCog(commands.Cog):
         from azgaar_ui import entities_command
         await entities_command(interaction, kind, page)
 
+    @admin_grp.command(name='map_strength',description='[GM] Set culture/religion strength / Ustaw siłę kultury lub religii')
+    @app_commands.choices(kind=[app_commands.Choice(name='Culture / Kultura',value='cultures'),
+                               app_commands.Choice(name='Religion / Religia',value='religions')])
+    @app_commands.describe(strength='Expansion strength, at least 0 / Siła ekspansji, co najmniej 0')
+    @i18n.localized
+    async def map_strength(self,interaction:discord.Interaction,kind:str,entity_id:int,
+                           strength:app_commands.Range[float,0]):
+        if not _gm(interaction):
+            await interaction.response.send_message(i18n.t(_lang(interaction),'gm_only'),ephemeral=True);return
+        await interaction.response.defer(ephemeral=True)
+        from azgaar_service import set_entity_strength
+        from world_service import tr
+        try:
+            result=await asyncio.to_thread(set_entity_strength,kind,entity_id,strength)
+            name=discord.utils.escape_mentions(discord.utils.escape_markdown(str(result['name'])))[:140]
+            await interaction.followup.send(tr('Zapisano siłę ekspansji: ','Expansion strength saved: ')+
+                f"{name} (#{entity_id}) · {result['previous'] if result['previous'] is not None else '—'} → {result['strength']:g}",
+                ephemeral=True)
+        except ValueError as exc:
+            await interaction.followup.send(str(exc),ephemeral=True)
+
     @admin_grp.command(name="map_bind", description="[GM] Link a map state to a game nation / Powiąż państwo mapy z państwem gry")
     @i18n.localized
     async def map_bind(self, interaction: discord.Interaction, state_id: int, nation: str):

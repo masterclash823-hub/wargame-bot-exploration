@@ -1,6 +1,7 @@
 """Transactional map exchange. Game ownership and economy stay authoritative by default."""
 import copy
 import json
+import math
 from collections import Counter, defaultdict
 
 import db
@@ -150,6 +151,35 @@ def set_identity(cell_id, culture_id=None, religion_id=None):
             if not entity or json.loads(entity['data_json']).get('removed'):
                 error('Nie ma takiej kultury lub religii. Sprawdź /admin map_entities.', 'Unknown culture or religion. Check /admin map_entities.')
             c.execute(f'UPDATE azgaar_cells SET {column}=? WHERE cell_id=?', (value, cell_id))
+
+
+def set_entity_strength(kind,entity_id,strength):
+    """Edit Azgaar expansionism while preserving the entity's other metadata."""
+    if kind not in ('cultures','religions'):
+        error('Wybierz kulturę lub religię.','Choose a culture or religion.')
+    if type(entity_id) is not int or entity_id<=0:
+        error('Wybierz istniejącą kulturę lub religię o ID większym od 0.',
+              'Choose an existing culture or religion with an ID greater than 0.')
+    try:
+        if type(strength) not in (int,float):raise ValueError
+        value=float(strength)
+        if not math.isfinite(value) or value<0:raise ValueError
+    except (ValueError,OverflowError):
+        error('Siła musi być skończoną liczbą nieujemną, np. 1,5.',
+              'Strength must be a finite nonnegative number, such as 1.5.')
+    with db.atomic() as c:
+        world_lock(c)
+        c.execute('SELECT data_json FROM azgaar_entities WHERE kind=? AND entity_id=?',(kind,entity_id))
+        row=c.fetchone()
+        entity=json.loads(row['data_json']) if row else None
+        if not entity or entity.get('removed'):
+            error('Nie ma takiej aktywnej kultury lub religii. Odśwież listę.',
+                  'This active culture or religion does not exist. Refresh the list.')
+        previous=entity.get('expansionism')
+        entity['expansionism']=value
+        c.execute('UPDATE azgaar_entities SET data_json=? WHERE kind=? AND entity_id=?',
+                  (dumps(entity),kind,entity_id))
+        return dict(name=entity.get('name') or f'ID {entity_id}',previous=previous,strength=value)
 
 
 def identity(cell_id):

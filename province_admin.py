@@ -1,6 +1,7 @@
 """Atomic province edits shared by GM slash commands and the admin panel."""
 import json
 import db
+import province_geography as geography
 from world_service import world_lock,tr
 
 
@@ -19,12 +20,15 @@ def _province(c,cell):
     return row
 
 
-def _nation_identity(c,nation):
+def _owned_land(c,nation,cells):
+    c.execute('SELECT p.id,p.azgaar_cell_id,p.terrain,p.biome,a.culture_id,a.religion_id '
+              'FROM provinces p LEFT JOIN azgaar_cells a ON a.cell_id=p.azgaar_cell_id '
+              'WHERE p.owner_nation_id=? AND p.active=1',(nation['id'],))
+    return [row for row in c.fetchall() if not geography.is_water(row,cells)]
+
+
+def _nation_identity(rows):
     """Identity present in currently owned land, independent of capital selection."""
-    c.execute('SELECT DISTINCT a.culture_id,a.religion_id FROM provinces p JOIN azgaar_cells a '
-              'ON a.cell_id=p.azgaar_cell_id WHERE p.owner_nation_id=? AND p.active=1 '
-              "AND p.terrain NOT IN ('water','sea','ocean')",(nation['id'],))
-    rows=c.fetchall()
     return {key:{row[key] for row in rows if (row[key] or 0)>0}
             for key in ('culture_id','religion_id')}
 
@@ -43,7 +47,10 @@ def purchase_options(uid,nation_id=None):
         if not nation or (nation_id is not None and nation['id']!=nation_id) or not can_manage(nation['id'],uid,c):
             raise ValueError(tr('Brak dostępu do państwa. Otwórz ponownie /province buy.',
                                 'Nation access unavailable. Open /province buy again.'))
-        identity=_nation_identity(c,nation)
+        cells,burgs=geography.load(c)
+        owned=_owned_land(c,nation,cells)
+        identity=_nation_identity(owned)
+        origin=geography.reference(c,nation,owned,cells,burgs)
         c.execute('SELECT p.*,a.culture_id,a.religion_id,culture.data_json AS culture_json,'
                   'religion.data_json AS religion_json FROM provinces p '
                   'LEFT JOIN azgaar_cells a ON a.cell_id=p.azgaar_cell_id '
@@ -53,8 +60,10 @@ def purchase_options(uid,nation_id=None):
                   'AND EXISTS (SELECT 1 FROM province_neighbors edge JOIN provinces owned '
                   'ON owned.azgaar_cell_id=edge.neighbor_cell_id WHERE edge.cell_id=p.azgaar_cell_id '
                   'AND owned.owner_nation_id=? AND owned.active=1) ORDER BY p.azgaar_cell_id',(nation['id'],))
-        rows=c.fetchall()
-        for row in rows:row.update(_price(row,identity))
+        rows=[row for row in c.fetchall() if not geography.is_water(row,cells)]
+        for row in rows:
+            row.update(_price(row,identity))
+            row['location']=geography.location(row,cells,origin)
         return nation,rows
 
 
@@ -76,7 +85,8 @@ def buy(cell, uid, *, nation_id=None, expected_cost=None):
         p=_province(c,cell)
         if p['owner_nation_id'] is not None:
             raise ValueError(tr('Ta prowincja ma już właściciela.', 'This province already has an owner.'))
-        if p['terrain'] in ('water','sea','ocean'):
+        cells,_=geography.load(c)
+        if geography.is_water(p,cells):
             raise ValueError(tr('Nie można kupić pola wodnego.', 'A water cell cannot be purchased.'))
         c.execute('SELECT 1 FROM province_neighbors edge JOIN provinces owned '
                   'ON owned.azgaar_cell_id=edge.neighbor_cell_id '
@@ -89,7 +99,7 @@ def buy(cell, uid, *, nation_id=None, expected_cost=None):
                                 'If map adjacency data is missing, ask a GM to reimport the map.'))
         c.execute('SELECT culture_id,religion_id FROM azgaar_cells WHERE cell_id=?',(cell,))
         target=c.fetchone()
-        quote=_price(target,_nation_identity(c,nation))
+        quote=_price(target,_nation_identity(_owned_land(c,nation,cells)))
         cost=quote['cost']
         if expected_cost is not None and cost!=expected_cost:
             raise ValueError(tr('Cena zmieniła się. Odśwież podgląd przed potwierdzeniem zakupu.',

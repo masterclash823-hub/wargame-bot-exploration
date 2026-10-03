@@ -141,8 +141,11 @@ async def entities_command(i, kind, page):
         suffix = ''
         if kind == 'states' and r['state_id']:
             suffix = ' → ' + (r['nation'] or (tr('usunięte z gry', 'deleted from game') if r['linked'] else tr('do powiązania', 'unlinked')))
+        elif kind in ('cultures','religions') and r['state_id']:
+            suffix=' · '+tr('siła: ','strength: ')+str(r['entity'].get('expansionism','—'))
         lines.append(f"**{r['state_id']}** · {name}{suffix}")
     title = {'states': tr('Państwa mapy', 'Map states'), 'cultures': tr('Kultury', 'Cultures'), 'religions': tr('Religie', 'Religions')}[kind]
     e = discord.Embed(title=title, description='\n'.join(lines) or '—')
-    e.set_footer(text=f"{page}/{max(1, (len(rows)+14)//15)} · /admin map_bind · /province identity")
+    e.set_footer(text=f"{page}/{max(1, (len(rows)+14)//15)} · "+
+                 ('/admin map_bind' if kind=='states' else '/admin map_strength · /province identity'))
     await i.response.send_message(embed=e, ephemeral=True)

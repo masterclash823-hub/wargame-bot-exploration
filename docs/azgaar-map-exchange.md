@@ -20,8 +20,12 @@ Jeżeli na początku wgrasz tylko Full Data JSON, później możesz dodać proje
 - Nowe państwa utworzone tylko w bocie otrzymują trwałe ID przy eksporcie. Przed pierwszym eksportem powiąż je z istniejącym państwem mapy, jeżeli ma to być ten sam kraj.
 - Kultura i religia są zapisane **dla każdego pola**, a nie tylko całego państwa. Nazwy i metadane (kolory, bóstwa, pochodzenie itd.) są zachowywane.
 - `/province info cell_id:ID` pokazuje kulturę i religię. GM może je zmienić przez `/province identity cell_id:ID culture_id:ID religion_id:ID`; pominięty parametr pozostaje bez zmian, ID 0 oznacza brak przypisania.
+- `/admin map_strength kind:cultures entity_id:ID strength:1.5` zmienia siłę ekspansji kultury; `kind:religions` działa tak samo dla religii. Dozwolona jest skończona liczba od 0 wzwyż. ID 0 i usunięte pozycje nie podlegają edycji.
+- W **Panelu administratora → Mapa Azgaara → Siła kultury / Siła religii** wybierz pozycję z listy i wpisz nową wartość. Formularz pokazuje obecną siłę i przyjmuje także przecinek dziesiętny. Uprawnienia GM są sprawdzane również przy zapisie. Aktualna siła jest widoczna na listach kultur i religii.
 
-Kultury i religie są na razie danymi mapy: ten PR nie dodaje bonusów gospodarczych, nawracania ani asymilacji.
+Siła odpowiada parametrowi `expansionism` Azgaara. Zapisuje się w bazie i obu formatach eksportu (`.map` i JSON), zachowując nazwę, kolor i pozostałe dane. Zmiana wartości nie przerysowuje automatycznie zasięgu kultur ani religii w grze; aktualne przypisania pól zmienia się przez edycję mapy i import lub `/province identity`. Kolejny import przyjmuje siłę z importowanego pliku.
+
+Kultura i religia obecne we własnym państwie dają zniżki przy zakupie prowincji. Sama wartość siły ekspansji nie zmienia ceny zakupu.
 
 ## Bot → Azgaar
 

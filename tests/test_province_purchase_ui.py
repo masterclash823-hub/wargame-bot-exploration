@@ -99,6 +99,22 @@ class PurchaseUITests(ProvincePurchaseFixture,unittest.IsolatedAsyncioTestCase):
         await view.confirm(component())
         self.assertEqual(self.balances(),before)
 
+    async def test_dropdown_and_preview_show_position_in_both_languages(self):
+        from test_province_geography import map_data,save_map
+        save_map(map_data())
+        for lang,direction,capital,location,units in (
+                ('pl','północny wschód','stolica #10','Położenie','jedn. mapy'),
+                ('en','northeast','capital #10','Location','map units')):
+            with self.subTest(lang=lang),i18n.using_language(lang):
+                view=self.view(20)
+                self.assertIn(direction,view.children[0].options[0].description)
+                self.assertIn(capital,view.children[0].options[0].description)
+                self.assertTrue(all(len(option.description)<=100 for option in view.children[0].options))
+                fields={field.name:field.value for field in view.embed.fields}
+                for text in (direction,capital,units,'x=110.0, y=90.0','14.1'):
+                    self.assertIn(text,fields[location])
+                self.assertLess(len(view.embed),6000)
+
     async def test_pages_reach_all_neighbors_and_respect_discord_limits(self):
         with db.cursor() as c:
             for cell in range(100,132):
