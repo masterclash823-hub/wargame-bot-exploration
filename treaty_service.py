@@ -27,8 +27,12 @@ def relation(c,a,b):
 
 
 def set_relation(c,a,b,status):
+    world_lock(c)
     c.execute('INSERT INTO relations(nation_a_id,nation_b_id,status) VALUES(?,?,?) '
               'ON CONFLICT(nation_a_id,nation_b_id) DO UPDATE SET status=excluded.status',(*pair(a,b),status))
+    if status=='war':
+        from military_posture import activate_wartime_reserves
+        activate_wartime_reserves(c,(a,b))
 
 
 def cells(raw):

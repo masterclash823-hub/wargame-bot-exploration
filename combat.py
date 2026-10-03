@@ -78,13 +78,9 @@ def _get_relation(a_id, b_id):
     return row["status"] if row else "peace"
 
 def _set_relation(a_id, b_id, status):
-    lo, hi = min(a_id, b_id), max(a_id, b_id)
-    with db.cursor() as c:
-        c.execute(
-            "INSERT INTO relations(nation_a_id,nation_b_id,status) VALUES(?,?,?) "
-            "ON CONFLICT(nation_a_id,nation_b_id) DO UPDATE SET status=excluded.status",
-            (lo, hi, status)
-        )
+    from treaty_service import set_relation
+    with db.atomic() as c:
+        set_relation(c,a_id,b_id,status)
 
 # ---------------------------------------------------------------------------
 # Combat resolution

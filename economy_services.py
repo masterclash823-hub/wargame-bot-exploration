@@ -62,11 +62,18 @@ def build(nid,cell,key,upgrade=False,uid=None):
 
 
 def set_posture(nid,unit_id,mode):
+    from military_posture import at_war
+    from world_service import world_lock,tr
     if mode not in ('reserve','active','deployed'): raise ValueError('Invalid mode')
     with db.atomic() as c:
+        world_lock(c)
         lock_nation(c,nid)
         c.execute('SELECT * FROM military_units WHERE id=? AND nation_id=?'+(' FOR UPDATE' if db.USE_POSTGRES else ''),(unit_id,nid))
         if not c.fetchone(): raise ValueError(i18n.text('Unit not found or not yours.'))
+        wartime=at_war(c,nid)
+        if mode=='reserve' and wartime:
+            raise ValueError(tr('Podczas wojny jednostki muszą pozostać aktywne. Rezerwa będzie dostępna po zakończeniu wszystkich wojen.',
+                                'Units must remain active during war. Reserves become available after all wars end.'))
         c.execute("SELECT forces_json FROM battle_plans WHERE nation_id=? AND status IN ('unmatched','matched')",(nid,))
         if any(any(int(x.get('unit_id',0))==unit_id for x in read_json(p['forces_json'],[])) for p in c.fetchall()):
             raise ValueError(i18n.text('This unit is assigned to a pending battle plan.'))
@@ -74,8 +81,8 @@ def set_posture(nid,unit_id,mode):
         if c.fetchone(): raise ValueError(i18n.text('Cancel the trade route before changing this ship.'))
         c.execute('SELECT * FROM military_posture WHERE unit_id=?',(unit_id,)); old=c.fetchone()
         ready=0
-        if old and old['mode']=='mobilizing' and mode!='reserve': return 'mobilizing'
-        if old and old['mode']=='reserve' and mode!='reserve':
+        if not wartime and old and old['mode']=='mobilizing' and mode!='reserve': return 'mobilizing'
+        if not wartime and old and old['mode']=='reserve' and mode!='reserve':
             mode='mobilizing'
             ready=int(_config(c,'current_year','1'))*12+int(_config(c,'current_month','1'))
         c.execute('INSERT INTO military_posture(unit_id,mode,ready_month) VALUES(?,?,?) '

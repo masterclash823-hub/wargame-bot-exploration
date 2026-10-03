@@ -408,10 +408,15 @@ class PlayerPanel(OwnedView):
     async def choose_posture(self,i):
         n=get_nation_by_owner(str(self.owner_id))
         async def unit(i2,uid):
+            from military_posture import at_war
+            with db.cursor() as c:wartime=at_war(c,n['id'])
             opts=[discord.SelectOption(label=label,value=value) for value,label in
-                  [('reserve','Rezerwa 35% / Reserve 35%'),('active','Mobilizacja 100% / Mobilize 100%'),('deployed','Wyprawa 150% / Expedition 150%')]]
+                  [('reserve','Rezerwa 35% / Reserve 35%'),('active','Aktywne 100% / Active 100%'),('deployed','Wyprawa 150% / Expedition 150%')]
+                  if value!='reserve' or not wartime]
             async def mode(i3,value):await invoke(self.cog('EconomyControlCog'),'posture',i3,int(uid),value)
-            await reply(i2,view=ChoiceView(self.owner_id,self.lang,opts,mode))
+            message=('Podczas wojny rezerwy są automatycznie aktywne.' if self.lang=='pl' else
+                     'Reserves are automatically active during war.') if wartime else None
+            await reply(i2,content=message,view=ChoiceView(self.owner_id,self.lang,opts,mode))
         await self.rows(i,'SELECT u.id,u.quantity,b.name FROM military_units u LEFT JOIN blueprints b ON b.id=u.blueprint_id WHERE u.nation_id=? ORDER BY u.id',(n['id'],),
                         lambda r:discord.SelectOption(label=f"#{r['id']} {r['name'] or 'Unit'} ×{r['quantity']}"[:100],value=str(r['id'])),unit)
 

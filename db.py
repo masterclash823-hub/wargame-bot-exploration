@@ -783,4 +783,9 @@ def init_db() -> None:
                 cur.execute("INSERT INTO economy_meta(key,value) VALUES('treasury_double_v1','1') ON CONFLICT(key) DO NOTHING")
     from province_population import migrate
     migrate()
+    from military_posture import activate_wartime_reserves
+    from world_service import world_lock
+    with atomic() as cur:
+        world_lock(cur)
+        activate_wartime_reserves(cur)
     print(f"[DB] init_db complete ({'PostgreSQL/Supabase' if USE_POSTGRES else 'SQLite'})", flush=True)

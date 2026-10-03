@@ -65,7 +65,7 @@ LAND_UNITS = {
     "siege_artillery":{"name":"Siege Artillery","attack":50,"defense":2, "hp":50,"speed":1,"cost":{"gold":100,"iron":25,"gunpowder":12},"requires_tech":5.0,"peace_upkeep":8.0,"desc":"Fortress breaker."},
 }
 
-WAR_MULT = 1.5  # Expedition posture; war alone no longer changes every unit's upkeep.
+WAR_MULT = 1.5  # Expedition posture; war activates reserves at the regular 100% rate.
 
 # Default blueprints copied to every new nation (tech <= 2 land, basic sloop)
 DEFAULT_BLUEPRINTS = [
@@ -97,9 +97,9 @@ def _log(nid, src, txt):
         c.execute("INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,?,?)", (nid,src,txt))
 
 def _at_war(nid):
+    from military_posture import at_war
     with db.cursor() as c:
-        c.execute("SELECT nation_a_id FROM relations WHERE status='war' AND (nation_a_id=? OR nation_b_id=?)", (nid,nid))
-        return c.fetchone() is not None
+        return at_war(c,nid)
 
 def _tech_naval(nat): return json.loads(nat["tech_json"]).get("naval", 3.0)
 def _tech_land(nat):  return json.loads(nat["tech_json"]).get("land",  3.0)

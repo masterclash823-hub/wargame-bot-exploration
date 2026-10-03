@@ -79,13 +79,9 @@ def _get_relation(a_id, b_id):
     return row["status"] if row else "peace"
 
 def _set_relation(a_id, b_id, status):
-    lo, hi = min(a_id, b_id), max(a_id, b_id)
-    with db.cursor() as c:
-        c.execute(
-            "INSERT INTO relations(nation_a_id,nation_b_id,status) VALUES(?,?,?) "
-            "ON CONFLICT(nation_a_id,nation_b_id) DO UPDATE SET status=excluded.status",
-            (lo, hi, status)
-        )
+    from treaty_service import set_relation
+    with db.atomic() as c:
+        set_relation(c,a_id,b_id,status)
 
 # ---------------------------------------------------------------------------
 # Combat resolution
@@ -863,7 +859,8 @@ class CombatCog(commands.Cog):
                 pass
 
         await interaction.response.send_message(
-            i18n.text('⚔️ War declared on **{p0}**. Units committed to battle plans use expedition upkeep (150%).', p0=target['name']),
+            (f"⚔️ Wypowiedziano wojnę **{target['name']}**. Rezerwy i mobilizowane jednostki obu stron są już aktywne (100% utrzymania). Jednostki w planach bitew pozostają na wyprawie (150%)."
+             if lang=='pl' else f"⚔️ War declared on **{target['name']}**. Both sides' reserves and mobilizing units are now active (100% upkeep). Units committed to battle plans remain deployed (150%)."),
         )
 
     @diplomacy_grp.command(name="peace",

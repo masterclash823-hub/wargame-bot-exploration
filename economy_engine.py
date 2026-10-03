@@ -456,6 +456,8 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
         settle_contracts(c,target)
         from company_economy import prepare as prepare_companies, finish as finish_companies
         company_plants=prepare_companies(c,target)
+        from military_posture import activate_wartime_reserves
+        activate_wartime_reserves(c)
         c.execute("UPDATE military_posture SET mode='active' WHERE mode='mobilizing' AND ready_month<=?",(target,))
         reports={}
         for n in nations:
