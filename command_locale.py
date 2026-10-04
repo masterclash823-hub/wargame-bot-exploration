@@ -3,6 +3,7 @@ from discord import Locale, app_commands
 import i18n
 
 PARAMETERS = {
+    'challenge_id':'id_wyzwania',
     'price':'cena','offer_id':'id_oferty',
     'map_file':'projekt_map','sync_owners':'zastąp_granice','format':'format',
     'state_id':'id_państwa','culture_id':'id_kultury','religion_id':'id_religii',

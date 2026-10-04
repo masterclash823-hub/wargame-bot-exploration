@@ -33,6 +33,9 @@ def set_relation(c,a,b,status):
     if status=='war':
         from military_posture import activate_wartime_reserves
         activate_wartime_reserves(c,(a,b))
+    else:
+        from war_service import expire
+        expire(c)
 
 
 def cells(raw):

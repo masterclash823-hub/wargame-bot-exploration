@@ -1,5 +1,18 @@
 # Wargame Bot
 
+## Wojny graczy i zgłoszenia państw
+
+**Panel → Dyplomacja i bitwy → Panel wojen** lub `/war status` pokazuje przeciwników,
+wyzwania do odpowiedzi, terminy i raporty. Atakujący wybiera swój plan oraz pole
+bitwy; obrońca wybiera plan obrony i potwierdza rozliczenie. Bot sam oblicza wynik,
+straty i premie fortyfikacji. Granice ustala osobno zaakceptowany traktat.
+
+Gracz bez państwa używa **Zgłoś państwo** w panelu lub `/nation found`, podaje
+nazwę, historię i prowincje startowe. GM otwiera **Zgłoszenia państw** w panelu
+administratora lub `/nation applications` i akceptuje bądź odrzuca zgłoszenie.
+Akceptacja przyznaje ziemię, stolicę, projekty jednostek i pakiet startowy.
+[Przebieg, komendy i zasady](docs/player-workflows.md).
+
 ## Panel administratora i coop
 
 `/admin panel` udostępnia wybór państwa i prowincji, zmianę populacji i biomu,
@@ -15,15 +28,15 @@ z jedenastoma krótkimi rozdziałami: start, gospodarka, cele, wymiany, traktaty
 wojsko, ekspansja, eventy i codzienna gra. Każdy rozdział zawiera scenkę,
 propozycję następnego ruchu oraz przycisk otwierający właściwą kategorię panelu.
 Można czytać kolejno albo wybierać temat z listy. Gracz bez państwa otrzymuje
-instrukcję kontaktu z GM. Przewodnik jest prywatny, działa po polsku i angielsku,
+instrukcję zgłoszenia państwa do akceptacji GM-a. Przewodnik jest prywatny, działa po polsku i angielsku,
 a jego przyciski nie wykonują za gracza zakupów ani decyzji.
 
 ## Kronika, traktaty i cele państwowe
 
 Panel pozwala wybrać opcjonalny cel za prestiż, przeglądać pamięć decyzji oraz
 negocjować traktaty z obustronną akceptacją, reparacjami i przekazywaniem prowincji.
-GM nadaje państwo przez `/nation found player:@gracz name:nazwa history:historia`
-i może przekazać je przez `/nation transfer`.
+Gracz zgłasza państwo przez `/nation found`, a GM akceptuje je w `/nation applications`.
+GM może później przekazać państwo przez `/nation transfer`.
 
 `/chronicle configure channel:#kronika` włącza codzienny raport do dwóch
 publicznych akcji graczy. Szczegółowe zasady, wpływ podatków i konfiguracja:
@@ -67,6 +80,9 @@ ofertę każdego surowca od innych państw. Droższe oferty pozostają zapisane.
 a `/market mine` pozwala wycofać własne oferty. [Zasady i komendy](docs/open-market.md).
 
 ## Podział strat w bitwie
+
+Automatyczne bitwy graczy używają neutralnych mnożników taktycznych i jednakowych
+wag narażenia. Poniższa ocena AI dotyczy opcjonalnego rozliczenia bitwy przez GM-a.
 
 AI ocenia narażenie każdego oddziału na podstawie obu planów, terenu i jednostek
 (waga 0,25–4; wraz z uzasadnieniem). Wynik bitwy ustala łączną pulę strat strony.

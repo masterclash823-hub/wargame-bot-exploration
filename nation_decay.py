@@ -55,6 +55,8 @@ def tick(c,target):
         c.execute("UPDATE dynastic_marriages SET status='ended' WHERE status IN ('proposed','active') AND (proposer_id=? OR recipient_id=?)",(nid,nid))
         c.execute("UPDATE guarantee_calls SET status='expired' WHERE status='pending' AND (attacker_id=? OR defender_id=? OR treaty_id IN (SELECT id FROM treaties WHERE proposer_id=? OR recipient_id=?))",(nid,nid,nid,nid))
         c.execute("UPDATE relations SET status='neutral' WHERE nation_a_id=? OR nation_b_id=?",(nid,nid))
+        from war_service import expire
+        expire(c,target)
         c.execute("UPDATE company_concessions SET status='ended' WHERE company_nation_id=? OR host_nation_id=?",(nid,nid))
         c.execute('DELETE FROM company_plants WHERE company_nation_id=? OR host_nation_id=?',(nid,nid))
         c.execute('SELECT state_json FROM companies WHERE nation_id=?',(nid,));company=c.fetchone()

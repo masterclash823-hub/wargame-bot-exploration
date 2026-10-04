@@ -278,17 +278,11 @@ class IdentityGoalTests(WorldFixture,unittest.TestCase):
 
 
 class WorldUITests(WorldFixture,unittest.IsolatedAsyncioTestCase):
-    async def test_creation_requires_live_gm_role_and_explicit_player(self):
-        player=NS(id=3,bot=False)
-        await NationCog.found.callback(None,interaction(1),player,'C','Lore')
+    async def test_player_creation_opens_application_without_creating_nation(self):
+        i=interaction(3);i.guild_id=100;i.response.send_modal=AsyncMock()
+        await NationCog.found.callback(None,i)
         self.assertEqual(len(self.balances()),2)
-        gm=interaction(999,[NS(id=20,name=config.GM_ROLE_NAME)])
-        await NationCog.found.callback(None,gm,player,'C','L'*4000)
-        self.assertEqual(self.balances()[2]['owner_id'],'3')
-        embed=gm.response.send_message.call_args.kwargs['embed']
-        self.assertEqual(sum(len(f.value) for f in embed.fields),4000)
-        self.assertLessEqual(len(embed),6000)
-        self.assertLessEqual(len(embed.description),4096)
+        self.assertEqual(len(i.response.send_modal.call_args.args[0].inputs),5)
 
     async def test_transfer_confirmation_rechecks_role(self):
         gm=interaction(999,[NS(id=20,name=config.GM_ROLE_NAME)])

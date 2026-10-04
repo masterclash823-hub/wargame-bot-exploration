@@ -15,6 +15,7 @@ from utils import get_nation_by_owner, gm_only
 
 
 PL = {
+    'wars':'Panel wojen', 'application':'Moje zgłoszenie', 'found':'Zgłoś państwo',
     'stability':'Stabilność i zadowolenie',
     'ruins':'Ruiny', 'company':'Kompania', 'company_offers':'Oferty inwestycji',
     'exploration':'Eksploracja','captives':'Jeńcy',
@@ -27,7 +28,7 @@ PL = {
     "economy": "Gospodarka", "military": "Wojsko", "technology":"Technologie", "algae_locations":"Stanowiska algae", "algae_programs":"Programy algae", "territory": "Terytorium",
     "diplomacy": "Dyplomacja i bitwy", "events": "Wydarzenia", "settings": "Ustawienia",
     "choose": "Wybierz kategorię", "refresh": "Odśwież", "stats": "Statystyki państwa",
-    "resources": "Zasoby", "calendar": "Kalendarz", "found": "Załóż państwo",
+    "resources": "Zasoby", "calendar": "Kalendarz",
     "owned_buildings":"Zbudowane budynki", "income":"Bilans surowców", "market":"Wolny rynek",
     "build": "Zbuduj budynek", "buildings": "Katalog budynków", "yield": "Produkcja prowincji",
     "trades": "Wymiany", "new_trade": "Nowa wymiana", "projects": "Projekty",
@@ -43,7 +44,7 @@ PL = {
     "war": "Wypowiedz wojnę", "peace": "Zawrzyj pokój", "alliance": "Zawrzyj sojusz",
     "battle_plan": "Wyślij plan bitwy", "battle_invite":"Zaproś armię", "battle_join":"Dołącz armię", "battles": "Raporty bitew", "event_list": "Lista wydarzeń",
     "event_play": "Rozegraj wydarzenie", "help": "Pomoc", "tutorial": "Poradnik", "coop":"Współdzielenie państwa",
-    "no_nation": "Nie masz jeszcze państwa. Poproś Game Mastera o utworzenie i nadanie go Tobie.",
+    "no_nation": "Nie masz jeszcze państwa. Wybierz Zgłoś państwo; Game Master zatwierdzi gotowe zgłoszenie.",
     "private": "Ten panel jest prywatny. Publiczne wydarzenia, wojny i osiągnięcia mogą trafić do kroniki.",
     "not_yours": "To nie jest Twój panel.", "empty": "Brak dostępnych pozycji.",
     "shortened": "Pokazano pierwsze 25 pozycji.", "select": "Wybierz pozycję",
@@ -53,6 +54,7 @@ PL = {
 
 def tr(lang: str, key: str) -> str:
     en = {
+        'wars':'War dashboard', 'application':'My application', 'found':'Apply for a nation',
         'stability':'Stability & happiness',
         'ruins':'Ruins', 'company':'Company', 'company_offers':'Investment offers',
         'exploration':'Exploration','captives':'Captives',
@@ -64,7 +66,7 @@ def tr(lang: str, key: str) -> str:
         "panel":"Player panel","open":"Open player panel","home":"Overview","economy":"Economy",
         "military":"Military", "technology":"Technology", "algae_locations":"Algae deposits", "algae_programs":"Algae programs","territory":"Territory","diplomacy":"Diplomacy & battles",
         "events":"Events","settings":"Settings","choose":"Choose a category","refresh":"Refresh",
-        "stats":"Nation stats","resources":"Resources","calendar":"Calendar","found":"Found a nation",
+        "stats":"Nation stats","resources":"Resources","calendar":"Calendar",
         "owned_buildings":"Built buildings", "income":"Resource balance", "market":"Open market",
         "build":"Construct building","buildings":"Building catalogue","yield":"Province yield",
         "trades":"Trades","new_trade":"New trade","projects":"Projects","new_project":"Propose project",
@@ -79,7 +81,7 @@ def tr(lang: str, key: str) -> str:
         "war":"Declare war","peace":"Make peace","alliance":"Form alliance",
         "battle_plan":"Submit battle plan","battle_invite":"Invite an army","battle_join":"Join an army","battles":"Battle reports","event_list":"Event list",
         "event_play":"Play event","help":"Help","tutorial":"Tutorial","coop":"Co-op access",
-        "no_nation":"You do not have a nation yet. Ask the Game Master to create and assign one to you.",
+        "no_nation":"You do not have a nation yet. Choose Apply for a nation; the Game Master approves the completed application.",
         "private":"This panel is private. Public events, wars and milestones may appear in the chronicle.","not_yours":"This is not your panel.",
         "empty":"There are no available items.","shortened":"Only the first 25 items are shown.",
         "select":"Choose an item","published":"The player panel has been published.",
@@ -239,7 +241,7 @@ ACTIONS = {
                  ("new_blueprint","🧰"),("posture","⏳"),("captives","⛓️")],
     "territory": [("provinces","🗺️"),("province","🔎"),("province_buy","🛒"),("province_terraform","🌱"),("colonies","🏝️"),("colony_view","🔎"),
                   ("colony_found","🚩"),("colony_develop","📈"),("colony_expand","🧭"),("routes","🚢"),("settlers","👥")],
-    "diplomacy": [("relations","📜"),("war","⚔️"),("peace","🕊️"),("alliance","🤝"),
+    "diplomacy": [("wars","⚔️"),("relations","📜"),("war","⚔️"),("peace","🕊️"),("alliance","🤝"),
                   ("battle_plan","🗒️"),("battle_invite","📨"),("battle_join","🫱🏻‍🫲🏽"),("battles","📖"),("treaties","📜"),("new_treaty","📝"),("calls","🛡️")],
     "events": [("ruins","🏚️"),("event_list","📋"),("event_play","🎭"),("memories","🧠"),("exploration","🧭")],
     "settings": [("help","❓"),("tutorial","📘"),("language_pl","🇵🇱"),("language_en","🇬🇧"),("coop","🤝")],
@@ -267,6 +269,8 @@ class PlayerPanel(OwnedView):
         actions = list(ACTIONS[self.section])
         from companies import unlocked
         nation = get_nation_by_owner(str(self.owner_id))
+        if not nation and self.section=='home':
+            actions=[('found','📝'),('application','📨'),('tutorial','📘'),('help','❓')]
         if self.section == 'economy' and unlocked(nation):
             actions.append(('company', '🏢'))
         if self.section == 'diplomacy' and nation:
@@ -348,6 +352,8 @@ class PlayerPanel(OwnedView):
         await reply(interaction, content=note, view=ChoiceView(self.owner_id, self.lang, options, handler, multiple=multiple))
 
     async def dispatch(self, interaction: discord.Interaction, action: str):
+        if action in ('found','application'):
+            await invoke(self.cog('NationCog'),action,interaction);return
         if action=='coop':
             from coop_ui import show
             await show(interaction);return
@@ -369,6 +375,7 @@ class PlayerPanel(OwnedView):
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
+            'wars':('WarsCog','status',[]),
             'stability':('EconomyControlCog','stability',[]),
             'market':('MarketCog','market_list',[]),
             'owned_buildings':('EconomyCog','buildings_owned',[]), 'income':('EconomyControlCog','income',[]),

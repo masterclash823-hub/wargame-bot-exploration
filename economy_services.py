@@ -101,6 +101,8 @@ def assert_ready(c,nid,unit_id):
 def submit_plan(nid, forces, location, orders, note, *, orders_blob=None):
     """Lock the nation before rechecking commitments and reserving units."""
     with db.atomic() as c:
+        from world_service import world_lock
+        world_lock(c)
         lock_nation(c,nid)
         from battle_coalitions import committed
         fresh=[]

@@ -32,6 +32,7 @@ import i18n
 import battle_resolution
 import battle_plan_text
 from utils import short_date, EmbedPager
+from world_service import tr
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +343,7 @@ class CombatCog(commands.Cog):
             with db.cursor() as c:
                 c.execute(
                     "SELECT id, forces_json FROM battle_plans "
-                    "WHERE nation_id=? AND status IN ('unmatched','matched')",
+                    "WHERE nation_id=? AND status IN ('unmatched','offered','matched')",
                     (nat["id"],)
                 )
                 existing_plans = c.fetchall()
@@ -401,7 +402,8 @@ class CombatCog(commands.Cog):
 
         embed = discord.Embed(
             title=i18n.text('⚔️ Battle Plan #{p0} Submitted', p0=plan_id),
-            description=i18n.text('Your plan has been received. The Game Master will match it when opposing plans arrive.'),
+            description=tr('Plan zapisany. W /war status możesz wysłać wyzwanie lub wybrać ten plan do obrony. Sojusznika dołącz przed wysłaniem wyzwania. GM nadal może łączyć plany nietypowych bitew.',
+                           'Plan saved. Use /war status to send a challenge or select this plan for defense. Add an ally before sending the challenge. A GM can still match special battles.'),
             color=discord.Color.orange(),
         )
         embed.add_field(name=i18n.text('Location/Direction'), value=location,              inline=False)
@@ -412,7 +414,7 @@ class CombatCog(commands.Cog):
             embed.add_field(name=i18n.text('Committed units'),
                             value=", ".join(i18n.text('Group #{p0}', p0=f['unit_id']) for f in forces),
                             inline=False)
-        embed.set_footer(text=i18n.text('Only you and the GM can see this plan.'))
+        embed.set_footer(text=tr('Rozkazy widzą tylko uczestnicy Twojej strony i GM.', 'Only your side’s participants and the GM can see these orders.'))
         if not forces:
             embed.add_field(name='⚠️', value=i18n.text('No units assigned. This plan has no registered forces; a text note does not assign units.'), inline=False)
         await send(embed=embed, file=battle_plan_text.plan_file(plan_id, plan_data), ephemeral=True)
@@ -665,9 +667,9 @@ class CombatCog(commands.Cog):
                     ),
                     inline=False,
                 )
-            plan_field(plan_a, nat_a, i18n.text("Attacker's Plan"))
-            plan_field(plan_b, nat_b, i18n.text("Defender's Plan"))
-            if battle["ai_modifier_json"] and battle["ai_modifier_json"] != "{}":
+            if is_gm or (nat and nat['id'] in side_a):plan_field(plan_a, nat_a, i18n.text("Attacker's Plan"))
+            if is_gm or (nat and nat['id'] in side_b):plan_field(plan_b, nat_b, i18n.text("Defender's Plan"))
+            if is_gm and battle["ai_modifier_json"] and battle["ai_modifier_json"] != "{}":
                 ai = json.loads(battle["ai_modifier_json"])
                 embed.add_field(
                     name=i18n.text('🤖 AI Modifier'),

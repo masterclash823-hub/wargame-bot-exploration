@@ -273,9 +273,7 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
     battlefield = location_context(final_location)
     atk_mod = modifier(atk_override, override=True) if atk_override else ai["attacker_modifier"]
     def_mod = modifier(def_override, override=True) if def_override else ai["defender_modifier"]
-    with db.cursor() as c:
-        if not db.USE_POSTGRES:
-            c.execute("BEGIN IMMEDIATE")
+    with db.atomic() as c:
         from world_service import world_lock
         world_lock(c)
         lock = " FOR UPDATE" if db.USE_POSTGRES else ""

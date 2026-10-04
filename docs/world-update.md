@@ -156,12 +156,14 @@ Samo pasywne narastanie technologii nie wystarcza do celu naukowego. Po
 ukończeniu można wybrać następny cel. Nagrody nie zwiększają dochodów ani siły
 wojska. Podgląd gospodarki nie nalicza prestiżu, płatności ani postępu na stałe.
 
-## Państwo nadawane przez GM
+## Państwo zgłaszane przez gracza
 
-GM używa `/nation found player:@gracz name:nazwa history:historia`.
-Flaga i ustrój są opcjonalne. Gracz nie tworzy państwa samodzielnie: panel
-osoby bez państwa prosi o kontakt z Game Masterem. Jedno konto może mieć
-jedno państwo. Komenda odrzuca konta botów i zajęte nazwy.
+Gracz używa `/nation found` lub formularza **Zgłoś państwo** w panelu. Wpisuje
+nazwę, historię i 1–25 połączonych, niezajętych prowincji lądowych (pierwsza to
+stolica); flaga i ustrój są opcjonalne. GM używa `/nation applications` lub
+kolejki zgłoszeń w panelu administratora. Jedno konto może mieć jedno państwo;
+współgracz istniejącego kraju nie może zakładać kolejnego. Dopiero akceptacja
+nadaje państwo, prowincje i pakiet startowy. [Szczegóły](player-workflows.md).
 
 `/nation transfer nation:nazwa player:@gracz` pokazuje GM podgląd przekazania
 z przyciskiem potwierdzenia. Nowy gracz musi nie mieć innego państwa.

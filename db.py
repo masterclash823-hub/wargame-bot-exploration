@@ -48,6 +48,19 @@ CREATE TABLE IF NOT EXISTS nations (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS nation_applications (
+    id SERIAL PRIMARY KEY,
+    player_id TEXT NOT NULL, guild_id TEXT NOT NULL,
+    name TEXT NOT NULL, name_key TEXT NOT NULL, history TEXT NOT NULL,
+    flag TEXT NOT NULL DEFAULT '', government TEXT NOT NULL DEFAULT '',
+    cells_json TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending',
+    version INTEGER NOT NULL DEFAULT 0, reviewer_id TEXT, reason TEXT NOT NULL DEFAULT '',
+    nation_id INTEGER REFERENCES nations(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_application_player ON nation_applications(player_id) WHERE status='pending';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_application_name ON nation_applications(name_key) WHERE status='pending';
+
 CREATE TABLE IF NOT EXISTS market_offers (
     id SERIAL PRIMARY KEY,
     nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
@@ -341,6 +354,18 @@ CREATE TABLE IF NOT EXISTS province_captives (
     province_id INTEGER PRIMARY KEY REFERENCES provinces(id) ON DELETE CASCADE,
     quantity INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS war_engagements (
+    id SERIAL PRIMARY KEY,
+    attacker_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    defender_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    attacker_owner TEXT NOT NULL, defender_owner TEXT NOT NULL,
+    plan_id INTEGER NOT NULL REFERENCES battle_plans(id) ON DELETE CASCADE,
+    cell_id INTEGER NOT NULL, created_month INTEGER NOT NULL, expires_month INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    battle_id INTEGER REFERENCES battles(id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_engagement_plan ON war_engagements(plan_id) WHERE status='pending';
+
 CREATE TABLE IF NOT EXISTS events (
     id            SERIAL PRIMARY KEY,
     nation_id     INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,

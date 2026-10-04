@@ -389,7 +389,8 @@ HELP_SECTIONS = {
         "title": "🏳️ Nation",
         "color": discord.Color.blue(),
         "fields": [
-            ("Starting a nation", "Ask the Game Master to create and assign your nation."),
+            ("/nation found", "Submit your nation's name, lore and connected starting provinces. The GM reviews and approves it."),
+            ("/nation application", "Check the decision or edit your pending application. Also available in /panel."),
             ("/goals status", "Choose one optional goal; earn 10 prestige. Also available in the panel."),
             ("/memories", "Read your private decision archive and recorded consequences."),
             ("/nation stats [name]", "View a nation's stats."),
@@ -490,6 +491,8 @@ HELP_SECTIONS = {
         "color": discord.Color.dark_orange(),
         "fields": [
             ("/battle plan", "Submit a battle plan — location (free text), orders, optional unit IDs and image URL."),
+            ("/war status", "War inbox: enemies, challenges and next actions. Send a plan; the defender confirms and the bot resolves the battle."),
+            ("/war attack /war defend", "Automatic battles use stats, morale, forts and the normal roll, with tactical modifiers ×1. Plan prose gives no bonus. Challenges expire after 2 game months."),
             ("/battle invite <plan> <nation>", "Invite one allied nation, or one fighting the same enemy, to add its own army."),
             ("/battle join <plan> <unit IDs>", "Accept an invitation and choose your own groups; /battle leave withdraws before matching."),
             ("/battle view <id>", "View a battle. Plans are private to parties and GM only."),
@@ -514,7 +517,7 @@ GM_HELP_FIELDS = [
     ("/ranking [category] [limit] [channel]", "Preview a nation ranking; choose a channel to publish. Full ranking attached as TXT."),
     ("/goals create <nation> <title> <description>", "Create a custom goal for a nation; completion awards 10 prestige."),
     ("/goals status <nation> · /goals complete <nation> <goal_id>", "Review a goal and confirm completion with the button; rewards are granted once."),
-    ("/nation found <player> <name> <history>", "Create a nation and assign it to a player. Existing nations remain unchanged."),
+    ("/nation applications", "Review player applications; approve the nation, starting provinces, capital and supplies in one step, or reject with a reason."),
     ("/nation transfer <nation> <player>", "Transfer ownership after reviewing inherited obligations. Pending proposals are cancelled."),
     ("/chronicle configure <channel> [hour_utc] [language]", "Enable a daily report of up to two public actions. Default: 18:00 UTC, Polish."),
     ("/chronicle preview / pause / status / retry", "Preview, pause and inspect reports; explicitly retry a failed or uncertain delivery."),
@@ -569,7 +572,8 @@ HELP_SECTIONS_PL = {
         "title": "🏳️ Naród",
         "color": discord.Color.blue(),
         "fields": [
-            ("Pierwsze państwo", "Poproś Game Mastera o utworzenie państwa i nadanie go Tobie."),
+            ("/nation found", "Zgłoś nazwę, historię i połączone prowincje startowe państwa. GM sprawdza i akceptuje zgłoszenie."),
+            ("/nation application", "Sprawdź decyzję lub edytuj oczekujące zgłoszenie. Dostępne też w /panel."),
             ("/goals status", "Wybierz jeden opcjonalny cel za 10 prestiżu. Dostępne także w panelu."),
             ("/memories", "Czytaj prywatne archiwum decyzji i ich zapisanych skutków."),
             ("/nation stats [nazwa]", "Statystyki narodu. Puste = twój naród."),
@@ -656,6 +660,8 @@ HELP_SECTIONS_PL = {
         "color": discord.Color.dark_orange(),
         "fields": [
             ("/battle plan", "Wyślij plan bitwy — lokalizacja (tekst), rozkazy, opcjonalne ID jednostek i URL mapy."),
+            ("/war status", "Panel wojen: przeciwnicy, wyzwania i następne kroki. Wyślij plan; po potwierdzeniu obrony bot rozlicza bitwę."),
+            ("/war attack /war defend", "Automatyczna bitwa: statystyki, morale, fortyfikacje i zwykły los, mnożniki taktyczne ×1. Opis nie daje premii. Wyzwania wygasają po 2 miesiącach gry."),
             ("/battle invite <plan> <państwo>", "Zaproś jedno państwo sojusznicze lub walczące z tym samym przeciwnikiem do dodania własnej armii."),
             ("/battle join <plan> <ID jednostek>", "Przyjmij zaproszenie i wybierz własne grupy; /battle leave wycofuje je przed dopasowaniem."),
             ("/battle view <id>", "Szczegóły bitwy. Plany prywatne dla stron i GM."),
@@ -696,7 +702,7 @@ GM_HELP_FIELDS_PL = [
     ("/goals create <nation> <title> <description>", "Utwórz opisowy cel dla państwa; wykonanie daje 10 prestiżu."),
     ("/goals status <nation> · /goals complete <nation> <goal_id>", "Sprawdź cel i potwierdź wykonanie przyciskiem; nagroda jest jednorazowa."),
     ("/algae deposit_add / deposit_remove <cell_id>", "Ręcznie dodaj lub usuń złoże. Limit: 5. Import nie tworzy złóż."),
-    ("/nation found <gracz> <nazwa> <historia>", "Utwórz państwo i nadaj je graczowi. Istniejące państwa pozostają bez zmian."),
+    ("/nation applications", "Rozpatrz zgłoszenia graczy: jednym kliknięciem utwórz państwo z prowincjami, stolicą i pakietem startowym albo odrzuć z powodem."),
     ("/nation transfer <naród> <gracz>", "Przekaż państwo po sprawdzeniu przejmowanych zobowiązań. Oczekujące propozycje zostaną anulowane."),
     ("/chronicle configure <kanał> [godzina_utc] [język]", "Włącz codzienny raport do dwóch publicznych akcji. Domyślnie: 18:00 UTC, polski."),
     ("/chronicle preview / pause / status / retry", "Podgląd, wstrzymanie i stan raportów; świadome ponowienie nieudanej lub niepewnej wysyłki."),
@@ -1712,22 +1718,7 @@ class EconomyCog(commands.Cog):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
 
-        STARTER = {
-            "food":       200,
-            "wood":       150,
-            "stone":      100,
-            "iron":        80,
-            "copper":      40,
-            "coal":        40,
-            "clay":        60,
-            "cloth":       30,
-            "tar":         30,
-            "gunpowder":   20,
-            "horses":      10,
-            "spices":      10,
-            "silk":         5,
-        }
-        STARTER_GOLD = 500
+        from nation_applications import STARTER,STARTER_GOLD
 
         with db.cursor() as c:
             if nation.lower() in ("all", "wszyscy", "wszystkie"):

@@ -24,7 +24,7 @@ class AdminPanel(i18n.LocalizedView):
                          ('unclaim','Odbierz prowincje','Unclaim provinces'),('population','Zmień populację','Set population'),
                          ('biome','Zmień biom','Set biome'),('coast','Ustaw wybrzeże','Set coastline'),
                          ('normalize','Uśrednij populację państwa','Normalize nation population')],
-            'nations':[('found','Utwórz państwo','Create nation'),('transfer','Przekaż państwo','Transfer nation'),
+            'nations':[('applications','Zgłoszenia państw','Nation applications'),('transfer','Przekaż państwo','Transfer nation'),
                        ('coop','Współdzielenie','Co-op access'),('stats','Statystyki','Statistics'),('starter','Pakiet startowy','Starter pack')],
             'events':[('generate','Generuj dla państwa','Generate for nation'),('all','Generuj dla wszystkich','Generate for all'),
                       ('events','Lista eventów','Event list'),('post_private','Opublikuj prywatnie','Publish privately'),
@@ -165,12 +165,7 @@ class AdminPanel(i18n.LocalizedView):
                 dict(label=tr('ID kultury (puste = bez zmian)','Culture ID (blank = unchanged)'),required=False,max_length=5),
                 dict(label=tr('ID religii (puste = bez zmian)','Religion ID (blank = unchanged)'),required=False,max_length=5)],submit)
         elif key=='normalize':await self.call(i,'EconomyControlCog','population',self.nation()['name'])
-        elif key=='found':
-            async def chosen(j,member):
-                async def submit(k,name,lore):await self.call(k,'NationCog','found',member,name,lore)
-                await self.form(j,tr('Nowe państwo','New nation'),[dict(label=tr('Nazwa','Name'),max_length=80),
-                    dict(label=tr('Historia','Lore'),style=discord.TextStyle.paragraph,max_length=4000)],submit)
-            await self.player(i,chosen)
+        elif key=='applications':await self.call(i,'NationCog','applications')
         elif key=='transfer':
             name=self.nation()['name']
             async def chosen(j,member):await self.call(j,'NationCog','transfer',name,member)

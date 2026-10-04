@@ -56,7 +56,7 @@ def validate_side(c,plan):
 
 
 def committed(c,unit_id):
-    c.execute("SELECT * FROM battle_plans WHERE status IN ('unmatched','matched') ORDER BY id")
+    c.execute("SELECT * FROM battle_plans WHERE status IN ('unmatched','offered','matched') ORDER BY id")
     return next((plan['id'] for plan in c.fetchall() if any(x['unit_id']==unit_id for x in entries(plan))),None)
 
 

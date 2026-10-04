@@ -133,6 +133,8 @@ def transfer_nation(nid,new_owner,expected_owner,gm_id):
         from market_service import refund
         refund(c,nid)
         c.execute('UPDATE nations SET owner_id=? WHERE id=?',(str(new_owner),nid))
+        from war_service import expire
+        expire(c)
         c.execute('INSERT INTO ownership_changes(nation_id,previous_owner,new_owner,gm_id) VALUES(?,?,?,?)',
                   (nid,n['owner_id'],str(new_owner),str(gm_id)))
         c.execute("UPDATE treaties SET status='cancelled' WHERE status IN ('draft','proposed') AND (proposer_id=? OR recipient_id=?)",(nid,nid))

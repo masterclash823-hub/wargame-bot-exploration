@@ -33,7 +33,7 @@
 
   "gm_only": "Ta komenda wymaga roli Game Master.",
   "generic_error": "Coś poszło nie tak. Spróbuj ponownie lub poproś Game Mastera o pomoc.",
-  "no_nation": "Nie masz jeszcze państwa. Poproś Game Mastera o utworzenie i nadanie go Tobie.",
+  "no_nation": "Nie masz jeszcze państwa. Zgłoś je przez /nation found lub /panel. Game Master musi tylko zaakceptować zgłoszenie.",
 
   "nation_already_exists": "Masz juz narod: **{nation}**. Kazdy gracz moze zalozyc tylko jeden.",
   "nation_name_taken": "Nazwa **{name}** jest juz zajeta. Wybierz inna.",
