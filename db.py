@@ -296,6 +296,13 @@ CREATE TABLE IF NOT EXISTS battle_plans (
     status        TEXT NOT NULL DEFAULT 'unmatched',
     submitted_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS battle_plan_allies (
+    plan_id INTEGER PRIMARY KEY REFERENCES battle_plans(id) ON DELETE CASCADE,
+    nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'invited',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_battle_plan_allies_nation ON battle_plan_allies(nation_id,status);
 
 CREATE TABLE IF NOT EXISTS battles (
     id                     SERIAL PRIMARY KEY,

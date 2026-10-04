@@ -41,7 +41,7 @@ PL = {
     "colony_develop": "Rozwiń kolonię", "colony_expand": "Rozszerz kolonię",
     "routes": "Szlaki handlowe", "relations": "Relacje",
     "war": "Wypowiedz wojnę", "peace": "Zawrzyj pokój", "alliance": "Zawrzyj sojusz",
-    "battle_plan": "Wyślij plan bitwy", "battles": "Raporty bitew", "event_list": "Lista wydarzeń",
+    "battle_plan": "Wyślij plan bitwy", "battle_invite":"Zaproś armię", "battle_join":"Dołącz armię", "battles": "Raporty bitew", "event_list": "Lista wydarzeń",
     "event_play": "Rozegraj wydarzenie", "help": "Pomoc", "tutorial": "Poradnik", "coop":"Współdzielenie państwa",
     "no_nation": "Nie masz jeszcze państwa. Poproś Game Mastera o utworzenie i nadanie go Tobie.",
     "private": "Ten panel jest prywatny. Publiczne wydarzenia, wojny i osiągnięcia mogą trafić do kroniki.",
@@ -77,7 +77,7 @@ def tr(lang: str, key: str) -> str:
         "colony_develop":"Develop colony","colony_expand":"Expand colony",
         "routes":"Trade routes","relations":"Relations",
         "war":"Declare war","peace":"Make peace","alliance":"Form alliance",
-        "battle_plan":"Submit battle plan","battles":"Battle reports","event_list":"Event list",
+        "battle_plan":"Submit battle plan","battle_invite":"Invite an army","battle_join":"Join an army","battles":"Battle reports","event_list":"Event list",
         "event_play":"Play event","help":"Help","tutorial":"Tutorial","coop":"Co-op access",
         "no_nation":"You do not have a nation yet. Ask the Game Master to create and assign one to you.",
         "private":"This panel is private. Public events, wars and milestones may appear in the chronicle.","not_yours":"This is not your panel.",
@@ -240,7 +240,7 @@ ACTIONS = {
     "territory": [("provinces","🗺️"),("province","🔎"),("province_buy","🛒"),("province_terraform","🌱"),("colonies","🏝️"),("colony_view","🔎"),
                   ("colony_found","🚩"),("colony_develop","📈"),("colony_expand","🧭"),("routes","🚢"),("settlers","👥")],
     "diplomacy": [("relations","📜"),("war","⚔️"),("peace","🕊️"),("alliance","🤝"),
-                  ("battle_plan","🗒️"),("battles","📖"),("treaties","📜"),("new_treaty","📝"),("calls","🛡️")],
+                  ("battle_plan","🗒️"),("battle_invite","📨"),("battle_join","🫱🏻‍🫲🏽"),("battles","📖"),("treaties","📜"),("new_treaty","📝"),("calls","🛡️")],
     "events": [("ruins","🏚️"),("event_list","📋"),("event_play","🎭"),("memories","🧠"),("exploration","🧭")],
     "settings": [("help","❓"),("tutorial","📘"),("language_pl","🇵🇱"),("language_en","🇬🇧"),("coop","🤝")],
 }
@@ -400,6 +400,7 @@ class PlayerPanel(OwnedView):
             "colony_expand":self.choose_colony_expand,
             "war":lambda i:self.choose_nation(i,"declare_war"), "peace":lambda i:self.choose_nation(i,"make_peace"),
             "alliance":lambda i:self.choose_nation(i,"alliance"), "battle_plan":self.choose_battle_units,
+            "battle_invite":self.choose_battle_invite,"battle_join":self.choose_battle_join,
             "battles":self.choose_battle, "event_play":self.choose_event,
             'posture':self.choose_posture, 'settlers':self.choose_settlers, 'contracts':self.choose_contract,
         }
@@ -622,10 +623,36 @@ class PlayerPanel(OwnedView):
         if rows: await reply(i,content=(tr(self.lang,"shortened") if len(rows)>25 else None),view=ChoiceView(self.owner_id,self.lang,opts,units,multiple=True))
         else: await units(i,"")
 
+    async def choose_battle_invite(self,i):
+        n=get_nation_by_owner(str(self.owner_id))
+        async def plan(i2,pid):
+            async def nation(i3,name):await invoke(self.cog('CombatCog'),'battle_invite',i3,int(pid),name)
+            await self.rows(i2,"SELECT name,flag FROM nations WHERE id<>? ORDER BY name",(n['id'],),
+                lambda r:discord.SelectOption(label=f"{flag_text(r['flag'])} {r['name']}"[:100],value=r['name']),nation)
+        await self.rows(i,"SELECT id,provinces_json FROM battle_plans WHERE nation_id=? AND status='unmatched' ORDER BY id DESC",(n['id'],),
+            lambda r:discord.SelectOption(label=f"Plan #{r['id']}",value=str(r['id']),description=str(json.loads(r['provinces_json'] or '[]')[:1])[:100]),plan)
+
+    async def choose_battle_join(self,i):
+        n=get_nation_by_owner(str(self.owner_id))
+        async def plan(i2,pid):
+            with db.cursor() as cur:
+                cur.execute("SELECT u.id,u.quantity,b.name FROM military_units u LEFT JOIN blueprints b ON b.id=u.blueprint_id "
+                            "LEFT JOIN military_posture m ON m.unit_id=u.id WHERE u.nation_id=? AND (m.mode IS NULL OR m.mode NOT IN ('reserve','mobilizing')) ORDER BY u.id",(n['id'],))
+                rows=cur.fetchall()
+            opts=[discord.SelectOption(label=f"#{r['id']} {r['name'] or 'Unit'} ×{r['quantity']}"[:100],value=str(r['id'])) for r in rows[:25]]
+            async def units(i3,ids):await invoke(self.cog('CombatCog'),'battle_join',i3,int(pid),ids)
+            if not opts:await reply(i2,content=tr(self.lang,'empty'));return
+            await reply(i2,content=(tr(self.lang,'shortened') if len(rows)>25 else None),view=ChoiceView(self.owner_id,self.lang,opts,units,multiple=True))
+        await self.rows(i,"SELECT x.plan_id,p.provinces_json,n.name FROM battle_plan_allies x JOIN battle_plans p ON p.id=x.plan_id "
+                         "JOIN nations n ON n.id=p.nation_id WHERE x.nation_id=? AND x.status='invited' AND p.status='unmatched' ORDER BY x.plan_id DESC",(n['id'],),
+            lambda r:discord.SelectOption(label=f"Plan #{r['plan_id']} · {r['name']}"[:100],value=str(r['plan_id']),description=str(json.loads(r['provinces_json'] or '[]')[:1])[:100]),plan)
+
     async def choose_battle(self,i):
         n=get_nation_by_owner(str(self.owner_id))
         async def done(i2,v): await invoke(self.cog("CombatCog"),"battle_view",i2,int(v))
-        await self.rows(i,"SELECT DISTINCT b.id,b.status FROM battles b JOIN battle_plans a ON a.id=b.plan_a_id JOIN battle_plans d ON d.id=b.plan_b_id WHERE a.nation_id=? OR d.nation_id=? ORDER BY b.id DESC",(n['id'],n['id']),lambda r:discord.SelectOption(label=f"Battle #{r['id']}",value=str(r['id']),description=r['status']),done)
+        await self.rows(i,"SELECT DISTINCT b.id,b.status FROM battles b JOIN battle_plans a ON a.id=b.plan_a_id JOIN battle_plans d ON d.id=b.plan_b_id "
+                         "LEFT JOIN battle_plan_allies x ON x.plan_id IN (a.id,d.id) AND x.status='joined' "
+                         "WHERE a.nation_id=? OR d.nation_id=? OR x.nation_id=? ORDER BY b.id DESC",(n['id'],n['id'],n['id']),lambda r:discord.SelectOption(label=f"Battle #{r['id']}",value=str(r['id']),description=r['status']),done)
 
     async def choose_event(self,i):
         n=get_nation_by_owner(str(self.owner_id))

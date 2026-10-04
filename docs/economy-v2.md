@@ -173,6 +173,21 @@ zgodność prognozy z rozliczeniem, migrację, limity surowców, koszty ulepsze�
 umowy, rezerwę i wyłączność statków. PostgreSQL, Discord i Render wymagają
 sprawdzenia integracyjnego przy wdrożeniu; testy używają tymczasowej bazy SQLite.
 
+## Wspólne armie w bitwie
+
+Autor oczekującego planu może użyć `/battle invite <plan_id> <państwo>` albo
+przycisku **Zaproś armię** w panelu. Zaproszone państwo akceptuje udział przez
+`/battle join` lub **Dołącz armię** i samo wskazuje własne grupy jednostek. Plan
+może obejmować najwyżej dwa państwa po jednej stronie; muszą być sojusznikami
+albo walczyć z tym samym przeciwnikiem.
+
+Każda grupa zachowuje właściciela, jego technologię, morale i osobne straty.
+Uczestnik może wycofać swoje oddziały komendą `/battle leave` do czasu
+dopasowania planów przez GM. System blokuje powtórne użycie tej samej grupy
+oraz umieszczenie państwa po obu stronach bitwy. W bitwach koalicyjnych nie
+tworzy się automatycznie puli jeńców, ponieważ wymagałaby osobnego wskazania
+państwa, z którego pochodzi ludność.
+
 
 ## Ręczne przydziały pracowników
 

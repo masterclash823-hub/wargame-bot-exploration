@@ -490,6 +490,8 @@ HELP_SECTIONS = {
         "color": discord.Color.dark_orange(),
         "fields": [
             ("/battle plan", "Submit a battle plan — location (free text), orders, optional unit IDs and image URL."),
+            ("/battle invite <plan> <nation>", "Invite one allied nation, or one fighting the same enemy, to add its own army."),
+            ("/battle join <plan> <unit IDs>", "Accept an invitation and choose your own groups; /battle leave withdraws before matching."),
             ("/battle view <id>", "View a battle. Plans are private to parties and GM only."),
             ("/diplomacy war <nation>", "Declare war and immediately activate both sides' reserves (100% upkeep). Battle plans use expedition posture (150%)."),
             ("/diplomacy peace <nation>", "Propose peace; the recipient must accept the terms in the treaty panel."),
@@ -654,6 +656,8 @@ HELP_SECTIONS_PL = {
         "color": discord.Color.dark_orange(),
         "fields": [
             ("/battle plan", "Wyślij plan bitwy — lokalizacja (tekst), rozkazy, opcjonalne ID jednostek i URL mapy."),
+            ("/battle invite <plan> <państwo>", "Zaproś jedno państwo sojusznicze lub walczące z tym samym przeciwnikiem do dodania własnej armii."),
+            ("/battle join <plan> <ID jednostek>", "Przyjmij zaproszenie i wybierz własne grupy; /battle leave wycofuje je przed dopasowaniem."),
             ("/battle view <id>", "Szczegóły bitwy. Plany prywatne dla stron i GM."),
             ("/diplomacy war <naród>", "Wypowiedz wojnę i od razu aktywuj rezerwy obu stron (100% utrzymania). Plany bitew wymagają wyprawy (150%)."),
             ("/diplomacy peace <naród>", "Zaproponuj pokój; odbiorca musi zaakceptować warunki w panelu traktatów."),

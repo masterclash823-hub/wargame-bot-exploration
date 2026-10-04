@@ -251,7 +251,7 @@ def add_loss_fields(embed, result, forces_a, forces_b, *, show_reasons=False):
         losses = result.get(side + '_losses')
         if losses is None:
             continue
-        names = {u['unit_id']: u['name'] for u in forces}
+        names = {u['unit_id']: ((u.get('nation_name','')+' · ') if u.get('nation_name') else '')+u['name'] for u in forces}
         lines = [f"{names.get(row['unit_id'], '#' + str(row['unit_id']))}: "
                  f"−{row['lost']} / {row['committed']}"
                  + (f" — {row['reason']}" if show_reasons and row.get('reason') else '') for row in losses]
@@ -389,15 +389,12 @@ class CombatCog(commands.Cog):
             "forces_note":   forces_note,
         }
 
-        with db.cursor() as c:
-            c.execute(
-                "INSERT INTO battle_plans(nation_id,forces_json,provinces_json,orders_text,status)"
-                " VALUES(?,?,?,?,?)",
-                (nat["id"], json.dumps(forces), json.dumps([location]),
-                 battle_plan_text.pack(orders, location, forces_note),
-                 "unmatched")
-            )
-            plan_id = c.lastrowid
+        try:
+            from economy_services import submit_plan
+            plan_id,forces=submit_plan(nat['id'],forces,location,orders,forces_note,
+                orders_blob=battle_plan_text.pack(orders,location,forces_note))
+        except ValueError as exc:
+            await send(str(exc),ephemeral=True);return
 
         _log(nat["id"], "player",
              i18n.text('Submitted battle plan #{p0}. Location: {p1}.', p0=plan_id, p1=location))
@@ -427,10 +424,53 @@ class CombatCog(commands.Cog):
         with db.cursor() as c:
             c.execute('SELECT p.*,n.owner_id FROM battle_plans p JOIN nations n ON n.id=p.nation_id WHERE p.id=?', (plan_id,))
             plan = c.fetchone()
-        if not plan or (not can_manage(plan['nation_id'],interaction.user.id) and not _gm(interaction)):
+            joined=False
+            if plan:
+                from battle_coalitions import participants
+                joined=any(can_manage(nid,interaction.user.id,c) for nid in participants(c,plan))
+        if not plan or (not joined and not _gm(interaction)):
             await interaction.response.send_message('Plan unavailable. / Plan niedostępny.', ephemeral=True)
             return
         await interaction.response.send_message(file=battle_plan_text.plan_file(plan_id, battle_plan_text.unpack(plan)), ephemeral=True)
+
+    @battle_grp.command(name='invite',description='Invite a second nation to your plan / Zaproś drugie państwo do planu')
+    @app_commands.describe(plan_id='Your unmatched plan ID / ID oczekującego planu',nation='Nation name / Nazwa państwa')
+    @i18n.localized
+    async def battle_invite(self,interaction:discord.Interaction,plan_id:int,nation:str):
+        ally=_nat_name(nation)
+        if not ally:
+            await interaction.response.send_message(i18n.text('Nation not found.'),ephemeral=True);return
+        try:
+            from battle_coalitions import invite
+            invite(plan_id,interaction.user.id,ally['id'])
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
+        await interaction.response.send_message(
+            i18n.text('✅ {p0} was invited to battle plan #{p1}. Its player must accept and choose their units.',p0=ally['name'],p1=plan_id),ephemeral=True)
+
+    @battle_grp.command(name='join',description='Join an allied battle plan / Dołącz armię do planu sojusznika')
+    @app_commands.describe(plan_id='Inviting plan ID / ID planu',unit_ids='Your unit group IDs, comma-separated / ID twoich grup')
+    @i18n.localized
+    async def battle_join(self,interaction:discord.Interaction,plan_id:int,unit_ids:str):
+        try:
+            ids=[int(x.strip()) for x in unit_ids.split(',') if x.strip()]
+            from battle_coalitions import join
+            result=join(plan_id,interaction.user.id,ids)
+        except (ValueError,TypeError) as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
+        await interaction.response.send_message(
+            i18n.text('✅ Your army joined plan #{p0}: {p1} unit group(s).',p0=plan_id,p1=len(result['units'])),ephemeral=True)
+
+    @battle_grp.command(name='leave',description='Withdraw your army before matching / Wycofaj armię przed dopasowaniem')
+    @app_commands.describe(plan_id='Plan ID / ID planu')
+    @i18n.localized
+    async def battle_leave(self,interaction:discord.Interaction,plan_id:int):
+        try:
+            from battle_coalitions import leave
+            count=leave(plan_id,interaction.user.id)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
+        await interaction.response.send_message(i18n.text('✅ Participation withdrawn; {p0} group(s) released.',p0=count),ephemeral=True)
 
     # -------------------------------------------------- /battle plans_pending
     @battle_grp.command(name="plans_pending",
@@ -457,6 +497,9 @@ class CombatCog(commands.Cog):
         page_nation = None
         for r in rows:
             forces   = json.loads(r["forces_json"])
+            with db.cursor() as c:
+                from battle_coalitions import label
+                coalition_name=label(c,r)
             loc      = json.loads(r["provinces_json"])
             loc_str  = str(loc[0])[:150] if loc else i18n.text('not specified')
             orders_full = r["orders_text"]
@@ -465,7 +508,7 @@ class CombatCog(commands.Cog):
             if not forces:
                 name = '⚠️ ' + name
             value = (
-                    i18n.text('**Nation:** {p0} {p1}\n**Location:** {p2}\n**Orders:** {p3}\n**Units:** {p4} group(s) committed', p0=(flag_text(r['nflag']))[:80], p1=r['nname'][:200], p2=loc_str, p3=orders_disp, p4=len(forces))
+                    i18n.text('**Nation:** {p0} {p1}\n**Location:** {p2}\n**Orders:** {p3}\n**Units:** {p4} group(s) committed', p0=(flag_text(r['nflag']))[:80], p1=coalition_name[:200], p2=loc_str, p3=orders_disp, p4=len(forces))
                 )
             if embed.fields and (page_nation != r['nname'] or len(embed.fields) >= 20 or len(embed) + len(name) + len(value) > 5800):
                 pages.append(embed)
@@ -507,21 +550,24 @@ class CombatCog(commands.Cog):
         if not plan_b:
             await interaction.response.send_message(i18n.text('Plan #{p0} not found.', p0=defender_plan_id), ephemeral=True)
             return
-        if plan_a["nation_id"] == plan_b["nation_id"]:
-            await interaction.response.send_message(
-                i18n.text('Both plans belong to the same nation.'), ephemeral=True)
-            return
         if plan_a["status"] != "unmatched" or plan_b["status"] != "unmatched":
             await interaction.response.send_message(
                 i18n.text('Both plans must still be unmatched.'), ephemeral=True)
             return
 
-        battle_id = db.insert_returning_id(
-            "INSERT INTO battles(plan_a_id,plan_b_id,gm_note,status) VALUES(?,?,?,?)",
-            (attacker_plan_id, defender_plan_id, gm_note, "pending"))
-        with db.cursor() as c:
-            c.execute("UPDATE battle_plans SET status='matched' WHERE id=? OR id=?",
-                      (attacker_plan_id, defender_plan_id))
+        try:
+            with db.cursor() as c:
+                from battle_coalitions import validate_side
+                side_a=validate_side(c,plan_a);side_b=validate_side(c,plan_b)
+                if side_a & side_b:raise ValueError(i18n.text('The opposing plans contain the same nation.'))
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
+
+        try:
+            from battle_coalitions import match
+            battle_id,plan_a,plan_b=match(attacker_plan_id,defender_plan_id,gm_note)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
 
         nat_a = _nat_id(plan_a["nation_id"])
         nat_b = _nat_id(plan_b["nation_id"])
@@ -530,8 +576,11 @@ class CombatCog(commands.Cog):
             title=i18n.text('⚔️ Battle #{p0} Created', p0=battle_id),
             color=discord.Color.red(),
         )
-        embed.add_field(name=i18n.text('⚔️ Attacker'), value=f"{flag_text(nat_a['flag'])} {nat_a['name']} (Plan #{attacker_plan_id})", inline=True)
-        embed.add_field(name=i18n.text('🛡️ Defender'), value=f"{flag_text(nat_b['flag'])} {nat_b['name']} (Plan #{defender_plan_id})", inline=True)
+        with db.cursor() as c:
+            from battle_coalitions import label
+            name_a=label(c,plan_a);name_b=label(c,plan_b)
+        embed.add_field(name=i18n.text('⚔️ Attacker'), value=f"{flag_text(nat_a['flag'])} {name_a} (Plan #{attacker_plan_id})", inline=True)
+        embed.add_field(name=i18n.text('🛡️ Defender'), value=f"{flag_text(nat_b['flag'])} {name_b} (Plan #{defender_plan_id})", inline=True)
         flagged_embed(embed, (nat_a['flag'], nat_a['name']), (nat_b['flag'], nat_b['name']))
         if gm_note:
             embed.add_field(name=i18n.text('GM Context'), value=gm_note, inline=False)
@@ -564,14 +613,18 @@ class CombatCog(commands.Cog):
         nat_a = _nat_id(plan_a["nation_id"])
         nat_b = _nat_id(plan_b["nation_id"])
 
-        is_party = nat and (nat["id"] in [plan_a["nation_id"], plan_b["nation_id"]])
+        with db.cursor() as c:
+            from battle_coalitions import participants,label
+            side_a=participants(c,plan_a);side_b=participants(c,plan_b)
+            label_a=label(c,plan_a);label_b=label(c,plan_b)
+        is_party = nat and nat['id'] in (side_a|side_b)
 
         STATUS_EMOJI = {"pending":"🟡","resolved":"✅","cancelled":"❌"}
         embed = flagged_embed(discord.Embed(
             title=i18n.text('{p0} Battle #{p1}', p0=STATUS_EMOJI.get(battle['status'], '❓'), p1=battle_id),
             description=(
-                f"**{flag_text(nat_a['flag'])} {nat_a['name']}** ⚔️ "
-                f"**{flag_text(nat_b['flag'])} {nat_b['name']}**"
+                f"**{flag_text(nat_a['flag'])} {label_a}** ⚔️ "
+                f"**{flag_text(nat_b['flag'])} {label_b}**"
             ),
             color=discord.Color.red(),
         ), (nat_a['flag'], nat_a['name']), (nat_b['flag'], nat_b['name']))
@@ -735,10 +788,12 @@ class CombatCog(commands.Cog):
         if result.get('captives_available'):
             from world_service import tr
             report_embed.add_field(name=tr('Jeńcy','Captives'),value=str(result['captives_available'])+tr(' w ramach strat przegranego. Zwycięzca: Panel → Wojsko → Jeńcy.',' included in the loser’s losses. Winner: Panel → Military → Captives.'),inline=False)
+        attacker_name=' + '.join(n['name'] for n in result.get('attacker_nations',[])) or nat_a['name']
+        defender_name=' + '.join(n['name'] for n in result.get('defender_nations',[])) or nat_b['name']
         report_embed.add_field(
             name=i18n.text('Combatants'),
             value=(
-                i18n.text('**{p0} {p1}** (Attacker)\nvs\n**{p2} {p3}** (Defender)', p0=flag_text(nat_a['flag']), p1=nat_a['name'], p2=flag_text(nat_b['flag']), p3=nat_b['name'])
+                i18n.text('**{p0} {p1}** (Attacker)\nvs\n**{p2} {p3}** (Defender)', p0=flag_text(nat_a['flag']), p1=attacker_name, p2=flag_text(nat_b['flag']), p3=defender_name)
             ),
             inline=False,
         )
@@ -749,11 +804,11 @@ class CombatCog(commands.Cog):
                 p0=battlefield['name'], p1=i18n.term(battlefield['terrain']),
                 p2=i18n.term(battlefield['biome']), p3=battlefield['fortification']), inline=False)
         def unit_line(units):
-            return (", ".join(f"**{u['committed']}×** {u['name']}" for u in units) or
+            return (", ".join(f"**{u['committed']}×** {u.get('nation_name', '')} · {u['name']}" for u in units) or
                     i18n.text("No registered unit groups"))[:1024]
-        report_embed.add_field(name=i18n.text('Forces — {p0}', p0=nat_a['name']),
+        report_embed.add_field(name=i18n.text('Forces — {p0}', p0=attacker_name),
                                value=unit_line(forces_a), inline=False)
-        report_embed.add_field(name=i18n.text('Forces — {p0}', p0=nat_b['name']),
+        report_embed.add_field(name=i18n.text('Forces — {p0}', p0=defender_name),
                                value=unit_line(forces_b), inline=False)
         for key, title in (("opening", i18n.text("Opening engagement")),
                            ("turning_point", i18n.text("Turning point")),
@@ -761,7 +816,7 @@ class CombatCog(commands.Cog):
             report_embed.add_field(name=title, value=narrative[key] or "—", inline=False)
         report_embed.add_field(
             name=i18n.text('🏆 Outcome'),
-            value=f"**{i18n.text('DRAW') if result['winner']=='draw' else (nat_a['name'] if result['winner']=='attacker' else nat_b['name']) + i18n.text(' WINS')}**",
+            value=f"**{i18n.text('DRAW') if result['winner']=='draw' else (attacker_name if result['winner']=='attacker' else defender_name) + i18n.text(' WINS')}**",
             inline=False,
         )
         report_embed.add_field(
