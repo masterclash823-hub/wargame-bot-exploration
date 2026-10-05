@@ -1,5 +1,9 @@
 # Wargame Bot
 
+Własne prowincje można bezpłatnie nazywać miastami przez
+**Panel → Terytorium → Nazwij prowincję** albo `/province rename`.
+Nadanie i zmiana nazwy kosztują **0 złota**. [Szczegóły](docs/province-purchases.md#darmowe-nazwy-prowincji).
+
 ## Ustawienia mapy, kreator startu i AI projektów
 
 GM udostępnia mapę przez `/admin map_access` (domyślnie wyłączone).

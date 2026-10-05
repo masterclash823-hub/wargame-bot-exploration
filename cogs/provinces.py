@@ -7,6 +7,7 @@ Province commands:
   /province unclaim         - GM: remove ownership from provinces
   /province info            - anyone: view a single province by cell ID
   /province list            - anyone: list all provinces owned by a nation
+  /province rename          - player: name an owned province for free
 """
 from flags import flag_text, flagged_embed
 import json
@@ -609,6 +610,20 @@ class ProvincesCog(commands.Cog):
     async def province_buy(self, interaction: discord.Interaction, cell_id: int | None = None):
         from province_purchase_ui import show
         await show(interaction,cell_id)
+
+    @province_grp.command(name="rename",description="Name your province for free / Nazwij własną prowincję za darmo")
+    @app_commands.describe(cell_id="Province cell ID / ID prowincji",name="City name, 1–80 characters / Nazwa miasta, 1–80 znaków")
+    @i18n.localized
+    async def province_rename(self,interaction: discord.Interaction,cell_id: int | None = None,name: str | None = None):
+        from province_naming_ui import show,save
+        from world_service import tr
+        if cell_id is None and name is None:
+            await show(interaction)
+        elif cell_id is None or name is None:
+            await interaction.response.send_message(tr('Podaj ID prowincji i nazwę albo otwórz /province rename bez parametrów.',
+                'Provide both the province ID and name, or open /province rename without parameters.'),ephemeral=True)
+        else:
+            await save(interaction,cell_id,name)
 
     @province_grp.command(name="terraform", description="Plan paid terraforming / Zaplanuj płatną terraformację")
     @app_commands.describe(cell_id="Optional cell to preview / Opcjonalne ID prowincji do podglądu")
