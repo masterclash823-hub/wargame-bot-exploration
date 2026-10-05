@@ -40,17 +40,33 @@ planu, wyzwania, obrony, raportów i negocjacji pokoju.
    być niezajęte. Plan atakującego zostaje zablokowany do rozpatrzenia wyzwania.
 4. Obrońca otwiera **Odpowiedz na wyzwanie** lub `/war defend challenge_id plan_id`,
    wybiera własny plan i ogląda potwierdzenie z polem bitwy, fortyfikacjami oraz
-   zasadami. **Potwierdź i rozegraj bitwę** natychmiast rozlicza obie strony.
+   zasadami. **Potwierdź i rozegraj bitwę** uruchamia rozliczenie obu stron.
+   W bitwie koalicyjnej bot najpierw ocenia plany przez AI.
 5. Wynik i straty pozostają w raportach panelu oraz `/battle view`. Każda strona
    widzi własne rozkazy; GM widzi oba plany. Obie strony mogą zaproponować pokój
    przez panel. Przekazanie prowincji i reparacje wymagają zaakceptowanego traktatu.
 
 Automatyczne rozliczenie stosuje istniejące statystyki, technologie i morale
 jednostek, premię obrony +10% za poziom fortyfikacji oraz los ataku 0,85–1,15.
-Mnożniki taktyczne i wagi narażenia wynoszą 1: opis planu nie daje premii.
-Tryb nie wywołuje usługi AI. Straty każdego państwa koalicji są liczone na jego
-jednostkach. Granice nie zmieniają się od samego wyniku bitwy. Nietypowe bitwy
-GM nadal może rozpatrzyć przez dotychczasowe `/battle match` i `/battle resolve`.
+Jeśli przynajmniej jedna strona jest koalicją, AI ocenia pełne plany obu stron,
+teren i wszystkie przypisane jednostki. Mnożnik taktyczny ×0,7–1,4 obejmuje
+całą stronę; liczba sojuszników nie mnoży premii. AI wskazuje też narażenie
+poszczególnych grup (wagi ×0,25–4), a silnik rozdziela ustalony budżet strat
+na rzeczywiste jednostki ich właścicieli. Technologie i morale każdego
+państwa nadal są liczone osobno. Raport pokazuje mnożniki obu stron; rozkazy
+przeciwnika i uzasadnienie AI pozostają prywatne (uzasadnienie widzi GM).
+
+Ocena korzysta z dotychczasowych `GEMINI_API_KEY` i `GEMINI_MODEL`, nie z klucza
+AI projektów. Błąd, brak pełnej oceny lub limit czasu 25 sekund pozostawia
+wyzwanie oczekujące, bez strat i bez zastępowania premii przez ×1. Można
+potwierdzić je ponownie. Zmiana planów, jednostek, właścicieli, technologii,
+morale lub pola bitwy w czasie oceny również wymaga ponownego potwierdzenia.
+Ponowne kliknięcie podczas oceny nie wysyła kolejnego zapytania AI w tej
+instancji bota; samo rozliczenie jest atomowe.
+
+W automatycznej bitwie bez koalicji mnożniki i wagi narażenia pozostają ×1,
+bez wywołania AI. Granice nie zmieniają się od samego wyniku bitwy. Nietypowe
+bitwy GM nadal może rozpatrzyć przez `/battle match` i `/battle resolve`.
 
 Między tą samą parą państw może czekać jedno wyzwanie. Atakujący może je
 anulować, a obrońca odrzucić przez przycisk lub `/war cancel`. Bez odpowiedzi

@@ -203,7 +203,9 @@ class WarTests(WarFixture,unittest.TestCase):
         co.invite(self.plans[1],1,3);co.join(self.plans[1],3,[self.units[3]])
         eid=self.attack()
         with self.assertRaises(ValueError):co.leave(self.plans[1],3)
-        bid,r=wars.defend(2,eid,self.plans[2])
+        with self.assertRaisesRegex(ValueError,'AI review'):wars.defend(2,eid,self.plans[2])
+        with patch('cogs.combat._get_ai_modifier',AsyncMock(return_value={'attacker_modifier':1.2,'defender_modifier':1})):
+            bid,r=asyncio.run(wars.defend_with_ai(2,eid,self.plans[2]))
         self.assertEqual([n['id'] for n in r['attacker_nations']],[1,3])
         self.assertEqual(len(r['attacker_losses']),2)
 

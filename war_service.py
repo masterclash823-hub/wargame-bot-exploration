@@ -1,12 +1,21 @@
 """Player-led battles: a frozen challenge, explicit defense, one atomic settlement."""
+import asyncio
+import json
+import threading
+
 import db
 import battle_coalitions as coalitions
+import battle_plan_text
 import battle_resolution as resolution
-from economy_engine import lock_nation
+from economy_engine import lock_nation, policy
 from economy_services import assert_ready
 from nation_access import can_manage, find_nation
 from treaty_service import relation
 from world_service import world_lock, month_index, tr
+
+
+_review_guard = threading.Lock()
+_active_reviews = set()
 
 
 def _plan(c,pid,nid,status='unmatched'):
@@ -93,23 +102,83 @@ def close(uid,eid):
         _close(c,e,status)
 
 
-def defend(uid,eid,pid):
-    """The defender's confirmation accepts standard rules and settles immediately."""
+def _defense_context(c,uid,eid,pid):
+    """Capture combat inputs under the world lock; never hold it while awaiting AI."""
+    e=_pending(c,eid)
+    if not can_manage(e['defender_id'],uid,c):raise ValueError(tr('Tylko obrońca może przyjąć wyzwanie.','Only the defender can accept.'))
+    a,side_a=_plan(c,e['plan_id'],e['attacker_id'],'offered')
+    b,side_b=_plan(c,pid,e['defender_id'])
+    if side_a & side_b:raise ValueError(tr('Państwo nie może walczyć po obu stronach.','A nation cannot fight on both sides.'))
+    field=_field(c,e['cell_id'],e['attacker_id'],e['defender_id'])
+    nations=[];forces=[]
+    for plan in (a,b):
+        rows=coalitions.participant_rows(c,plan)
+        members=[{key:n[key] for key in ('id','name','owner_id','tech_json')} for n in rows]
+        for n in members:n['morale_multiplier']=max(.5,1-.1*policy(c,n['id'])['unpaid_months'])
+        nations.append(members)
+        snapshot=resolution.force_snapshot(plan,rows[0])
+        by_id={n['id']:n for n in members}
+        for unit in snapshot:
+            owner=by_id[unit['nation_id']]
+            unit['technology']=json.loads(owner['tech_json'] or '{}')
+            unit['morale_multiplier']=owner['morale_multiplier']
+        forces.append(snapshot)
+    return dict(engagement=e,plans=[a,b],nations=nations,forces=forces,
+                battlefield=resolution.location_context(str(e['cell_id'])),
+                field_owner=field['owner_nation_id'],month=month_index(c))
+
+
+def _prepare_defense(uid,eid,pid):
     with db.atomic() as c:
         world_lock(c)
-        e=_pending(c,eid)
-        if not can_manage(e['defender_id'],uid,c):raise ValueError(tr('Tylko obrońca może przyjąć wyzwanie.','Only the defender can accept.'))
-        a,side_a=_plan(c,e['plan_id'],e['attacker_id'],'offered')
-        b,side_b=_plan(c,pid,e['defender_id'])
-        if side_a & side_b:raise ValueError(tr('Państwo nie może walczyć po obu stronach.','A nation cannot fight on both sides.'))
-        _field(c,e['cell_id'],e['attacker_id'],e['defender_id'])
+        return _defense_context(c,uid,eid,pid)
+
+
+def _is_coalition(context):
+    return any(len(side)>1 for side in context['nations'])
+
+
+async def defend_with_ai(uid,eid,pid):
+    """Review coalition plans once per confirmation, then revalidate and settle."""
+    with _review_guard:
+        if eid in _active_reviews:
+            raise ValueError(tr('Ocena tej bitwy już trwa. Poczekaj na wynik.',
+                                'This battle is already being reviewed. Wait for the result.'))
+        _active_reviews.add(eid)
+    try:
+        context=await asyncio.to_thread(_prepare_defense,uid,eid,pid)
+        review=None
+        if _is_coalition(context):
+            from cogs.combat import _get_ai_modifier
+            plans=[battle_plan_text.unpack(p) for p in context['plans']]
+            leaders=[dict(side[0],name=' + '.join(n['name'] for n in side)) for side in context['nations']]
+            ai=await _get_ai_modifier(*plans,*leaders,context['battlefield'],*context['forces'],required=True)
+            review=(context,ai)
+        return await asyncio.to_thread(defend,uid,eid,pid,review=review)
+    finally:
+        with _review_guard:_active_reviews.discard(eid)
+
+
+def defend(uid,eid,pid,*,review=None):
+    """Atomically settle; coalition battles require an AI review of current inputs."""
+    with db.atomic() as c:
+        world_lock(c)
+        context=_defense_context(c,uid,eid,pid)
+        e=context['engagement'];a,b=context['plans'];fa,fb=context['forces']
+        ai={'reasoning':tr('Automatyczna bitwa: statystyki, technologia, morale i fortyfikacje; mnożniki taktyczne ×1.',
+                          'Automatic battle: stats, technology, morale and fortifications; tactical modifiers ×1.')}
+        if review is not None:
+            if context!=review[0]:
+                raise ValueError(tr('Plany, armie lub pole bitwy zmieniły się podczas oceny AI. Potwierdź ponownie.',
+                                    'Plans, armies or the battlefield changed during AI review. Confirm again.'))
+            ai=review[1]
+        elif _is_coalition(context):
+            raise ValueError(tr('Plan koalicji wymaga oceny AI. Potwierdź bitwę w panelu wojen.',
+                                'Coalition plans require AI review. Confirm the battle in the war panel.'))
         # The frozen attacker plan is made matchable only inside this transaction.
         c.execute("UPDATE battle_plans SET status='unmatched' WHERE id=?",(a['id'],))
         bid,a,b=coalitions.match(a['id'],b['id'])
-        na=lock_nation(c,a['nation_id']);nb=lock_nation(c,b['nation_id'])
-        fa=resolution.force_snapshot(a,na);fb=resolution.force_snapshot(b,nb)
-        resolution.resolve(bid,{'reasoning':tr('Automatyczna bitwa: statystyki, technologia, morale i fortyfikacje; mnożniki taktyczne ×1.',
-            'Automatic battle: stats, technology, morale and fortifications; tactical modifiers ×1.')},final_location=str(e['cell_id']))
+        resolution.resolve(bid,ai,final_location=str(e['cell_id']))
         report=resolution.attach_narrative(bid,{},fa,fb)
         c.execute("UPDATE war_engagements SET status='resolved',battle_id=? WHERE id=?",(bid,eid))
         return bid,report

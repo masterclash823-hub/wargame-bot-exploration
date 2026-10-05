@@ -304,6 +304,7 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
         _, def_power, def_units = _power(c, plan_b, nat_b)
         fort = _fort_bonus(c, final_location)
         result = _combat(atk_power, def_power, atk_mod, def_mod, fort)
+        result['tactical_modifiers']={'attacker':atk_mod,'defender':def_mod}
         from technology import bonuses
         result['research_bonuses']={}
         result['coalition_research_bonuses']={}

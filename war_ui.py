@@ -11,8 +11,8 @@ from cogs.panel import FieldsModal,invoke
 
 
 RULES=lambda:tr(
-    'Po potwierdzeniu przez obrońcę bot rozlicza bitwę i straty obu stron. Statystyki, technologie, morale i fortyfikacje działają normalnie; mnożniki taktyczne ×1, los ataku 0,85–1,15. Opis planu nie daje premii w tym trybie. Granice zmienia dopiero zaakceptowany traktat. Wyzwanie wygasa po 2 miesiącach gry. Nietypową bitwę można nadal rozegrać z GM-em.',
-    'The defender’s confirmation immediately settles the battle and both sides’ losses. Stats, technology, morale and forts apply; tactical modifiers ×1, attack roll 0.85–1.15. Plan prose grants no bonus in this mode. Borders change through an accepted treaty. Challenges expire after 2 game months. A GM can still handle special battles.')
+    'Po potwierdzeniu przez obrońcę bot rozlicza bitwę i straty. Jeśli któraś strona jest koalicją, AI ocenia plany obu stron: mnożniki ×0,7–1,4 dla całej strony oraz taktyczny podział strat. Przy błędzie AI bitwa czeka na ponowienie. Bez koalicji mnożniki i wagi narażenia wynoszą ×1. Statystyki, technologie, morale i fortyfikacje działają normalnie; los ataku 0,85–1,15. Granice zmienia zaakceptowany traktat. Wyzwanie wygasa po 2 miesiącach gry. Nietypową bitwę może rozegrać GM.',
+    'The defender’s confirmation settles the battle and losses. If either side is a coalition, AI assesses both plans: modifiers ×0.7–1.4 for each whole side and tactical loss allocation. An AI error leaves the battle pending for retry. Without coalitions, modifiers and exposure weights are ×1. Stats, technology, morale and forts apply; attack roll 0.85–1.15. Borders change through an accepted treaty. Challenges expire after 2 game months. A GM can handle special battles.')
 
 
 def inbox_embed(n,enemies,engagements):
@@ -125,7 +125,7 @@ class DefenseConfirmation(discord.ui.View):
     async def confirm(self,i,button):
         if i.user.id!=self.uid:await deliver(i,content=tr('To nie jest Twoje potwierdzenie.','This is not your confirmation.'));return
         await i.response.defer(ephemeral=True)
-        try:bid,report=await asyncio.to_thread(wars.defend,i.user.id,self.eid,self.pid)
+        try:bid,report=await wars.defend_with_ai(i.user.id,self.eid,self.pid)
         except ValueError as exc:await deliver(i,content=str(exc));return
         names=lambda side:' + '.join(x['name'] for x in report[side+'_nations'])
         winner=tr('Remis','Draw') if report['winner']=='draw' else names(report['winner'])
