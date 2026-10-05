@@ -121,12 +121,18 @@ class WarFixture(WorldFixture):
 
     def attack(self):return wars.challenge(1,2,self.plans[1],10)
 
+    def settle(self,eid):
+        """Use a fixed assessment in synchronous settlement/rollback tests."""
+        context=wars._prepare_defense(2,eid,self.plans[2])
+        ai=dict(attacker_modifier=1.2,defender_modifier=1,reasoning='Assessed plans')
+        return wars.defend(2,eid,self.plans[2],review=(context,ai))
+
 
 class WarTests(WarFixture,unittest.TestCase):
     def test_two_players_settle_without_gm_and_keep_enemy_orders_private(self):
         eid=self.attack()
         self.assertEqual(self.query('SELECT status FROM battle_plans WHERE id=?',(self.plans[1],))[0]['status'],'offered')
-        with patch('battle_resolution.random.uniform',return_value=1):bid,r=wars.defend(2,eid,self.plans[2])
+        with patch('battle_resolution.random.uniform',return_value=1):bid,r=self.settle(eid)
         self.assertEqual(self.query('SELECT status FROM battles WHERE id=?',(bid,))[0]['status'],'resolved')
         self.assertTrue(r['attacker_losses']);self.assertTrue(r['defender_losses'])
         self.assertEqual(r['battlefield']['cell_id'],10)
@@ -165,7 +171,7 @@ class WarTests(WarFixture,unittest.TestCase):
     def test_concurrent_confirmations_apply_losses_once(self):
         eid=self.attack()
         def defend(_):
-            try:return wars.defend(2,eid,self.plans[2])
+            try:return self.settle(eid)
             except ValueError:return None
         with ThreadPoolExecutor(2) as pool:results=list(pool.map(defend,range(2)))
         self.assertEqual(sum(r is not None for r in results),1)
@@ -189,11 +195,11 @@ class WarTests(WarFixture,unittest.TestCase):
     def test_failed_resolution_rolls_back_match_and_can_retry(self):
         eid=self.attack()
         with patch('war_service.resolution.attach_narrative',side_effect=RuntimeError('failed')),self.assertRaises(RuntimeError):
-            wars.defend(2,eid,self.plans[2])
+            self.settle(eid)
         self.assertFalse(self.query('SELECT * FROM battles'))
         self.assertEqual(self.query('SELECT status FROM war_engagements')[0]['status'],'pending')
         self.assertEqual([r['quantity'] for r in self.query('SELECT quantity FROM military_units')],[10,10,10])
-        wars.defend(2,eid,self.plans[2])
+        self.settle(eid)
 
     def test_joint_army_is_supported_and_frozen(self):
         import battle_coalitions as co
@@ -266,13 +272,17 @@ class WarUITests(WarFixture,unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('SECRET 1',str(i.followup.send.call_args))
         await view.confirm.callback(ui(1))
         self.assertFalse(self.query('SELECT * FROM battles'))
-        j=ui(2);await view.confirm.callback(j)
+        j=ui(2)
+        with patch('cogs.combat._get_ai_modifier',AsyncMock(return_value=dict(attacker_modifier=.7,defender_modifier=1.4,reasoning='Defense plan'))) as ai:
+            await view.confirm.callback(j)
+        ai.assert_awaited_once()
         self.assertTrue(j.followup.send.call_args.kwargs['ephemeral'])
+        self.assertIn('ATK ×0.70 | DEF ×1.40',str(j.followup.send.call_args.kwargs['embed'].to_dict()))
         self.assertEqual(len(self.query('SELECT * FROM battles')),1)
 
     async def test_battle_view_does_not_reveal_opponent_plan(self):
         from cogs.combat import CombatCog
-        bid,r=wars.defend(2,self.attack(),self.plans[2])
+        bid,r=self.settle(self.attack())
         for uid,own,enemy in ((1,'SECRET 1','SECRET 2'),(2,'SECRET 2','SECRET 1')):
             i=ui(uid);await CombatCog.battle_view.callback(None,i,bid)
             shown=str(i.response.send_message.call_args.kwargs['embed'].to_dict())

@@ -134,12 +134,8 @@ def _prepare_defense(uid,eid,pid):
         return _defense_context(c,uid,eid,pid)
 
 
-def _is_coalition(context):
-    return any(len(side)>1 for side in context['nations'])
-
-
 async def defend_with_ai(uid,eid,pid):
-    """Review coalition plans once per confirmation, then revalidate and settle."""
+    """Review both plans for every battle, then revalidate and settle."""
     with _review_guard:
         if eid in _active_reviews:
             raise ValueError(tr('Ocena tej bitwy już trwa. Poczekaj na wynik.',
@@ -147,34 +143,28 @@ async def defend_with_ai(uid,eid,pid):
         _active_reviews.add(eid)
     try:
         context=await asyncio.to_thread(_prepare_defense,uid,eid,pid)
-        review=None
-        if _is_coalition(context):
-            from cogs.combat import _get_ai_modifier
-            plans=[battle_plan_text.unpack(p) for p in context['plans']]
-            leaders=[dict(side[0],name=' + '.join(n['name'] for n in side)) for side in context['nations']]
-            ai=await _get_ai_modifier(*plans,*leaders,context['battlefield'],*context['forces'],required=True)
-            review=(context,ai)
-        return await asyncio.to_thread(defend,uid,eid,pid,review=review)
+        from cogs.combat import _get_ai_modifier
+        plans=[battle_plan_text.unpack(p) for p in context['plans']]
+        leaders=[dict(side[0],name=' + '.join(n['name'] for n in side)) for side in context['nations']]
+        ai=await _get_ai_modifier(*plans,*leaders,context['battlefield'],*context['forces'],required=True)
+        return await asyncio.to_thread(defend,uid,eid,pid,review=(context,ai))
     finally:
         with _review_guard:_active_reviews.discard(eid)
 
 
 def defend(uid,eid,pid,*,review=None):
-    """Atomically settle; coalition battles require an AI review of current inputs."""
+    """Atomically settle only after an AI review of the current combat inputs."""
     with db.atomic() as c:
         world_lock(c)
         context=_defense_context(c,uid,eid,pid)
         e=context['engagement'];a,b=context['plans'];fa,fb=context['forces']
-        ai={'reasoning':tr('Automatyczna bitwa: statystyki, technologia, morale i fortyfikacje; mnożniki taktyczne ×1.',
-                          'Automatic battle: stats, technology, morale and fortifications; tactical modifiers ×1.')}
-        if review is not None:
-            if context!=review[0]:
-                raise ValueError(tr('Plany, armie lub pole bitwy zmieniły się podczas oceny AI. Potwierdź ponownie.',
-                                    'Plans, armies or the battlefield changed during AI review. Confirm again.'))
-            ai=review[1]
-        elif _is_coalition(context):
-            raise ValueError(tr('Plan koalicji wymaga oceny AI. Potwierdź bitwę w panelu wojen.',
-                                'Coalition plans require AI review. Confirm the battle in the war panel.'))
+        if review is None:
+            raise ValueError(tr('Plany bitwy wymagają oceny AI. Potwierdź bitwę w panelu wojen.',
+                                'Battle plans require AI review. Confirm the battle in the war panel.'))
+        if context!=review[0]:
+            raise ValueError(tr('Plany, armie lub pole bitwy zmieniły się podczas oceny AI. Potwierdź ponownie.',
+                                'Plans, armies or the battlefield changed during AI review. Confirm again.'))
+        ai=review[1]
         # The frozen attacker plan is made matchable only inside this transaction.
         c.execute("UPDATE battle_plans SET status='unmatched' WHERE id=?",(a['id'],))
         bid,a,b=coalitions.match(a['id'],b['id'])

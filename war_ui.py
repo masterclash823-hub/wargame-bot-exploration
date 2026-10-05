@@ -11,8 +11,8 @@ from cogs.panel import FieldsModal,invoke
 
 
 RULES=lambda:tr(
-    'Po potwierdzeniu przez obrońcę bot rozlicza bitwę i straty. Jeśli któraś strona jest koalicją, AI ocenia plany obu stron: mnożniki ×0,7–1,4 dla całej strony oraz taktyczny podział strat. Przy błędzie AI bitwa czeka na ponowienie. Bez koalicji mnożniki i wagi narażenia wynoszą ×1. Statystyki, technologie, morale i fortyfikacje działają normalnie; los ataku 0,85–1,15. Granice zmienia zaakceptowany traktat. Wyzwanie wygasa po 2 miesiącach gry. Nietypową bitwę może rozegrać GM.',
-    'The defender’s confirmation settles the battle and losses. If either side is a coalition, AI assesses both plans: modifiers ×0.7–1.4 for each whole side and tactical loss allocation. An AI error leaves the battle pending for retry. Without coalitions, modifiers and exposure weights are ×1. Stats, technology, morale and forts apply; attack roll 0.85–1.15. Borders change through an accepted treaty. Challenges expire after 2 game months. A GM can handle special battles.')
+    'Po potwierdzeniu przez obrońcę AI ocenia plany obu stron w każdej bitwie, także 1 na 1: mnożniki ×0,7–1,4 dla całej strony oraz taktyczny podział strat. Następnie bot rozlicza wynik i straty. Przy błędzie AI bitwa czeka na ponowienie. Statystyki, technologie, morale i fortyfikacje działają normalnie; los ataku 0,85–1,15. Granice zmienia zaakceptowany traktat. Wyzwanie wygasa po 2 miesiącach gry. Nietypową bitwę może rozegrać GM.',
+    'After the defender confirms, AI assesses both plans in every battle, including one-on-one battles: modifiers ×0.7–1.4 for each whole side and tactical loss allocation. The bot then settles the result and losses. An AI error leaves the battle pending for retry. Stats, technology, morale and forts apply; attack roll 0.85–1.15. Borders change through an accepted treaty. Challenges expire after 2 game months. A GM can handle special battles.')
 
 
 def inbox_embed(n,enemies,engagements):

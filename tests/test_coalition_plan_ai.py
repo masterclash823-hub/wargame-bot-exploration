@@ -162,13 +162,34 @@ class CoalitionPlanAITests(WarFixture, unittest.IsolatedAsyncioTestCase):
         with patch.object(combat,'_get_ai_modifier',AsyncMock(return_value=self.assessment())):
             await wars.defend_with_ai(2,eid,self.plans[2])
 
-    async def test_unauthorized_defender_does_not_call_ai_and_solo_mode_is_unchanged(self):
+    async def test_solo_battle_reviews_both_plans_and_modifiers_change_the_winner(self):
         eid=self.attack()
-        with patch.object(combat,'_get_ai_modifier',AsyncMock()) as ai:
+        assessment=dict(attacker_modifier=.7,defender_modifier=1.4,reasoning='Defense plan')
+        with patch.object(combat,'_get_ai_modifier',AsyncMock(return_value=assessment)) as ai,patch('battle_resolution.random.uniform',return_value=1):
             with self.assertRaises(ValueError):await wars.defend_with_ai(1,eid,self.plans[2])
-            _,report=await wars.defend_with_ai(2,eid,self.plans[2])
-        ai.assert_not_awaited()
-        self.assertEqual(report['tactical_modifiers'],{'attacker':1,'defender':1})
+            ai.assert_not_awaited()
+            bid,report=await wars.defend_with_ai(2,eid,self.plans[2])
+        ai.assert_awaited_once()
+        self.assertEqual(ai.call_args.args[0]['orders_text'],'SECRET 1')
+        self.assertEqual(ai.call_args.args[1]['orders_text'],'SECRET 2')
+        self.assertEqual([len(side) for side in ai.call_args.args[5:7]],[1,1])
+        self.assertTrue(ai.call_args.kwargs['required'])
+        self.assertEqual(report['tactical_modifiers'],{'attacker':.7,'defender':1.4})
+        self.assertEqual(report['winner'],'defender')
+        saved=json.loads(self.query('SELECT ai_modifier_json FROM battles WHERE id=?',(bid,))[0]['ai_modifier_json'])
+        self.assertEqual(saved['attacker_modifier'],.7)
+
+    async def test_solo_battle_cannot_settle_without_ai_and_can_retry_after_ai_error(self):
+        eid=self.attack()
+        with self.assertRaisesRegex(ValueError,'AI review'):wars.defend(2,eid,self.plans[2])
+        self.unsettled(eid)
+        for generate in (Mock(return_value=NS(text='{}')),Mock(side_effect=TimeoutError('timeout'))):
+            google=NS(genai=NS(Client=Mock(return_value=NS(models=NS(generate_content=generate)))))
+            with patch.dict(sys.modules,{'google':google}),self.assertRaisesRegex(ValueError,'has not been settled'):
+                await wars.defend_with_ai(2,eid,self.plans[2])
+            self.unsettled(eid)
+        with patch.object(combat,'_get_ai_modifier',AsyncMock(return_value=self.assessment())):
+            await wars.defend_with_ai(2,eid,self.plans[2])
 
     async def test_confirmation_and_reports_show_bonuses_without_enemy_orders_or_ai_reasons(self):
         import war_ui

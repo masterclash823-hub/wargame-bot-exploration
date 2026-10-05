@@ -41,14 +41,14 @@ planu, wyzwania, obrony, raportów i negocjacji pokoju.
 4. Obrońca otwiera **Odpowiedz na wyzwanie** lub `/war defend challenge_id plan_id`,
    wybiera własny plan i ogląda potwierdzenie z polem bitwy, fortyfikacjami oraz
    zasadami. **Potwierdź i rozegraj bitwę** uruchamia rozliczenie obu stron.
-   W bitwie koalicyjnej bot najpierw ocenia plany przez AI.
+   W każdej bitwie bot najpierw ocenia plany przez AI.
 5. Wynik i straty pozostają w raportach panelu oraz `/battle view`. Każda strona
    widzi własne rozkazy; GM widzi oba plany. Obie strony mogą zaproponować pokój
    przez panel. Przekazanie prowincji i reparacje wymagają zaakceptowanego traktatu.
 
 Automatyczne rozliczenie stosuje istniejące statystyki, technologie i morale
 jednostek, premię obrony +10% za poziom fortyfikacji oraz los ataku 0,85–1,15.
-Jeśli przynajmniej jedna strona jest koalicją, AI ocenia pełne plany obu stron,
+W każdej bitwie, również 1 na 1, AI ocenia pełne plany obu stron,
 teren i wszystkie przypisane jednostki. Mnożnik taktyczny ×0,7–1,4 obejmuje
 całą stronę; liczba sojuszników nie mnoży premii. AI wskazuje też narażenie
 poszczególnych grup (wagi ×0,25–4), a silnik rozdziela ustalony budżet strat
@@ -64,8 +64,7 @@ morale lub pola bitwy w czasie oceny również wymaga ponownego potwierdzenia.
 Ponowne kliknięcie podczas oceny nie wysyła kolejnego zapytania AI w tej
 instancji bota; samo rozliczenie jest atomowe.
 
-W automatycznej bitwie bez koalicji mnożniki i wagi narażenia pozostają ×1,
-bez wywołania AI. Granice nie zmieniają się od samego wyniku bitwy. Nietypowe
+Granice nie zmieniają się od samego wyniku bitwy. Nietypowe
 bitwy GM nadal może rozpatrzyć przez `/battle match` i `/battle resolve`.
 
 Między tą samą parą państw może czekać jedno wyzwanie. Atakujący może je

@@ -15,7 +15,7 @@ zbędnych synchronizacji Discorda. [Zasady, panel i konfiguracja](docs/game-setu
 **Panel → Dyplomacja i bitwy → Panel wojen** lub `/war status` pokazuje przeciwników,
 wyzwania do odpowiedzi, terminy i raporty. Atakujący wybiera swój plan oraz pole
 bitwy; obrońca wybiera plan obrony i potwierdza rozliczenie. Bot sam oblicza wynik,
-straty i premie fortyfikacji. W bitwach koalicyjnych AI ocenia plany obu stron,
+straty i premie fortyfikacji. W każdej bitwie AI ocenia plany obu stron,
 przyznając mnożniki taktyczne ×0,7–1,4 dla całych stron. Granice ustala osobno
 zaakceptowany traktat.
 
