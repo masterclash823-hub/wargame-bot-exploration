@@ -339,6 +339,24 @@ class ProvincesCog(commands.Cog):
         from azgaar_ui import import_command
         await import_command(interaction, file, url, map_file, True, sync_owners)
 
+    @app_commands.command(name='map',description='Download the map when shared by the GM / Pobierz mapę udostępnioną przez GM')
+    @i18n.localized
+    async def player_map(self,interaction:discord.Interaction):
+        from azgaar_ui import export_command
+        await export_command(interaction,player=True)
+
+    @admin_grp.command(name='map_access',description='[GM] Share or hide the map / Udostępnij lub ukryj mapę dla graczy')
+    @i18n.localized
+    async def map_access(self,interaction:discord.Interaction,enabled:bool):
+        from utils import gm_only
+        from world_service import tr
+        if not gm_only(interaction):
+            await interaction.response.send_message(tr('Tylko GM.','GM only.'),ephemeral=True);return
+        from game_setup import configure
+        configure(interaction.guild_id,'map',enabled)
+        await interaction.response.send_message(tr('Mapa dostępna przez /map.' if enabled else 'Mapa ukryta przed graczami.',
+            'Map available via /map.' if enabled else 'Map hidden from players.'),ephemeral=True)
+
     @admin_grp.command(name="map_export", description="[GM] Export the world to Azgaar / Eksport mapy do Azgaara")
     @app_commands.choices(format=[app_commands.Choice(name="map", value="map"), app_commands.Choice(name="json", value="json")])
     @app_commands.describe(file="Original .map on the first export / Oryginalny .map przy pierwszym eksporcie",

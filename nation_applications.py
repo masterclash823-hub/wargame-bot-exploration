@@ -15,8 +15,8 @@ def key(name):return unicodedata.normalize('NFKC',name).casefold().strip()
 
 
 def land(c,ids):
-    if not ids or len(ids)>25 or len(ids)!=len(set(ids)) or any(type(x)!=int or not 0<=x<=2147483647 for x in ids):
-        raise ValueError(tr('Podaj 1–25 różnych ID prowincji; pierwsza będzie stolicą.','Provide 1–25 distinct province IDs; the first becomes the capital.'))
+    if not ids or len(ids)>10 or len(ids)!=len(set(ids)) or any(type(x)!=int or not 0<=x<=2147483647 for x in ids):
+        raise ValueError(tr('Podaj 1–10 różnych ID prowincji; pierwsza będzie stolicą.','Provide 1–10 distinct province IDs; the first becomes the capital.'))
     cells,_=geography.load(c);rows=[]
     for cell in ids:
         c.execute('SELECT * FROM provinces WHERE azgaar_cell_id=? AND active=1',(cell,));p=c.fetchone()
@@ -61,8 +61,12 @@ def submit(uid,guild_id,name,history,flag,government,ids,expected_version=None):
         if old:
             c.execute('UPDATE nation_applications SET name=?,name_key=?,history=?,flag=?,government=?,cells_json=?,version=version+1 WHERE id=?',(*values,old['id']))
             return old['id']
-        return db.insert_returning_id('INSERT INTO nation_applications(name,name_key,history,flag,government,cells_json,player_id,guild_id) VALUES(?,?,?,?,?,?,?,?)',
+        aid=db.insert_returning_id('INSERT INTO nation_applications(name,name_key,history,flag,government,cells_json,player_id,guild_id) VALUES(?,?,?,?,?,?,?,?)',
             (*values,str(uid),str(guild_id)))
+        from starting_bonuses import defaults
+        from game_setup import budget
+        c.execute('INSERT INTO nation_start_choices(application_id,points_json) VALUES(?,?)',(aid,json.dumps(defaults(ids,budget(guild_id)))))
+        return aid
 
 
 def get(aid,guild_id,uid=None):
@@ -97,6 +101,9 @@ def decide(aid,guild_id,actor,version,action,reason=''):
         nid=None
         if action=='approve':
             provinces=land(c,json.loads(a['cells_json']))
+            from starting_bonuses import choices,validate,apply
+            from game_setup import budget
+            validate(choices(a),budget(guild_id),provinces)
             if find_nation(a['player_id'],c):raise ValueError(tr('Gracz otrzymał już inne państwo.','The player already received another nation.'))
             c.execute('SELECT name FROM nations')
             if any(key(n['name'])==a['name_key'] for n in c.fetchall()):raise ValueError(tr('Nazwa została zajęta.','The name is now taken.'))
@@ -106,6 +113,7 @@ def decide(aid,guild_id,actor,version,action,reason=''):
                 c.execute('UPDATE provinces SET owner_nation_id=? WHERE id=?',(nid,p['id']))
             c.execute('UPDATE nations SET capital_province_id=?,population=?,treasury=?,resources_json=? WHERE id=?',
                 (provinces[0]['id'],sum(p['population'] for p in provinces),STARTER_GOLD,json.dumps(STARTER),nid))
+            apply(c,a,nid,provinces)
             c.execute("INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,'system',?)",(nid,
                 tr(f'Zatwierdzono zgłoszenie #{aid}. Przyznano prowincje, stolicę i pakiet startowy.',f'Application #{aid} approved. Starting provinces, capital and supplies granted.')))
         status={'approve':'approved','reject':'rejected','withdraw':'withdrawn'}[action]

@@ -94,6 +94,23 @@ class NationCog(commands.Cog):
         from nation_application_ui import form
         await form(interaction)
 
+    @nation_group.command(name='bonuses',description='Choose starting bonuses / Wybierz bonusy początkowe')
+    @i18n.localized
+    async def bonuses(self,interaction:discord.Interaction):
+        from starting_ui import show
+        await show(interaction)
+
+    @nation_group.command(name='start_budget',description='[GM] Set starting points / Ustaw liczbę punktów początkowych')
+    @i18n.localized
+    async def start_budget(self,interaction:discord.Interaction,points:app_commands.Range[int,1,60]):
+        from game_setup import configure
+        from world_service import tr
+        if not _gm(interaction):
+            await interaction.response.send_message(tr('Tylko GM.','GM only.'),ephemeral=True);return
+        configure(interaction.guild_id,'budget',points)
+        await interaction.response.send_message(tr(f'Budżet startowy: {points}. Dotyczy nowych i oczekujących zgłoszeń; istniejące państwa bez zmian.',
+            f'Starting budget: {points}. Applies to new and pending applications; existing nations are unchanged.'),ephemeral=True)
+
     @nation_group.command(name='application',description='View or edit your application / Status i edycja zgłoszenia państwa')
     @i18n.localized
     async def application(self,interaction:discord.Interaction):

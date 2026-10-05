@@ -1,6 +1,7 @@
 """Application form, player status and a server-scoped GM review queue."""
 import asyncio
 import json
+import io
 import discord
 import i18n
 import nation_applications as applications
@@ -16,11 +17,20 @@ def embed(a):
             'rejected':tr('Odrzucone','Rejected'),'withdrawn':tr('Wycofane','Withdrawn')}
     e=discord.Embed(title=tr('Zgłoszenie państwa','Nation application')+f" #{a['id']} · {a['name']}",color=discord.Color.gold())
     e.description=f"<@{a['player_id']}> · **{labels[a['status']]}**\n"+tr('Ustrój: ','Government: ')+(a['government'] or tr('Monarchia','Monarchy'))
-    for start in range(0,len(a['history']),1000):
-        e.add_field(name=tr('Historia','Lore'),value=a['history'][start:start+1000],inline=False)
+    lore=a['history'][:3700]
+    for start in range(0,len(lore),1000):
+        e.add_field(name=tr('Historia','Lore'),value=lore[start:start+1000],inline=False)
+    if len(a['history'])>3700:e.add_field(name='…',value=tr('Pełny tekst: przycisk Pełna historia.','Full text: Full lore button.'),inline=False)
     ids=json.loads(a['cells_json'])
     e.add_field(name=tr('Prowincje i stolica','Provinces and capital'),value=tr('Stolica: ','Capital: ')+f"#{ids[0]}\n"+', '.join(f'#{x}' for x in ids),inline=False)
-    e.add_field(name=tr('Po akceptacji','On approval'),value=tr('Własność prowincji, stolica, projekty jednostek i jednorazowy pakiet: ','Province ownership, capital, unit blueprints and a one-time starter pack: ')+f'{applications.STARTER_GOLD}g · '+i18n.resource_list(applications.STARTER),inline=False)
+    from starting_bonuses import choices,effects,legacy
+    from game_setup import budget
+    points=choices(a);benefits=effects(points)
+    e.add_field(name=tr('Bonusy po akceptacji','Bonuses on approval'),value=
+        tr('Państwo zaakceptowano przed kreatorem punktów. Dotychczasowe bonusy bez zmian.',
+           'Nation approved before the points builder. Previous bonuses are unchanged.') if legacy(a) else
+        f"{sum(points.values())}/{budget(a['guild_id']) if a['status']=='pending' else sum(points.values())} pkt · {benefits['gold']}g · tech {benefits['technology']}\n"+
+        i18n.resource_list(benefits['resources'])+'\n'+tr('Szczegóły i zmiana: przycisk Bonusy startowe.','Details and selection: Starting bonuses button.'),inline=False)
     if a['reason']:e.add_field(name=tr('Powód decyzji','Decision reason'),value=a['reason'],inline=False)
     if a['flag']:e.add_field(name=tr('Flaga','Flag'),value=a['flag'][:512],inline=False)
     e.set_footer(text=tr('Do akceptacji zgłoszenie nie daje dostępu do państwa ani nie rezerwuje ziemi.','Until approval the application grants no nation access and reserves no land.'))
@@ -43,7 +53,7 @@ async def form(i,a=None):
         dict(label=tr('Ustrój','Government'),required=False,max_length=80,default=a['government'] if a else None),
         dict(label=tr('Flaga: emoji lub URL','Flag: emoji or URL'),required=False,max_length=512,default=a['flag'] if a else None),
         dict(label=tr('ID prowincji (pierwsza = stolica)','Province IDs (first = capital)'),max_length=300,
-             placeholder=tr('1–25 sąsiadujących wolnych pól lądu, np. 10,11','1–25 connected unclaimed land cells, e.g. 10,11'),default=','.join(str(x) for x in json.loads(a['cells_json'])) if a else None)]
+             placeholder=tr('1–10 sąsiadujących wolnych pól lądu, np. 10,11','1–10 connected unclaimed land cells, e.g. 10,11'),default=','.join(str(x) for x in json.loads(a['cells_json'])) if a else None)]
     await i.response.send_modal(FieldsModal(tr('Zgłoś państwo','Apply for a nation'),fields,submit))
 
 
@@ -58,6 +68,12 @@ class ApplicationView(discord.ui.View):
             await i.response.send_modal(FieldsModal(tr('Odrzuć zgłoszenie','Reject application'),[dict(label=tr('Powód dla gracza','Reason for player'),max_length=500)],submit))
         async def edit(i):await form(i,a)
         async def withdraw(i):await self.decision(i,'withdraw')
+        async def bonuses(i):
+            from starting_ui import show
+            await show(i,a['id'],review)
+        async def lore(i):
+            current=await asyncio.to_thread(applications.get,a['id'],self.guild_id,None if review else uid)
+            await i.response.send_message(file=discord.File(io.BytesIO(current['history'].encode('utf-8')),filename='historia-panstwa.txt'),ephemeral=True)
         async def refresh(i):
             await i.response.defer(ephemeral=True)
             current=await asyncio.to_thread(applications.get,a['id'],self.guild_id,None if review else uid)
@@ -65,6 +81,7 @@ class ApplicationView(discord.ui.View):
         actions=[(tr('Odśwież','Refresh'),refresh)]
         if a['status']=='pending':actions=([(tr('Akceptuj i utwórz','Approve and create'),approve),(tr('Odrzuć z powodem','Reject with reason'),reject)] if review else
             [(tr('Edytuj zgłoszenie','Edit application'),edit),(tr('Wycofaj','Withdraw'),withdraw)])+actions
+        actions+=[(tr('Bonusy startowe','Starting bonuses'),bonuses),(tr('Pełna historia','Full lore'),lore)]
         for label,callback in actions:
             b=discord.ui.Button(label=label)
             @i18n.localized

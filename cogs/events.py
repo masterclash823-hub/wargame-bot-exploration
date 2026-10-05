@@ -561,10 +561,10 @@ class EventsCog(commands.Cog):
             except discord.HTTPException:
                 failures.append("channel")
         try:
+            from discord_delivery import recipient,send as send_dm
             owner = interaction.guild.get_member(int(nat["owner_id"])) if interaction.guild else None
-            if owner is None:
-                owner = await self.bot.fetch_user(int(nat["owner_id"]))
-            await send_event(owner.send,state,view=EventView(state))
+            owner = await recipient(self.bot,nat['owner_id'],owner)
+            await send_dm(nat['owner_id'],send_event,owner.send,state,view=EventView(state))
         except (discord.HTTPException, ValueError):
             failures.append("DM")
         notice = adventure.tr(state["lang"],

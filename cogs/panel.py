@@ -15,6 +15,7 @@ from utils import get_nation_by_owner, gm_only
 
 
 PL = {
+    'map':'Mapa świata','bonuses':'Bonusy startowe','project_review':'Ocena projektu AI',
     'wars':'Panel wojen', 'application':'Moje zgłoszenie', 'found':'Zgłoś państwo',
     'stability':'Stabilność i zadowolenie',
     'ruins':'Ruiny', 'company':'Kompania', 'company_offers':'Oferty inwestycji',
@@ -54,6 +55,7 @@ PL = {
 
 def tr(lang: str, key: str) -> str:
     en = {
+        'map':'World map','bonuses':'Starting bonuses','project_review':'AI project review',
         'wars':'War dashboard', 'application':'My application', 'found':'Apply for a nation',
         'stability':'Stability & happiness',
         'ruins':'Ruins', 'company':'Company', 'company_offers':'Investment offers',
@@ -270,7 +272,9 @@ class PlayerPanel(OwnedView):
         from companies import unlocked
         nation = get_nation_by_owner(str(self.owner_id))
         if not nation and self.section=='home':
-            actions=[('found','📝'),('application','📨'),('tutorial','📘'),('help','❓')]
+            actions=[('found','📝'),('application','📨'),('bonuses','🎯'),('map','🗺️'),('tutorial','📘'),('help','❓')]
+        elif self.section=='territory':actions.append(('map','🗺️'))
+        if self.section=='economy':actions.append(('project_review','🔍'))
         if self.section == 'economy' and unlocked(nation):
             actions.append(('company', '🏢'))
         if self.section == 'diplomacy' and nation:
@@ -278,11 +282,12 @@ class PlayerPanel(OwnedView):
                 c.execute("SELECT id FROM company_concessions WHERE host_nation_id=? AND status IN ('proposed','active') LIMIT 1", (nation['id'],))
                 if c.fetchone():
                     actions.append(('company_offers', '🏢'))
+        columns=5 if len(actions)>16 else 4
         for index, (action, emoji) in enumerate(actions):
             key = action.removeprefix("language_") if action.startswith("language_") else action
             label = {"pl":"Polski", "en":"English"}[key] if action.startswith("language_") else tr(self.lang, key)
             button = discord.ui.Button(label=label, emoji=emoji, style=discord.ButtonStyle.secondary,
-                                       row=1 + index // 4)
+                                       row=1 + index // columns)
             async def clicked(interaction, name=action):
                 with i18n.using_language(language(interaction)):
                     await self.dispatch(interaction, name)
@@ -352,7 +357,9 @@ class PlayerPanel(OwnedView):
         await reply(interaction, content=note, view=ChoiceView(self.owner_id, self.lang, options, handler, multiple=multiple))
 
     async def dispatch(self, interaction: discord.Interaction, action: str):
-        if action in ('found','application'):
+        if action=='map':
+            await invoke(self.cog('ProvincesCog'),'player_map',interaction);return
+        if action in ('found','application','bonuses'):
             await invoke(self.cog('NationCog'),action,interaction);return
         if action=='coop':
             from coop_ui import show
@@ -375,6 +382,7 @@ class PlayerPanel(OwnedView):
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
+            'project_review':('EconomyCog','mp_review',[]),
             'wars':('WarsCog','status',[]),
             'stability':('EconomyControlCog','stability',[]),
             'market':('MarketCog','market_list',[]),

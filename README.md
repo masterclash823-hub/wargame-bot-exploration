@@ -1,5 +1,15 @@
 # Wargame Bot
 
+## Ustawienia mapy, kreator startu i AI projektów
+
+GM udostępnia mapę przez `/admin map_access` (domyślnie wyłączone).
+Gracz wybiera bonusy w `/nation bonuses`: standardowo 35 punktów, maksymalnie
+10 prowincji. Budżet ustawia `/nation start_budget`.
+`/project review` ocenia projekty przez osobny **PROJECT_AI_API_KEY**, bez
+zużywania kluczy eventów i walki; rekomendację zatwierdza GM.
+Doszły wycinka lasów, produkcja plantacji 6 → 7 żywności i ograniczenie
+zbędnych synchronizacji Discorda. [Zasady, panel i konfiguracja](docs/game-setup.md).
+
 ## Wojny graczy i zgłoszenia państw
 
 **Panel → Dyplomacja i bitwy → Panel wojen** lub `/war status` pokazuje przeciwników,

@@ -24,18 +24,18 @@ class AdminPanel(i18n.LocalizedView):
                          ('unclaim','Odbierz prowincje','Unclaim provinces'),('population','Zmień populację','Set population'),
                          ('biome','Zmień biom','Set biome'),('coast','Ustaw wybrzeże','Set coastline'),
                          ('normalize','Uśrednij populację państwa','Normalize nation population')],
-            'nations':[('applications','Zgłoszenia państw','Nation applications'),('transfer','Przekaż państwo','Transfer nation'),
+            'nations':[('applications','Zgłoszenia państw','Nation applications'),('start_budget','Budżet startowy','Starting budget'),('transfer','Przekaż państwo','Transfer nation'),
                        ('coop','Współdzielenie','Co-op access'),('stats','Statystyki','Statistics'),('starter','Pakiet startowy','Starter pack')],
             'events':[('generate','Generuj dla państwa','Generate for nation'),('all','Generuj dla wszystkich','Generate for all'),
                       ('events','Lista eventów','Event list'),('post_private','Opublikuj prywatnie','Publish privately'),
                       ('post_public','Opublikuj publicznie','Publish publicly'),('image','Ilustracja z pliku','Upload illustration')],
-            'map':[('map_import','Jak wgrać mapę','How to import'),('map_export','Eksportuj .map','Export .map'),
+            'map':[('map_access','Dostęp graczy do mapy','Player map access'),('map_import','Jak wgrać mapę','How to import'),('map_export','Eksportuj .map','Export .map'),
                    ('map_states','Państwa mapy','Map states'),('map_cultures','Kultury','Cultures'),
                    ('map_religions','Religie','Religions'),('map_bind','Powiąż państwo','Link nation'),('identity','Kultura i religia pola','Cell culture & religion'),
                    ('culture_strength','Siła kultury','Culture strength'),('religion_strength','Siła religii','Religion strength')],
             'world':[('calendar_status','Data i stan','Date & status'),('calendar_start','Uruchom kalendarz','Start calendar'),
                      ('calendar_stop','Zatrzymaj kalendarz','Pause calendar'),('tick','Rozlicz miesiące','Settle months'),
-                     ('plans','Oczekujące plany bitew','Pending battle plans')],
+                     ('plans','Oczekujące plany bitew','Pending battle plans'),('project_review','Ocena projektu AI','AI project review')],
         }[section]
         for index,(key,pl,en) in enumerate(actions):
             button=discord.ui.Button(label=tr(pl,en),row=1+index//4)
@@ -108,6 +108,17 @@ class AdminPanel(i18n.LocalizedView):
         await i.response.send_message(view=view,ephemeral=True)
 
     async def action(self,i,key):
+        if key=='project_review':await self.call(i,'EconomyCog','mp_review');return
+        if key=='map_access':
+            async def selected(j,value):await self.call(j,'ProvincesCog','map_access',value=='1')
+            from workflow_ui import choose
+            from game_setup import map_available
+            await choose(i,[discord.SelectOption(label=tr('Udostępnij','Share'),value='1'),discord.SelectOption(label=tr('Ukryj','Hide'),value='0')],selected,
+                content=tr('Obecnie: ','Currently: ')+str(map_available(i.guild_id)));return
+        if key=='start_budget':
+            async def submit(j,points):await self.call(j,'NationCog','start_budget',int(points))
+            from game_setup import budget
+            await self.form(i,tr('Budżet startowy','Starting budget'),[dict(label=tr('Punkty 1–60 (domyślnie 35)','Points 1–60 (default 35)'),default=str(budget(i.guild_id)),max_length=2)],submit);return
         if key in ('nation','province'):
             with db.cursor() as c:
                 if key=='nation':c.execute('SELECT id,name FROM nations ORDER BY name')

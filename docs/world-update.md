@@ -159,7 +159,7 @@ wojska. Podgląd gospodarki nie nalicza prestiżu, płatności ani postępu na s
 ## Państwo zgłaszane przez gracza
 
 Gracz używa `/nation found` lub formularza **Zgłoś państwo** w panelu. Wpisuje
-nazwę, historię i 1–25 połączonych, niezajętych prowincji lądowych (pierwsza to
+nazwę, historię i 1–10 połączonych, niezajętych prowincji lądowych (pierwsza to
 stolica); flaga i ustrój są opcjonalne. GM używa `/nation applications` lub
 kolejki zgłoszeń w panelu administratora. Jedno konto może mieć jedno państwo;
 współgracz istniejącego kraju nie może zakładać kolejnego. Dopiero akceptacja

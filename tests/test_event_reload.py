@@ -91,7 +91,7 @@ class ReloadTests(DatabaseFixture,unittest.IsolatedAsyncioTestCase):
         with db.cursor() as c:
             c.execute("SELECT key,effect_json FROM building_defs WHERE key IN ('farm','pasture','fishing_wharf','plantation')")
             food={r['key']:json.loads(r['effect_json'])['food'] for r in c.fetchall()}
-        self.assertEqual(food,dict(farm=77.7,pasture=8,fishing_wharf=16,plantation=6))
+        self.assertEqual(food,dict(farm=77.7,pasture=8,fishing_wharf=16,plantation=7))
 
     def test_language_guard_preserves_polish_and_rejects_obvious_english(self):
         validate_language('Rada kupców w York ustala zasady handlu.','pl')

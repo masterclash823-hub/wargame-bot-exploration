@@ -46,8 +46,8 @@ class ApplicationTests(ApplicationFixture,unittest.TestCase):
         db.init_db();self.assertEqual(applications.latest(3,100)['status'],'pending')
         nid=applications.decide(aid,100,999,0,'approve')
         n=self.query('SELECT * FROM nations WHERE id=?',(nid,))[0]
-        self.assertEqual((n['owner_id'],n['population'],n['treasury']),('3',4000,500))
-        self.assertEqual(json.loads(n['resources_json']),applications.STARTER)
+        self.assertEqual((n['owner_id'],n['population'],n['treasury']),('3',4000,620))
+        self.assertEqual(json.loads(n['resources_json'])['food'],240)
         self.assertEqual(self.query('SELECT azgaar_cell_id FROM provinces WHERE id=?',(n['capital_province_id'],))[0]['azgaar_cell_id'],10)
         self.assertTrue(self.query('SELECT id FROM blueprints WHERE nation_id=?',(nid,)))
         with self.assertRaises(ValueError):applications.decide(aid,100,999,0,'approve')

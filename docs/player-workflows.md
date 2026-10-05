@@ -3,18 +3,19 @@
 ## Zgłoszenie państwa
 
 1. Gracz bez państwa i dostępu coop otwiera `/nation found` lub **Panel → Zgłoś państwo**.
-2. Wpisuje nazwę, historię, opcjonalny ustrój i flagę oraz ID 1–25 prowincji.
+2. Wpisuje nazwę, historię, opcjonalny ustrój i flagę oraz ID 1–10 prowincji.
    Prowincje muszą być aktywne, niezajęte, lądowe i tworzyć połączone terytorium.
    Pierwsza prowincja zostaje stolicą. Szczegóły pola pokazuje `/province info`.
 3. `/nation application` lub **Moje zgłoszenie** pokazuje status, pozwala edytować
-   oczekujące zgłoszenie albo je wycofać. Do akceptacji ziemia nie jest rezerwowana.
+   oczekujące zgłoszenie albo je wycofać. **Bonusy startowe** lub `/nation bonuses`
+   pozwalają rozdzielić domyślnie 35 punktów. Liczba prowincji musi być równa
+   punktom wielkości państwa. Do akceptacji ziemia nie jest rezerwowana.
 4. GM otwiera `/nation applications` lub **Panel administratora → Państwa → Zgłoszenia państw**.
    Wybiera zgłoszenie, czyta całość i akceptuje albo odrzuca je z powodem widocznym
    dla gracza. Edycja gracza unieważnia wcześniejszy podgląd GM-a.
 5. Akceptacja tworzy państwo, nadaje prowincje i stolicę, sumuje ich ludność,
-   dodaje projekty jednostek oraz dotychczasowy pakiet startowy: 500 złota,
-   żywność 200, drewno 150, kamień 100, żelazo 80, miedź 40, węgiel 40, glina 60,
-   tkanina 30, smoła 30, proch 20, konie 10, przyprawy 10 i jedwab 5.
+   dodaje projekty jednostek oraz wybrane zasoby, złoto, technologię i własną
+   kulturę/religię. [Zasady bonusów i ustawienia GM-a](game-setup.md).
 
 Bot ponownie sprawdza właściciela, nazwę i ziemię przy akceptacji. Jeśli ktoś
 wcześniej zajmie prowincję, gracz musi poprawić zgłoszenie. Powtórne kliknięcie

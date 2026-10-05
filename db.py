@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS nation_applications (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_application_player ON nation_applications(player_id) WHERE status='pending';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_application_name ON nation_applications(name_key) WHERE status='pending';
+CREATE TABLE IF NOT EXISTS nation_start_choices (
+    application_id INTEGER PRIMARY KEY REFERENCES nation_applications(id) ON DELETE CASCADE,
+    points_json TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS market_offers (
     id SERIAL PRIMARY KEY,
@@ -232,6 +236,13 @@ CREATE TABLE IF NOT EXISTS megaprojects (
     gm_notes        TEXT NOT NULL DEFAULT '',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at    TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS project_ai_reviews (
+    project_id INTEGER PRIMARY KEY REFERENCES megaprojects(id) ON DELETE CASCADE,
+    fingerprint TEXT NOT NULL, result_json TEXT NOT NULL DEFAULT '{}',
+    state TEXT NOT NULL DEFAULT 'working', retry_after DOUBLE PRECISION NOT NULL DEFAULT 0,
+    applied INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS blueprints (

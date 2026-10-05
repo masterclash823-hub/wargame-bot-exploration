@@ -1020,32 +1020,39 @@ class EconomyCog(commands.Cog):
     # MEGAPROJECT GROUP
     # ======================================================================
 
+    @mp_grp.command(name='review',description='Review a project with separate AI / Oceń projekt przez osobne AI')
+    @i18n.localized
+    async def mp_review(self,interaction:discord.Interaction,project_id:int=0):
+        from project_ai_ui import show
+        await show(interaction,project_id)
+
     @mp_grp.command(name="propose", description="Propose a project / Zaproponuj projekt")
     @app_commands.describe(name="Project name", effect="Desired effect", gold_budget="Gold budget")
     @i18n.localized
     async def mp_propose(self, interaction: discord.Interaction,
                          name: str, effect: str, gold_budget: int):
+        from world_service import tr
+        if not 1<=len(name.strip())<=80 or not 1<=len(effect.strip())<=4000 or not 0<=gold_budget<=1000000:
+            await interaction.response.send_message(tr('Nazwa 1–80 znaków, opis 1–4000, budżet 0–1000000.',
+                'Name 1–80 characters, description 1–4000, budget 0–1000000.'),ephemeral=True);return
         lang = _lang(interaction)
         n = _nation_owner(str(interaction.user.id))
         if not n:
             await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
             return
-        with db.cursor() as c:
-            c.execute(
-                "INSERT INTO megaprojects(nation_id,name,proposed_effect,cost_json,status)"
-                " VALUES(?,?,?,?,?)",
-                (n["id"], name, effect, json.dumps({"gold": gold_budget}), "proposed")
-            )
-            project_id = c.lastrowid
+        project_id = db.insert_returning_id(
+            "INSERT INTO megaprojects(nation_id,name,proposed_effect,cost_json,status) VALUES(?,?,?,?,?)",
+            (n["id"], name, effect, json.dumps({"gold": gold_budget}), "proposed"))
         _log(n["id"], "player",
              i18n.text("Proposed project '{p0}' (#{p1}): {p2}. Budget: {p3}g.", p0=name, p1=project_id, p2=effect, p3=gold_budget))
         embed = discord.Embed(
             title=i18n.text('Project Proposed'),
             description=(
-                i18n.text('**{p0}** (ID: {p1})\n{p2}\nBudget: {p3:,} gold\n\nAwaiting GM approval.', p0=name, p1=project_id, p2=effect, p3=gold_budget)
+                i18n.text('**{p0}** (ID: {p1})\n{p2}\nBudget: {p3:,} gold\n\nAwaiting GM approval.', p0=name, p1=project_id, p2=effect[:3500], p3=gold_budget)
             ),
             color=discord.Color.orange(),
         )
+        embed.set_footer(text=f'/project review {project_id}')
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @mp_grp.command(name="build", description="Start building an approved project / Rozpocznij budowe")

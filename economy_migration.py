@@ -3,7 +3,7 @@ import json
 import db
 
 NEW_EFFECTS={'farm':{'food':21},'pasture':{'food':8,'horses':1},
-             'fishing_wharf':{'food':16},'plantation':{'food':6,'spices':3},
+             'fishing_wharf':{'food':16},'plantation':{'food':7,'spices':3},
              'powder_mill':{'gunpowder':4,'coal':-2,'copper':-1},
              'silk_workshop':{'silk':2,'cloth':-2},'market':{},'port':{}}
 NEW_DESCRIPTIONS={
@@ -16,6 +16,14 @@ NEW_DESCRIPTIONS={
 
 def seed_buildings(defaults):
     with db.atomic() as c:
+        # 6 × 1.10 = 6.6, rounded to 7. Preserve custom GM definitions.
+        c.execute("SELECT value FROM economy_meta WHERE key='forest_food_v5'")
+        if not c.fetchone():
+            c.execute("SELECT effect_json FROM building_defs WHERE key='plantation'")
+            row=c.fetchone()
+            if row and json.loads(row['effect_json'])=={'food':6,'spices':3}:
+                c.execute("UPDATE building_defs SET effect_json=? WHERE key='plantation'",('{"food":7,"spices":3}',))
+            c.execute("INSERT INTO economy_meta(key,value) VALUES('forest_food_v5','1')")
         c.execute("SELECT value FROM economy_meta WHERE key='buildings_v2'")
         migrated=bool(c.fetchone())
         for b in defaults:
