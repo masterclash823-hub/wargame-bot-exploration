@@ -23,6 +23,7 @@ from cogs.tech import TechCog
 from cogs.world import WorldCog, MemoryView
 from cogs.treaties import TreatiesCog, TreatyView, treaty_embed
 from cogs.panel import PlayerPanel
+from cogs.combat import CombatCog
 from test_regressions import DatabaseFixture, interaction
 
 
@@ -321,6 +322,14 @@ class WorldUITests(WorldFixture,unittest.IsolatedAsyncioTestCase):
         treaties.amend_tribute(tid,1,50,2,'recipient')
         await view.accept.callback(interaction(2))
         self.assertEqual(treaties.get_treaty(tid,2)['status'],'proposed')
+
+    async def test_peace_can_only_be_proposed_through_treaty(self):
+        self.assertNotIn('peace', [cmd.name for cmd in CombatCog.diplomacy_grp.commands])
+        view=PlayerPanel(None,1,'en')
+        i=interaction(1);i.response.is_done=lambda:False
+        await view.dispatch(i,'peace')
+        i.response.send_message.assert_not_awaited()
+        self.assertIn('propose', [cmd.name for cmd in TreatiesCog.treaty.commands])
 
     async def test_panel_buttons_dispatch_to_new_cogs_and_no_self_found(self):
         cogs={'WorldCog':WorldCog(),'TreatiesCog':TreatiesCog()}
