@@ -93,8 +93,8 @@ Odbiorca widzi ją w swoim panelu i na liście traktatów. Musi kliknąć
 | Dostęp wojskowy | Wzajemne prawo przemarszu przez terytorium |
 | Gwarancja | Autor gwarantuje bezpieczeństwo odbiorcy i otrzymuje wezwanie po ataku |
 
-`/diplomacy peace` i `/diplomacy alliance` także otwierają szkic traktatu.
-Nie kończą już jednostronnie wojny i nie nadają jednostronnie sojuszu.
+`/treaty propose` służy do otwierania szkicu traktatu pokojowego i innych traktatów.
+Pokój nie może być zawarty przez osobną komendę dyplomatyczną; wymaga zaakceptowania traktatu.
 Podczas wojny można zaproponować pokój; pozostałe rodzaje wymagają pokoju.
 Dotychczasowe relacje pozostają zachowane. Stare sojusze nadal umożliwiają
 przemarsz, ale nie otrzymują wymyślonych terminów, rat ani gwarancji.
