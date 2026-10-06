@@ -7,7 +7,6 @@ Combat commands:
   /battle resolve       - GM: get AI modifier, then post battle report
   /battle override      - GM: manually set modifier before resolving
   /diplomacy war        - declare war on a nation
-  /diplomacy peace      - propose/accept peace
   /diplomacy alliance   - propose/accept alliance
   /diplomacy status     - view your diplomatic relations
 
