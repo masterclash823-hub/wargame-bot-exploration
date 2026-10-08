@@ -37,7 +37,7 @@
   "province_unclaimed": "Removed ownership from {count} province(s).",
   "province_list_empty": "**{nation}** owns no provinces yet.",
   "help_map_export_markers": "[GM] Generate a JS snippet to place resource markers on your Azgaar map.",
-  "no_nation": "You do not have a nation yet. Ask the Game Master to create and assign one to you.",
+  "no_nation": "You do not have a nation yet. Apply through /nation found or /panel. The Game Master only needs to approve the application.",
   "help_resources": "View your nation resource stockpile and treasury.",
   "help_build": "Construct a building in one of your provinces.",
   "help_buildings_list": "List all available building types with costs and effects.",

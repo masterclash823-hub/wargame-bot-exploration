@@ -62,20 +62,27 @@ def build(nid,cell,key,upgrade=False,uid=None):
 
 
 def set_posture(nid,unit_id,mode):
+    from military_posture import at_war
+    from world_service import world_lock,tr
     if mode not in ('reserve','active','deployed'): raise ValueError('Invalid mode')
     with db.atomic() as c:
+        world_lock(c)
         lock_nation(c,nid)
         c.execute('SELECT * FROM military_units WHERE id=? AND nation_id=?'+(' FOR UPDATE' if db.USE_POSTGRES else ''),(unit_id,nid))
         if not c.fetchone(): raise ValueError(i18n.text('Unit not found or not yours.'))
-        c.execute("SELECT forces_json FROM battle_plans WHERE nation_id=? AND status IN ('unmatched','matched')",(nid,))
-        if any(any(int(x.get('unit_id',0))==unit_id for x in read_json(p['forces_json'],[])) for p in c.fetchall()):
+        wartime=at_war(c,nid)
+        if mode=='reserve' and wartime:
+            raise ValueError(tr('Podczas wojny jednostki muszą pozostać aktywne. Rezerwa będzie dostępna po zakończeniu wszystkich wojen.',
+                                'Units must remain active during war. Reserves become available after all wars end.'))
+        from battle_coalitions import committed
+        if committed(c,unit_id):
             raise ValueError(i18n.text('This unit is assigned to a pending battle plan.'))
         c.execute('SELECT route_id FROM route_assignments WHERE ship_id=?',(unit_id,))
         if c.fetchone(): raise ValueError(i18n.text('Cancel the trade route before changing this ship.'))
         c.execute('SELECT * FROM military_posture WHERE unit_id=?',(unit_id,)); old=c.fetchone()
         ready=0
-        if old and old['mode']=='mobilizing' and mode!='reserve': return 'mobilizing'
-        if old and old['mode']=='reserve' and mode!='reserve':
+        if not wartime and old and old['mode']=='mobilizing' and mode!='reserve': return 'mobilizing'
+        if not wartime and old and old['mode']=='reserve' and mode!='reserve':
             mode='mobilizing'
             ready=int(_config(c,'current_year','1'))*12+int(_config(c,'current_month','1'))
         c.execute('INSERT INTO military_posture(unit_id,mode,ready_month) VALUES(?,?,?) '
@@ -91,15 +98,16 @@ def assert_ready(c,nid,unit_id):
     if c.fetchone(): raise ValueError(i18n.text('This ship is assigned to a trade route.'))
 
 
-def submit_plan(nid, forces, location, orders, note):
+def submit_plan(nid, forces, location, orders, note, *, orders_blob=None):
     """Lock the nation before rechecking commitments and reserving units."""
     with db.atomic() as c:
+        from world_service import world_lock
+        world_lock(c)
         lock_nation(c,nid)
-        c.execute("SELECT forces_json FROM battle_plans WHERE nation_id=? AND status IN ('unmatched','matched')",(nid,))
-        committed={int(f['unit_id']) for p in c.fetchall() for f in read_json(p['forces_json'],[])}
+        from battle_coalitions import committed
         fresh=[]
         for uid in dict.fromkeys(int(f['unit_id']) for f in forces):
-            if uid in committed:raise ValueError(i18n.text('This unit is assigned to a pending battle plan.'))
+            if committed(c,uid):raise ValueError(i18n.text('This unit is assigned to a pending battle plan.'))
             c.execute('SELECT quantity FROM military_units WHERE id=? AND nation_id=?',(uid,nid))
             row=c.fetchone()
             if not row or row['quantity']<=0:raise ValueError(i18n.text('Unit not found or not yours.'))
@@ -107,7 +115,7 @@ def submit_plan(nid, forces, location, orders, note):
             fresh.append({'unit_id':uid,'qty':row['quantity']})
         pid=db.insert_returning_id(
             'INSERT INTO battle_plans(nation_id,forces_json,provinces_json,orders_text,status) VALUES(?,?,?,?,?)',
-            (nid,json.dumps(fresh),json.dumps([location]),f"{orders} | Location: {location} | Forces: {note or 'see unit_ids'}",'unmatched'))
+            (nid,json.dumps(fresh),json.dumps([location]),orders_blob or f"{orders} | Location: {location} | Forces: {note or 'see unit_ids'}",'unmatched'))
         for f in fresh:
             c.execute("INSERT INTO military_posture(unit_id,mode) VALUES(?,'deployed') "
                       "ON CONFLICT(unit_id) DO UPDATE SET mode='deployed',ready_month=0",(f['unit_id'],))
@@ -162,8 +170,8 @@ def create_route(nid,name,from_cell,to_cell,ship_id):
         c.execute('SELECT u.quantity,b.stats_json FROM military_units u JOIN blueprints b ON b.id=u.blueprint_id '
                   "WHERE u.id=? AND u.nation_id=? AND b.type='ship'",(ship_id,nid)); ship=c.fetchone()
         if not ship or read_json(ship['stats_json']).get('cargo',0)<=0: raise ValueError(i18n.text('Choose your cargo ship.'))
-        c.execute("SELECT forces_json FROM battle_plans WHERE nation_id=? AND status IN ('unmatched','matched')",(nid,))
-        if any(any(x.get('unit_id')==ship_id for x in read_json(p['forces_json'],[])) for p in c.fetchall()):
+        from battle_coalitions import committed
+        if committed(c,ship_id):
             raise ValueError(i18n.text('This unit is assigned to a pending battle plan.'))
         rid=db.insert_returning_id('INSERT INTO trade_routes(nation_id,name,from_cell_id,to_cell_id) VALUES(?,?,?,?)',
                                   (nid,name,from_cell,to_cell))
@@ -192,9 +200,8 @@ def found_colony(nid,cell,name):
                   "LEFT JOIN military_posture m ON m.unit_id=u.id LEFT JOIN route_assignments a ON a.ship_id=u.id "
                   "WHERE u.nation_id=? AND b.type='ship' AND a.ship_id IS NULL AND (m.mode IS NULL OR m.mode IN ('active','deployed'))",(nid,))
         ships=c.fetchall()
-        c.execute("SELECT forces_json FROM battle_plans WHERE nation_id=? AND status IN ('unmatched','matched')",(nid,))
-        committed={int(f['unit_id']) for p in c.fetchall() for f in read_json(p['forces_json'],[])}
-        cargo=sum(read_json(s['stats_json']).get('cargo',0)*s['quantity'] for s in ships if s['id'] not in committed)
+        from battle_coalitions import committed
+        cargo=sum(read_json(s['stats_json']).get('cargo',0)*s['quantity'] for s in ships if not committed(c,s['id']))
         from technology import bonuses
         cargo*=1+bonuses(c,nid).get('cargo',0)
         if cargo<5:raise ValueError(i18n.text('Need 5 available cargo capacity to transport settlers.'))

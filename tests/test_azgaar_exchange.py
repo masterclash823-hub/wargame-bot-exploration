@@ -145,6 +145,21 @@ class MapExchangeTests(unittest.TestCase):
         service.import_map(self.raw,resync=True,sync_owners=True)
         self.assertEqual(self.rows('SELECT owner_nation_id FROM provinces WHERE azgaar_cell_id=1')[0]['owner_nation_id'],1)
 
+    def test_player_city_name_survives_resync_and_exports_to_existing_burg(self):
+        from province_admin import rename
+        service.import_map(self.raw,self.map)
+        before=self.rows('SELECT * FROM provinces WHERE azgaar_cell_id=1')[0]
+        rename(1,1,'Nowy Kraków')
+        service.import_map(self.raw,resync=True)
+        self.assertEqual(self.rows('SELECT * FROM provinces WHERE azgaar_cell_id=1')[0],dict(before,name='Nowy Kraków'))
+        data=json.loads(service.export_map(native_format=False))
+        self.assertEqual(data['pack']['burgs'][1]['name'],'Nowy Kraków')
+        decoded=fmt.decode(service.export_map())
+        burgs=json.loads(decoded['_native_records'][fmt.NATIVE_ENTITIES['burgs']])
+        self.assertEqual(burgs[1]['name'],'Nowy Kraków')
+        self.assertEqual(len(burgs),len(self.data['pack']['burgs']))
+        self.assertEqual(burgs[1]['population'],self.data['pack']['burgs'][1]['population'])
+
     def test_new_bot_nation_exports_with_stable_ids_and_deleted_stays_deleted(self):
         service.import_map(self.raw,self.map)
         with db.cursor() as c:

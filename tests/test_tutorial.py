@@ -20,7 +20,8 @@ class TutorialTests(DatabaseFixture, unittest.IsolatedAsyncioTestCase):
         panel=other.response.send_message.call_args.kwargs
         self.assertEqual(slash['embed'].to_dict(),panel['embed'].to_dict())
         self.assertIsInstance(panel['view'],TutorialView)
-        self.assertIn('Game Master',panel['embed'].description)
+        self.assertIn('/nation found',panel['embed'].description)
+        self.assertIn('GM zatwierdza',panel['embed'].description)
         self.assertTrue(panel['ephemeral'])
 
     async def test_all_chapters_fit_and_navigation_follows_current_language(self):

@@ -118,18 +118,28 @@ def _entries(raw):
     return list(merged.items())
 
 
+def _coalition_entries(plan,default_nation_id=None):
+    from battle_coalitions import entries
+    source=plan
+    if 'nation_id' not in plan and default_nation_id is not None:
+        source=dict(plan,nation_id=default_nation_id)
+    return [(row['unit_id'],row['qty'],row['nation_id']) for row in entries(source)]
+
+
 def force_snapshot(plan, nation):
     """Human/AI-readable snapshot of the exact unit groups committed in a plan."""
     rows = []
     with db.cursor() as c:
         from technology import bonuses
-        effects=bonuses(c,nation['id'])
-        for unit_id, requested in _entries(plan["forces_json"]):
+        for unit_id, requested, nation_id in _coalition_entries(plan,nation['id']):
+            c.execute('SELECT * FROM nations WHERE id=?',(nation_id,));owner=c.fetchone()
+            if not owner:continue
+            effects=bonuses(c,nation_id)
             c.execute("SELECT u.*,b.name AS blueprint_name,b.type AS blueprint_type,b.hull,b.stats_json,"
                       "p.name AS province_name,p.azgaar_cell_id FROM military_units u "
                       "LEFT JOIN blueprints b ON b.id=u.blueprint_id "
                       "LEFT JOIN provinces p ON p.id=u.province_id "
-                      "WHERE u.id=? AND u.nation_id=?", (unit_id, nation["id"]))
+                      "WHERE u.id=? AND u.nation_id=?", (unit_id, nation_id))
             unit = c.fetchone()
             if not unit:
                 continue
@@ -137,7 +147,8 @@ def force_snapshot(plan, nation):
                 stats = json.loads(unit["stats_json"] or "{}")
             except (TypeError, ValueError):
                 stats = {}
-            rows.append({"unit_id": unit_id, "name": unit["blueprint_name"] or unit["unit_type"] or "Unit",
+            rows.append({"unit_id": unit_id, "nation_id":nation_id,"nation_name":owner['name'],
+                         "name": unit["blueprint_name"] or unit["unit_type"] or "Unit",
                          "type": unit["blueprint_type"] or unit["unit_type"] or "unit",
                          "hull": unit["hull"] or "", "committed": min(requested, int(unit["quantity"])),
                          "owned": int(unit["quantity"]), "stats": stats,
@@ -147,18 +158,20 @@ def force_snapshot(plan, nation):
 
 
 def _power(c, plan, nation, *, lock_units=True):
-    tech = json.loads(nation["tech_json"] or "{}")
     from technology import bonuses
-    effects=bonuses(c,nation['id'])
     attack = defense = 0.0
     committed = []
     lock = " FOR UPDATE OF u" if db.USE_POSTGRES and lock_units else ""
-    for unit_id, requested in _entries(plan["forces_json"]):
+    morale={}
+    for unit_id, requested, nation_id in _coalition_entries(plan,nation['id']):
+        c.execute('SELECT * FROM nations WHERE id=?',(nation_id,));owner=c.fetchone()
+        if not owner:continue
+        tech=json.loads(owner['tech_json'] or '{}');effects=bonuses(c,nation_id)
         from economy_services import assert_ready
-        assert_ready(c,nation['id'],unit_id)
+        assert_ready(c,nation_id,unit_id)
         c.execute("SELECT u.*,b.stats_json,b.type AS btype FROM military_units u "
                   "LEFT JOIN blueprints b ON u.blueprint_id=b.id "
-                  "WHERE u.id=? AND u.nation_id=?" + lock, (unit_id, nation["id"]))
+                  "WHERE u.id=? AND u.nation_id=?" + lock, (unit_id, nation_id))
         unit = c.fetchone()
         if not unit:
             continue
@@ -171,13 +184,13 @@ def _power(c, plan, nation, *, lock_units=True):
             stats = {}
         category='naval' if unit['btype']=='ship' else 'land'
         tech_mod=1+float(tech.get(category,3))/20
-        attack += float(stats.get("attack", 0)) * qty * tech_mod * (1+effects.get(category+'_attack',0))
-        defense += float(stats.get("hp", 100) if unit["btype"] == "ship" else stats.get("defense", 0)) * qty * (0.1 if unit["btype"] == "ship" else 1) * tech_mod * (1+effects.get(category+'_defense',0))
+        if nation_id not in morale:
+            from economy_engine import policy
+            morale[nation_id]=max(.5,1-.1*policy(c,nation_id)['unpaid_months'])
+        attack += float(stats.get("attack", 0)) * qty * tech_mod * (1+effects.get(category+'_attack',0))*morale[nation_id]
+        defense += float(stats.get("hp", 100) if unit["btype"] == "ship" else stats.get("defense", 0)) * qty * (0.1 if unit["btype"] == "ship" else 1) * tech_mod * (1+effects.get(category+'_defense',0))*morale[nation_id]
         committed.append((unit["id"], qty, int(unit["quantity"])))
-    from economy_engine import policy
-    arrears=policy(c,nation['id'])['unpaid_months']
-    morale=max(.5,1-.1*arrears)
-    return attack * morale, defense * morale, committed
+    return attack, defense, committed
 
 
 def _fort_bonus(c, location):
@@ -260,9 +273,7 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
     battlefield = location_context(final_location)
     atk_mod = modifier(atk_override, override=True) if atk_override else ai["attacker_modifier"]
     def_mod = modifier(def_override, override=True) if def_override else ai["defender_modifier"]
-    with db.cursor() as c:
-        if not db.USE_POSTGRES:
-            c.execute("BEGIN IMMEDIATE")
+    with db.atomic() as c:
         from world_service import world_lock
         world_lock(c)
         lock = " FOR UPDATE" if db.USE_POSTGRES else ""
@@ -284,18 +295,31 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
         nat_a, nat_b = nations.get(plan_a["nation_id"]), nations.get(plan_b["nation_id"])
         if not nat_a or not nat_b:
             raise ValueError(i18n.text('One or both nations no longer exist.'))
+        from battle_coalitions import entries,participants,participant_rows
+        participants_a=participants(c,plan_a);participants_b=participants(c,plan_b)
+        if participants_a & participants_b:
+            raise ValueError(i18n.text('The opposing plans contain the same nation.'))
+        rows_a=participant_rows(c,plan_a);rows_b=participant_rows(c,plan_b)
         atk_power, _, atk_units = _power(c, plan_a, nat_a)
         _, def_power, def_units = _power(c, plan_b, nat_b)
         fort = _fort_bonus(c, final_location)
         result = _combat(atk_power, def_power, atk_mod, def_mod, fort)
+        result['tactical_modifiers']={'attacker':atk_mod,'defender':def_mod}
         from technology import bonuses
         result['research_bonuses']={}
-        for side,n,committed in (('attacker',nat_a,atk_units),('defender',nat_b,def_units)):
-            ids={u[0] for u in committed}
-            c.execute('SELECT u.id,b.type FROM military_units u LEFT JOIN blueprints b ON b.id=u.blueprint_id WHERE u.nation_id=?',(n['id'],))
-            categories={'naval' if u['type']=='ship' else 'land' for u in c.fetchall() if u['id'] in ids}
-            stat='_attack' if side=='attacker' else '_defense'
-            result['research_bonuses'][side]={k+stat:v for k in categories if (v:=bonuses(c,n['id']).get(k+stat,0))}
+        result['coalition_research_bonuses']={}
+        for side,rows,committed in (('attacker',rows_a,atk_units),('defender',rows_b,def_units)):
+            ids={u[0] for u in committed};by_nation={}
+            for n in rows:
+                own_ids={item['unit_id'] for item in entries(plan_a if side=='attacker' else plan_b) if item['nation_id']==n['id']}
+                c.execute('SELECT u.id,b.type FROM military_units u LEFT JOIN blueprints b ON b.id=u.blueprint_id WHERE u.nation_id=?',(n['id'],))
+                categories={'naval' if u['type']=='ship' else 'land' for u in c.fetchall() if u['id'] in ids and u['id'] in own_ids}
+                stat='_attack' if side=='attacker' else '_defense'
+                by_nation[n['name']]={k+stat:v for k in categories if (v:=bonuses(c,n['id']).get(k+stat,0))}
+            result['coalition_research_bonuses'][side]=by_nation
+            result['research_bonuses'][side]=by_nation.get(rows[0]['name'],{}) if rows else {}
+        result['attacker_nations']=[{'id':n['id'],'name':n['name']} for n in rows_a]
+        result['defender_nations']=[{'id':n['id'],'name':n['name']} for n in rows_b]
         result["battlefield"] = battlefield
         result["casualties_applied"] = bool(apply_casualties)
         c.execute("SELECT u.id FROM military_units u LEFT JOIN blueprints b ON b.id=u.blueprint_id WHERE b.type IS NULL OR b.type!='ship'")
@@ -305,7 +329,8 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
         result["defender_losses"] = _casualties(c, def_units, result["def_casualties_pct"],
                                                 ai['defender_exposure'], apply_casualties)
         from captivity import battle_pool
-        result['captives_available']=battle_pool(c,battle_id,result,nat_a['id'],nat_b['id'],land_ids)
+        result['captives_available']=(battle_pool(c,battle_id,result,nat_a['id'],nat_b['id'],land_ids)
+                                      if len(rows_a)==len(rows_b)==1 else 0)
         final = {"attacker_modifier": atk_mod, "defender_modifier": def_mod,
                  "overridden": bool(atk_override or def_override)}
         c.execute("UPDATE battles SET status='resolved',ai_modifier_json=?,gm_final_modifier_json=?,"
@@ -315,10 +340,13 @@ def resolve(battle_id, ai_raw, atk_override=0.0, def_override=0.0, apply_casualt
             raise ValueError(i18n.text('Battle was resolved by another request.'))
         c.execute("UPDATE battle_plans SET status='resolved' WHERE id IN (?,?)",
                   (plan_a["id"], plan_b["id"]))
-        winner_name = nat_a["name"] if result["winner"] == "attacker" else nat_b["name"] if result["winner"] == "defender" else i18n.text('Draw')
+        winner_name = (' + '.join(n['name'] for n in rows_a) if result['winner']=='attacker' else
+                       ' + '.join(n['name'] for n in rows_b) if result['winner']=='defender' else i18n.text('Draw'))
         from world_service import activity
-        activity(c,'battle',nat_a['id'],f'battle:{battle_id}',{'winner':result['winner']},nat_b['id'])
-        for nation, role in ((nat_a, "attacker"), (nat_b, "defender")):
+        for left in rows_a:
+            for right in rows_b:
+                activity(c,'battle',left['id'],f'battle:{battle_id}:{left["id"]}:{right["id"]}',{'winner':result['winner']},right['id'])
+        for nation, role in ([(n,'attacker') for n in rows_a]+[(n,'defender') for n in rows_b]):
             pct = result["atk_casualties_pct"] if role == "attacker" else result["def_casualties_pct"]
             c.execute("INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,?,?)",
                       (nation["id"], "system", i18n.text('Battle #{p0}: {p1}. Your casualties: {p2}%.', p0=battle_id, p1=winner_name, p2=pct)))

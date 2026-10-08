@@ -1,5 +1,6 @@
-"""Atomic province edits shared by GM slash commands and the admin panel."""
+"""Atomic province actions shared by player and GM commands and panels."""
 import json
+import unicodedata
 import db
 import province_geography as geography
 from world_service import world_lock,tr
@@ -18,6 +19,48 @@ def _province(c,cell):
     row=c.fetchone()
     if not row:raise ValueError(tr('Nie znaleziono aktywnej prowincji.', 'Active province not found.'))
     return row
+
+
+def naming_options(uid):
+    """Active provinces the player can currently name, including co-op access."""
+    from nation_access import find_nation,can_manage
+    with db.cursor() as c:
+        nation=find_nation(uid,c)
+        if not nation or not can_manage(nation['id'],uid,c):
+            raise ValueError(tr('Nie masz dostępu do państwa.','Nation access unavailable.'))
+        c.execute('SELECT azgaar_cell_id,name,terrain,population FROM provinces '
+                  'WHERE owner_nation_id=? AND active=1 ORDER BY name,azgaar_cell_id',(nation['id'],))
+        return nation,c.fetchall()
+
+
+def rename(cell,uid,name,*,nation_id=None,expected_name=None):
+    """Rename owned land for free, rechecking access and any open form's name."""
+    from nation_access import find_nation,can_manage
+    from economy_engine import lock_nation
+    name=unicodedata.normalize('NFC',str(name).strip())
+    if not 1<=len(name)<=80 or any(unicodedata.category(char) in ('Cc','Cs') for char in name):
+        raise ValueError(tr('Nazwa miasta: 1–80 znaków w jednym wierszu.',
+                            'City name: 1–80 characters on one line.'))
+    with db.atomic() as c:
+        world_lock(c)
+        nation=find_nation(uid,c)
+        if not nation or not can_manage(nation['id'],uid,c) or (nation_id is not None and nation['id']!=nation_id):
+            raise ValueError(tr('Nie masz już dostępu do tego państwa. Otwórz panel ponownie.',
+                                'You no longer have access to this nation. Open the panel again.'))
+        lock_nation(c,nation['id'])
+        p=_province(c,cell)
+        if p['owner_nation_id']!=nation['id']:
+            raise ValueError(tr('Możesz nazwać tylko własną prowincję.','You can only name your own province.'))
+        previous=p['name'] or ''
+        if expected_name is not None and previous!=expected_name and previous!=name:
+            raise ValueError(tr('Nazwa prowincji zmieniła się. Otwórz formularz ponownie.',
+                                'The province name changed. Open the form again.'))
+        if previous!=name:
+            c.execute('UPDATE provinces SET name=? WHERE id=?',(name,p['id']))
+            c.execute("INSERT INTO nation_history(nation_id,source,entry_text) VALUES(?,'system',?)",
+                      (nation['id'],tr(f'Prowincja #{cell}: {previous or "—"} → {name}. Koszt: 0 złota.',
+                                      f'Province #{cell}: {previous or "—"} → {name}. Cost: 0 gold.')))
+        return dict(cell=cell,name=name,previous=previous)
 
 
 def _owned_land(c,nation,cells):

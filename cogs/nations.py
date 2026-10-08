@@ -1,6 +1,7 @@
 """
 Nation commands:
-  /nation found <player> <name> <history>    - GM creates and assigns a nation
+  /nation found                             - player submits a nation application
+  /nation applications                      - GM reviews pending applications
   /nation transfer <nation> <player>         - GM transfers nation ownership
   /nation stats  [name]                      - view a nation's stats
   /nation history <name> [page]              - public history log (paginated)
@@ -87,28 +88,40 @@ class NationCog(commands.Cog):
         from coop_ui import show
         await show(interaction,nation)
 
-    @nation_group.command(name="found", description="GM: create and assign a nation / GM: utwórz i nadaj państwo")
-    @app_commands.describe(player="Player who will own the nation / Gracz otrzymujący państwo",
-                           name="Nation name / Nazwa państwa", history="Nation lore / Historia państwa",
-                           flag="Flag emoji or URL / Flaga lub URL", government="Government type / Ustrój")
+    @nation_group.command(name="found", description="Apply to create your nation / Zgłoś swoje państwo do akceptacji")
     @i18n.localized
-    async def found(self, interaction: discord.Interaction, player: discord.Member,
-                    name: str, history: str, flag: str = "", government: str = ""):
-        from world_service import create_nation, tr
+    async def found(self, interaction: discord.Interaction):
+        from nation_application_ui import form
+        await form(interaction)
+
+    @nation_group.command(name='bonuses',description='Choose starting bonuses / Wybierz bonusy początkowe')
+    @i18n.localized
+    async def bonuses(self,interaction:discord.Interaction):
+        from starting_ui import show
+        await show(interaction)
+
+    @nation_group.command(name='start_budget',description='[GM] Set starting points / Ustaw liczbę punktów początkowych')
+    @i18n.localized
+    async def start_budget(self,interaction:discord.Interaction,points:app_commands.Range[int,1,60]):
+        from game_setup import configure
+        from world_service import tr
         if not _gm(interaction):
-            await interaction.response.send_message(i18n.t(_lang(interaction), 'gm_only'), ephemeral=True); return
-        if player.bot:
-            await interaction.response.send_message(tr('Wybierz gracza, nie bota.', 'Choose a player account.'), ephemeral=True); return
-        try: create_nation(player.id, name, history, flag, government, interaction.user.id)
-        except ValueError as exc:
-            await interaction.response.send_message(str(exc), ephemeral=True); return
-        embed = flagged_embed(discord.Embed(title=tr('Państwo utworzone i nadane', 'Nation created and assigned'),
-            description=f"**{name.strip()}** → <@{player.id}>",
-            color=discord.Color.green()), (flag, name))
-        lore=history.strip()
-        for start in range(0,len(lore),1000):
-            embed.add_field(name=tr('Historia państwa', 'Nation lore'), value=lore[start:start+1000], inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message(tr('Tylko GM.','GM only.'),ephemeral=True);return
+        configure(interaction.guild_id,'budget',points)
+        await interaction.response.send_message(tr(f'Budżet startowy: {points}. Dotyczy nowych i oczekujących zgłoszeń; istniejące państwa bez zmian.',
+            f'Starting budget: {points}. Applies to new and pending applications; existing nations are unchanged.'),ephemeral=True)
+
+    @nation_group.command(name='application',description='View or edit your application / Status i edycja zgłoszenia państwa')
+    @i18n.localized
+    async def application(self,interaction:discord.Interaction):
+        from nation_application_ui import show
+        await show(interaction)
+
+    @nation_group.command(name='applications',description='GM: review nation applications / GM: rozpatrz zgłoszenia państw')
+    @i18n.localized
+    async def applications(self,interaction:discord.Interaction):
+        from nation_application_ui import review_queue
+        await review_queue(interaction)
 
     @nation_group.command(name='flag', description='Set a flag from an upload, emoji or URL / Ustaw flagę z pliku, emoji lub URL')
     @app_commands.describe(nation='Nation name; blank = yours / Państwo; puste = własne',

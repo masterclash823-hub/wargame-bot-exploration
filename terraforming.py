@@ -13,8 +13,12 @@ MIN_STABILITY=40
 PROJECTS={
     'afforest':dict(pl='Zalesianie',en='Afforestation',sources=('Temperate Grassland',),
                     target='Temperate Deciduous Forest',months=6,tech=4,cost=dict(gold=800,wood=100,stone=50)),
-    'clear_forest':dict(pl='Przygotowanie pól',en='Land clearing',sources=('Temperate Deciduous Forest',),
+    'clear_forest':dict(pl='Wycinka lasu',en='Forest clearing',sources=('Temperate Deciduous Forest','Temperate Rainforest'),
                         target='Temperate Grassland',months=6,tech=4,cost=dict(gold=800,wood=50,stone=50,iron=50)),
+    'clear_tropical':dict(pl='Wycinka lasu tropikalnego',en='Tropical forest clearing',sources=('Tropical Rainforest','Tropical Seasonal Forest'),
+                         target='Savanna',months=9,tech=5,cost=dict(gold=1000,wood=50,stone=75,iron=75)),
+    'clear_taiga':dict(pl='Wycinka tajgi',en='Taiga clearing',sources=('Taiga',),
+                      target='Tundra',months=6,tech=4,cost=dict(gold=800,wood=50,stone=50,iron=50)),
     'drain_wetland':dict(pl='Osuszanie mokradeł',en='Wetland drainage',sources=('Wetland',),
                          target='Temperate Grassland',months=9,tech=5,cost=dict(gold=1200,wood=150,stone=150,iron=50)),
     'irrigate_desert':dict(pl='Nawadnianie pustyni',en='Desert irrigation',sources=('Desert','Hot Desert'),

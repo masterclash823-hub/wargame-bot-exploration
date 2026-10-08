@@ -80,8 +80,8 @@ def disband(nid,uid,unit_id):
         c.execute('SELECT u.*,b.type,b.hull,b.name AS bname FROM military_units u LEFT JOIN blueprints b ON b.id=u.blueprint_id '
                   'WHERE u.id=? AND u.nation_id=?',(unit_id,nid));u=c.fetchone()
         if not u:raise ValueError(i18n.text('Unit not found or not yours.'))
-        c.execute("SELECT forces_json FROM battle_plans WHERE nation_id=? AND status IN ('unmatched','matched')",(nid,))
-        if any(any(int(f.get('unit_id',0))==unit_id for f in json.loads(p['forces_json'])) for p in c.fetchall()):
+        from battle_coalitions import committed
+        if committed(c,unit_id):
             raise ValueError(i18n.text('This unit is assigned to a pending battle plan.'))
         key=u['hull'] or u['unit_type'];kind=u['type'] or ('ship' if key in HULLS else 'unit')
         data=(HULLS if kind=='ship' else LAND_UNITS).get(key,{})

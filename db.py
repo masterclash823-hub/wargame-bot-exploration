@@ -48,6 +48,23 @@ CREATE TABLE IF NOT EXISTS nations (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS nation_applications (
+    id SERIAL PRIMARY KEY,
+    player_id TEXT NOT NULL, guild_id TEXT NOT NULL,
+    name TEXT NOT NULL, name_key TEXT NOT NULL, history TEXT NOT NULL,
+    flag TEXT NOT NULL DEFAULT '', government TEXT NOT NULL DEFAULT '',
+    cells_json TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending',
+    version INTEGER NOT NULL DEFAULT 0, reviewer_id TEXT, reason TEXT NOT NULL DEFAULT '',
+    nation_id INTEGER REFERENCES nations(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_application_player ON nation_applications(player_id) WHERE status='pending';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_application_name ON nation_applications(name_key) WHERE status='pending';
+CREATE TABLE IF NOT EXISTS nation_start_choices (
+    application_id INTEGER PRIMARY KEY REFERENCES nation_applications(id) ON DELETE CASCADE,
+    points_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS market_offers (
     id SERIAL PRIMARY KEY,
     nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
@@ -221,6 +238,13 @@ CREATE TABLE IF NOT EXISTS megaprojects (
     completed_at    TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS project_ai_reviews (
+    project_id INTEGER PRIMARY KEY REFERENCES megaprojects(id) ON DELETE CASCADE,
+    fingerprint TEXT NOT NULL, result_json TEXT NOT NULL DEFAULT '{}',
+    state TEXT NOT NULL DEFAULT 'working', retry_after DOUBLE PRECISION NOT NULL DEFAULT 0,
+    applied INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS blueprints (
     id              SERIAL PRIMARY KEY,
     nation_id       INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
@@ -296,6 +320,13 @@ CREATE TABLE IF NOT EXISTS battle_plans (
     status        TEXT NOT NULL DEFAULT 'unmatched',
     submitted_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS battle_plan_allies (
+    plan_id INTEGER PRIMARY KEY REFERENCES battle_plans(id) ON DELETE CASCADE,
+    nation_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'invited',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_battle_plan_allies_nation ON battle_plan_allies(nation_id,status);
 
 CREATE TABLE IF NOT EXISTS battles (
     id                     SERIAL PRIMARY KEY,
@@ -334,6 +365,18 @@ CREATE TABLE IF NOT EXISTS province_captives (
     province_id INTEGER PRIMARY KEY REFERENCES provinces(id) ON DELETE CASCADE,
     quantity INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS war_engagements (
+    id SERIAL PRIMARY KEY,
+    attacker_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    defender_id INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
+    attacker_owner TEXT NOT NULL, defender_owner TEXT NOT NULL,
+    plan_id INTEGER NOT NULL REFERENCES battle_plans(id) ON DELETE CASCADE,
+    cell_id INTEGER NOT NULL, created_month INTEGER NOT NULL, expires_month INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    battle_id INTEGER REFERENCES battles(id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_engagement_plan ON war_engagements(plan_id) WHERE status='pending';
+
 CREATE TABLE IF NOT EXISTS events (
     id            SERIAL PRIMARY KEY,
     nation_id     INTEGER NOT NULL REFERENCES nations(id) ON DELETE CASCADE,
@@ -783,4 +826,9 @@ def init_db() -> None:
                 cur.execute("INSERT INTO economy_meta(key,value) VALUES('treasury_double_v1','1') ON CONFLICT(key) DO NOTHING")
     from province_population import migrate
     migrate()
+    from military_posture import activate_wartime_reserves
+    from world_service import world_lock
+    with atomic() as cur:
+        world_lock(cur)
+        activate_wartime_reserves(cur)
     print(f"[DB] init_db complete ({'PostgreSQL/Supabase' if USE_POSTGRES else 'SQLite'})", flush=True)
