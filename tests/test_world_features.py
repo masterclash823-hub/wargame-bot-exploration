@@ -284,7 +284,6 @@ class WorldUITests(WorldFixture,unittest.IsolatedAsyncioTestCase):
         await NationCog.found.callback(None,i)
         i.response.send_message.assert_awaited_once()
         self.assertIn('Masz już państwo', i.response.send_message.call_args.kwargs['content'])
-        self.assertIsNone(getattr(i.response, 'send_modal', None) if False else None)
 
     async def test_player_creation_opens_application_without_creating_nation(self):
         i=interaction(3);i.guild_id=100;i.response.send_modal=AsyncMock()
