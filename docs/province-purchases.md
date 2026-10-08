@@ -43,3 +43,19 @@ Nieaktualny panel ani podwójne kliknięcie nie pozwalają kupić prowincji dwa 
 
 Jeśli lista jest pusta, brak wolnych sąsiadujących pól albo danych sąsiedztwa
 mapy. W drugim przypadku GM powinien ponownie zaimportować mapę.
+
+## Darmowe nazwy prowincji
+
+**Panel → Terytorium → Nazwij prowincję** lub `/province rename` otwiera listę
+własnych aktywnych prowincji, ze stronami po 25 pozycji. Wybierz prowincję,
+wpisz nazwę miasta (1–80 znaków) i zapisz. Możesz też użyć
+`/province rename cell_id:123 name:Nowy Kraków`.
+
+Nadanie i kolejne zmiany nazwy kosztują **0 złota**, nie wymagają zgody GM-a
+i są dostępne również dla coopa. Bot sprawdza własność ponownie przy zapisie;
+utrata prowincji lub dostępu do państwa unieważnia otwarty formularz.
+
+Nowa nazwa pojawia się w listach i szczegółach prowincji, pozostaje po restarcie
+i synchronizacji tej samej mapy. Eksport mapy przenosi ją również do danych
+istniejącego miasta Azgaara na tym polu. Sama nazwa nie tworzy osady ani nie
+zmienia ludności, budynków, zasobów czy ID prowincji.

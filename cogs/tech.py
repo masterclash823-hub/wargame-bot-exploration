@@ -130,13 +130,14 @@ class TechCog(commands.Cog):
                     e=discord.Embed(title='🔬 '+tech.tr('Badanie ukończone','Research completed'),description=tech.discovery_story(n['name'],r['code'])+'\n**'+tech.name(r['code'])+'**\n'+tech.effect_text(p['effects']))
                     if p['algae']:e.description+='\n'+tech.tr('Włącz program w panelu. Premie wymagają 1 algae miesięcznie.','Enable the program in the panel. Bonuses require 1 algae per month.')
                     e.set_footer(text=tech.tr('Otwórz /tech status i wybierz następny projekt.','Open /tech status and choose your next project.'))
-                    user=self.bot.get_user(int(n['owner_id'])) or await asyncio.wait_for(self.bot.fetch_user(int(n['owner_id'])),timeout=10)
+                    from discord_delivery import recipient,send as send_dm
+                    user=await asyncio.wait_for(recipient(self.bot,n['owner_id']),timeout=10)
                     with db.cursor() as c:
                         c.execute('SELECT owner_id FROM nations WHERE id=?',(r['nation_id'],));live=c.fetchone()
                         if not live or live['owner_id']!=n['owner_id']:
                             c.execute('UPDATE research_discoveries SET notified=0 WHERE nation_id=? AND code=? AND completions=?',(r['nation_id'],r['code'],r['completions']))
                             continue
-                    await asyncio.wait_for(user.send(embed=e),timeout=10)
+                    await asyncio.wait_for(send_dm(n['owner_id'],user.send,embed=e),timeout=10)
             except (discord.HTTPException,asyncio.TimeoutError,ValueError):
                 with db.cursor() as c:c.execute('UPDATE research_discoveries SET notified=2 WHERE nation_id=? AND code=? AND completions=?',(r['nation_id'],r['code'],r['completions']))
 

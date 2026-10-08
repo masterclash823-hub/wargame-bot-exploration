@@ -15,6 +15,8 @@ from utils import get_nation_by_owner, gm_only
 
 
 PL = {
+    'map':'Mapa świata','bonuses':'Bonusy startowe','project_review':'Ocena projektu AI',
+    'wars':'Panel wojen', 'application':'Moje zgłoszenie', 'found':'Zgłoś państwo',
     'stability':'Stabilność i zadowolenie',
     'ruins':'Ruiny', 'company':'Kompania', 'company_offers':'Oferty inwestycji',
     'exploration':'Eksploracja','captives':'Jeńcy',
@@ -27,7 +29,7 @@ PL = {
     "economy": "Gospodarka", "military": "Wojsko", "technology":"Technologie", "algae_locations":"Stanowiska algae", "algae_programs":"Programy algae", "territory": "Terytorium",
     "diplomacy": "Dyplomacja i bitwy", "events": "Wydarzenia", "settings": "Ustawienia",
     "choose": "Wybierz kategorię", "refresh": "Odśwież", "stats": "Statystyki państwa",
-    "resources": "Zasoby", "calendar": "Kalendarz", "found": "Załóż państwo",
+    "resources": "Zasoby", "calendar": "Kalendarz",
     "owned_buildings":"Zbudowane budynki", "income":"Bilans surowców", "market":"Wolny rynek",
     "build": "Zbuduj budynek", "buildings": "Katalog budynków", "yield": "Produkcja prowincji",
     "trades": "Wymiany", "new_trade": "Nowa wymiana", "projects": "Projekty",
@@ -36,14 +38,15 @@ PL = {
     "move": "Przemieść jednostkę", "new_blueprint": "Nowy projekt", "research": "Badania",
     "tech": "Poziomy technologii", "provinces": "Lista prowincji", "province": "Szczegóły prowincji",
     "province_buy": "Kup prowincję",
+    "province_rename": "Nazwij prowincję",
     "province_terraform": "Terraformacja",
     "colonies": "Kolonie", "colony_view": "Szczegóły kolonii", "colony_found": "Załóż kolonię",
     "colony_develop": "Rozwiń kolonię", "colony_expand": "Rozszerz kolonię",
     "routes": "Szlaki handlowe", "relations": "Relacje",
     "war": "Wypowiedz wojnę", "peace": "Zawrzyj pokój", "alliance": "Zawrzyj sojusz",
-    "battle_plan": "Wyślij plan bitwy", "battles": "Raporty bitew", "event_list": "Lista wydarzeń",
+    "battle_plan": "Wyślij plan bitwy", "battle_invite":"Zaproś armię", "battle_join":"Dołącz armię", "battles": "Raporty bitew", "event_list": "Lista wydarzeń",
     "event_play": "Rozegraj wydarzenie", "help": "Pomoc", "tutorial": "Poradnik", "coop":"Współdzielenie państwa",
-    "no_nation": "Nie masz jeszcze państwa. Poproś Game Mastera o utworzenie i nadanie go Tobie.",
+    "no_nation": "Nie masz jeszcze państwa. Wybierz Zgłoś państwo; Game Master zatwierdzi gotowe zgłoszenie.",
     "private": "Ten panel jest prywatny. Publiczne wydarzenia, wojny i osiągnięcia mogą trafić do kroniki.",
     "not_yours": "To nie jest Twój panel.", "empty": "Brak dostępnych pozycji.",
     "shortened": "Pokazano pierwsze 25 pozycji.", "select": "Wybierz pozycję",
@@ -53,6 +56,8 @@ PL = {
 
 def tr(lang: str, key: str) -> str:
     en = {
+        'map':'World map','bonuses':'Starting bonuses','project_review':'AI project review',
+        'wars':'War dashboard', 'application':'My application', 'found':'Apply for a nation',
         'stability':'Stability & happiness',
         'ruins':'Ruins', 'company':'Company', 'company_offers':'Investment offers',
         'exploration':'Exploration','captives':'Captives',
@@ -64,7 +69,7 @@ def tr(lang: str, key: str) -> str:
         "panel":"Player panel","open":"Open player panel","home":"Overview","economy":"Economy",
         "military":"Military", "technology":"Technology", "algae_locations":"Algae deposits", "algae_programs":"Algae programs","territory":"Territory","diplomacy":"Diplomacy & battles",
         "events":"Events","settings":"Settings","choose":"Choose a category","refresh":"Refresh",
-        "stats":"Nation stats","resources":"Resources","calendar":"Calendar","found":"Found a nation",
+        "stats":"Nation stats","resources":"Resources","calendar":"Calendar",
         "owned_buildings":"Built buildings", "income":"Resource balance", "market":"Open market",
         "build":"Construct building","buildings":"Building catalogue","yield":"Province yield",
         "trades":"Trades","new_trade":"New trade","projects":"Projects","new_project":"Propose project",
@@ -72,14 +77,15 @@ def tr(lang: str, key: str) -> str:
         "recruit":"Build units","move":"Move unit","new_blueprint":"New blueprint","research":"Research",
         "tech":"Technology levels","provinces":"Province list","province":"Province details",
         "province_buy":"Buy a province",
+        "province_rename":"Name a province",
         "province_terraform":"Terraforming",
         "colonies":"Colonies","colony_view":"Colony details","colony_found":"Found colony",
         "colony_develop":"Develop colony","colony_expand":"Expand colony",
         "routes":"Trade routes","relations":"Relations",
         "war":"Declare war","peace":"Make peace","alliance":"Form alliance",
-        "battle_plan":"Submit battle plan","battles":"Battle reports","event_list":"Event list",
+        "battle_plan":"Submit battle plan","battle_invite":"Invite an army","battle_join":"Join an army","battles":"Battle reports","event_list":"Event list",
         "event_play":"Play event","help":"Help","tutorial":"Tutorial","coop":"Co-op access",
-        "no_nation":"You do not have a nation yet. Ask the Game Master to create and assign one to you.",
+        "no_nation":"You do not have a nation yet. Choose Apply for a nation; the Game Master approves the completed application.",
         "private":"This panel is private. Public events, wars and milestones may appear in the chronicle.","not_yours":"This is not your panel.",
         "empty":"There are no available items.","shortened":"Only the first 25 items are shown.",
         "select":"Choose an item","published":"The player panel has been published.",
@@ -237,10 +243,10 @@ ACTIONS = {
     "technology": [("research","🔬"),("algae_locations","🧪"),("algae_programs","⚙️"),("algae_production","🧫")],
     "military": [("forces","🛡️"),("blueprints","📐"),("recruit","➕"),("move","➡️"),
                  ("new_blueprint","🧰"),("posture","⏳"),("captives","⛓️")],
-    "territory": [("provinces","🗺️"),("province","🔎"),("province_buy","🛒"),("province_terraform","🌱"),("colonies","🏝️"),("colony_view","🔎"),
+    "territory": [("provinces","🗺️"),("province","🔎"),("province_buy","🛒"),("province_rename","✏️"),("province_terraform","🌱"),("colonies","🏝️"),("colony_view","🔎"),
                   ("colony_found","🚩"),("colony_develop","📈"),("colony_expand","🧭"),("routes","🚢"),("settlers","👥")],
-    "diplomacy": [("relations","📜"),("war","⚔️"),("peace","🕊️"),("alliance","🤝"),
-                  ("battle_plan","🗒️"),("battles","📖"),("treaties","📜"),("new_treaty","📝"),("calls","🛡️")],
+    "diplomacy": [("wars","⚔️"),("relations","📜"),("war","⚔️"),("peace","🕊️"),("alliance","🤝"),
+                  ("battle_plan","🗒️"),("battle_invite","📨"),("battle_join","🫱🏻‍🫲🏽"),("battles","📖"),("treaties","📜"),("new_treaty","📝"),("calls","🛡️")],
     "events": [("ruins","🏚️"),("event_list","📋"),("event_play","🎭"),("memories","🧠"),("exploration","🧭")],
     "settings": [("help","❓"),("tutorial","📘"),("language_pl","🇵🇱"),("language_en","🇬🇧"),("coop","🤝")],
 }
@@ -267,6 +273,10 @@ class PlayerPanel(OwnedView):
         actions = list(ACTIONS[self.section])
         from companies import unlocked
         nation = get_nation_by_owner(str(self.owner_id))
+        if not nation and self.section=='home':
+            actions=[('found','📝'),('application','📨'),('bonuses','🎯'),('map','🗺️'),('tutorial','📘'),('help','❓')]
+        elif self.section=='territory':actions.append(('map','🗺️'))
+        if self.section=='economy':actions.append(('project_review','🔍'))
         if self.section == 'economy' and unlocked(nation):
             actions.append(('company', '🏢'))
         if self.section == 'diplomacy' and nation:
@@ -274,11 +284,12 @@ class PlayerPanel(OwnedView):
                 c.execute("SELECT id FROM company_concessions WHERE host_nation_id=? AND status IN ('proposed','active') LIMIT 1", (nation['id'],))
                 if c.fetchone():
                     actions.append(('company_offers', '🏢'))
+        columns=5 if len(actions)>16 else 4
         for index, (action, emoji) in enumerate(actions):
             key = action.removeprefix("language_") if action.startswith("language_") else action
             label = {"pl":"Polski", "en":"English"}[key] if action.startswith("language_") else tr(self.lang, key)
             button = discord.ui.Button(label=label, emoji=emoji, style=discord.ButtonStyle.secondary,
-                                       row=1 + index // 4)
+                                       row=1 + index // columns)
             async def clicked(interaction, name=action):
                 with i18n.using_language(language(interaction)):
                     await self.dispatch(interaction, name)
@@ -348,6 +359,10 @@ class PlayerPanel(OwnedView):
         await reply(interaction, content=note, view=ChoiceView(self.owner_id, self.lang, options, handler, multiple=multiple))
 
     async def dispatch(self, interaction: discord.Interaction, action: str):
+        if action=='map':
+            await invoke(self.cog('ProvincesCog'),'player_map',interaction);return
+        if action in ('found','application','bonuses'):
+            await invoke(self.cog('NationCog'),action,interaction);return
         if action=='coop':
             from coop_ui import show
             await show(interaction);return
@@ -369,6 +384,8 @@ class PlayerPanel(OwnedView):
             await reply(interaction, content=tr(self.lang,"no_nation")); return
 
         simple = {
+            'project_review':('EconomyCog','mp_review',[]),
+            'wars':('WarsCog','status',[]),
             'stability':('EconomyControlCog','stability',[]),
             'market':('MarketCog','market_list',[]),
             'owned_buildings':('EconomyCog','buildings_owned',[]), 'income':('EconomyControlCog','income',[]),
@@ -384,6 +401,7 @@ class PlayerPanel(OwnedView):
             "forces":("MilitaryCog","mil_list",[""]), "blueprints":("MilitaryCog","bp_list",[]),
             "tech":("TechCog","tech_status",[""]), "algae_locations":("TechCog","algae_locations",[]), "algae_programs":("TechCog","algae_programs",[]), "provinces":("ProvincesCog","province_list",[nation["name"],1]),
             "province_buy":("ProvincesCog","province_buy",[]),
+            "province_rename":("ProvincesCog","province_rename",[]),
             "province_terraform":("ProvincesCog","province_terraform",[]),
             "colonies":("ColonialismCog","colony_list",[""]), "routes":("ColonialismCog","traderoute_list",[]),
             "relations":("CombatCog","diplo_status",[]), "event_list":("EventsCog","event_list",[""]),
@@ -400,6 +418,7 @@ class PlayerPanel(OwnedView):
             "colony_expand":self.choose_colony_expand,
             "war":lambda i:self.choose_nation(i,"declare_war"), "peace":lambda i:self.choose_nation(i,"make_peace"),
             "alliance":lambda i:self.choose_nation(i,"alliance"), "battle_plan":self.choose_battle_units,
+            "battle_invite":self.choose_battle_invite,"battle_join":self.choose_battle_join,
             "battles":self.choose_battle, "event_play":self.choose_event,
             'posture':self.choose_posture, 'settlers':self.choose_settlers, 'contracts':self.choose_contract,
         }
@@ -408,10 +427,15 @@ class PlayerPanel(OwnedView):
     async def choose_posture(self,i):
         n=get_nation_by_owner(str(self.owner_id))
         async def unit(i2,uid):
+            from military_posture import at_war
+            with db.cursor() as c:wartime=at_war(c,n['id'])
             opts=[discord.SelectOption(label=label,value=value) for value,label in
-                  [('reserve','Rezerwa 35% / Reserve 35%'),('active','Mobilizacja 100% / Mobilize 100%'),('deployed','Wyprawa 150% / Expedition 150%')]]
+                  [('reserve','Rezerwa 35% / Reserve 35%'),('active','Aktywne 100% / Active 100%'),('deployed','Wyprawa 150% / Expedition 150%')]
+                  if value!='reserve' or not wartime]
             async def mode(i3,value):await invoke(self.cog('EconomyControlCog'),'posture',i3,int(uid),value)
-            await reply(i2,view=ChoiceView(self.owner_id,self.lang,opts,mode))
+            message=('Podczas wojny rezerwy są automatycznie aktywne.' if self.lang=='pl' else
+                     'Reserves are automatically active during war.') if wartime else None
+            await reply(i2,content=message,view=ChoiceView(self.owner_id,self.lang,opts,mode))
         await self.rows(i,'SELECT u.id,u.quantity,b.name FROM military_units u LEFT JOIN blueprints b ON b.id=u.blueprint_id WHERE u.nation_id=? ORDER BY u.id',(n['id'],),
                         lambda r:discord.SelectOption(label=f"#{r['id']} {r['name'] or 'Unit'} ×{r['quantity']}"[:100],value=str(r['id'])),unit)
 
@@ -617,10 +641,36 @@ class PlayerPanel(OwnedView):
         if rows: await reply(i,content=(tr(self.lang,"shortened") if len(rows)>25 else None),view=ChoiceView(self.owner_id,self.lang,opts,units,multiple=True))
         else: await units(i,"")
 
+    async def choose_battle_invite(self,i):
+        n=get_nation_by_owner(str(self.owner_id))
+        async def plan(i2,pid):
+            async def nation(i3,name):await invoke(self.cog('CombatCog'),'battle_invite',i3,int(pid),name)
+            await self.rows(i2,"SELECT name,flag FROM nations WHERE id<>? ORDER BY name",(n['id'],),
+                lambda r:discord.SelectOption(label=f"{flag_text(r['flag'])} {r['name']}"[:100],value=r['name']),nation)
+        await self.rows(i,"SELECT id,provinces_json FROM battle_plans WHERE nation_id=? AND status='unmatched' ORDER BY id DESC",(n['id'],),
+            lambda r:discord.SelectOption(label=f"Plan #{r['id']}",value=str(r['id']),description=str(json.loads(r['provinces_json'] or '[]')[:1])[:100]),plan)
+
+    async def choose_battle_join(self,i):
+        n=get_nation_by_owner(str(self.owner_id))
+        async def plan(i2,pid):
+            with db.cursor() as cur:
+                cur.execute("SELECT u.id,u.quantity,b.name FROM military_units u LEFT JOIN blueprints b ON b.id=u.blueprint_id "
+                            "LEFT JOIN military_posture m ON m.unit_id=u.id WHERE u.nation_id=? AND (m.mode IS NULL OR m.mode NOT IN ('reserve','mobilizing')) ORDER BY u.id",(n['id'],))
+                rows=cur.fetchall()
+            opts=[discord.SelectOption(label=f"#{r['id']} {r['name'] or 'Unit'} ×{r['quantity']}"[:100],value=str(r['id'])) for r in rows[:25]]
+            async def units(i3,ids):await invoke(self.cog('CombatCog'),'battle_join',i3,int(pid),ids)
+            if not opts:await reply(i2,content=tr(self.lang,'empty'));return
+            await reply(i2,content=(tr(self.lang,'shortened') if len(rows)>25 else None),view=ChoiceView(self.owner_id,self.lang,opts,units,multiple=True))
+        await self.rows(i,"SELECT x.plan_id,p.provinces_json,n.name FROM battle_plan_allies x JOIN battle_plans p ON p.id=x.plan_id "
+                         "JOIN nations n ON n.id=p.nation_id WHERE x.nation_id=? AND x.status='invited' AND p.status='unmatched' ORDER BY x.plan_id DESC",(n['id'],),
+            lambda r:discord.SelectOption(label=f"Plan #{r['plan_id']} · {r['name']}"[:100],value=str(r['plan_id']),description=str(json.loads(r['provinces_json'] or '[]')[:1])[:100]),plan)
+
     async def choose_battle(self,i):
         n=get_nation_by_owner(str(self.owner_id))
         async def done(i2,v): await invoke(self.cog("CombatCog"),"battle_view",i2,int(v))
-        await self.rows(i,"SELECT DISTINCT b.id,b.status FROM battles b JOIN battle_plans a ON a.id=b.plan_a_id JOIN battle_plans d ON d.id=b.plan_b_id WHERE a.nation_id=? OR d.nation_id=? ORDER BY b.id DESC",(n['id'],n['id']),lambda r:discord.SelectOption(label=f"Battle #{r['id']}",value=str(r['id']),description=r['status']),done)
+        await self.rows(i,"SELECT DISTINCT b.id,b.status FROM battles b JOIN battle_plans a ON a.id=b.plan_a_id JOIN battle_plans d ON d.id=b.plan_b_id "
+                         "LEFT JOIN battle_plan_allies x ON x.plan_id IN (a.id,d.id) AND x.status='joined' "
+                         "WHERE a.nation_id=? OR d.nation_id=? OR x.nation_id=? ORDER BY b.id DESC",(n['id'],n['id'],n['id']),lambda r:discord.SelectOption(label=f"Battle #{r['id']}",value=str(r['id']),description=r['status']),done)
 
     async def choose_event(self,i):
         n=get_nation_by_owner(str(self.owner_id))

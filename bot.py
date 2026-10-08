@@ -5,6 +5,7 @@ import sys
 print("[BOOT] bot.py started, Python", sys.version, flush=True)
 
 import traceback
+import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -25,6 +26,7 @@ COGS = [
     "cogs.tech",
     "cogs.military",
     "cogs.combat",
+    "cogs.wars",
     "cogs.events",
     "cogs.ruins",
     "cogs.exploration",
@@ -41,6 +43,7 @@ intents = discord.Intents.default()
 intents.message_content = config.MESSAGE_CONTENT_INTENT
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
+_ready_lock=asyncio.Lock()
 print("[BOOT] bot object created", flush=True)
 
 @i18n.localized
@@ -88,6 +91,10 @@ def _guild_active():
 
 @bot.event
 async def on_ready():
+    async with _ready_lock:await initialize()
+
+
+async def initialize():
     print("[READY] on_ready fired", flush=True)
     try:
         db.init_db()
@@ -102,24 +109,22 @@ async def on_ready():
                 print(f"[COG] FAILED to load {cog}:", flush=True)
                 traceback.print_exc()
 
+        if not all(cog in bot.extensions for cog in COGS):
+            print('[SYNC] Skipped: not all cogs loaded.',flush=True);return
         await tree.set_translator(PolishTranslator())
-        for guild in bot.guilds:
-            try:
-                tree.copy_global_to(guild=guild)
-                guild_synced = await tree.sync(guild=guild)
-                print(f"[SYNC] Guild '{guild.name}': {len(guild_synced)} command(s): {[c.name for c in guild_synced]}", flush=True)
-            except Exception as e:
-                print(f"[SYNC] Guild sync failed for {guild.name}: {e}", flush=True)
-
-        # Delete remote global duplicates without removing the local source of
-        # commands needed by later guilds and reconnects.
-        if bot.guilds:
-            await bot.http.bulk_upsert_global_commands(bot.application_id, payload=[])
+        from discord_sync import sync
+        import os
+        await sync(bot,tree,force=os.getenv('COMMAND_SYNC_FORCE','0')=='1')
         print(f"[READY] Done. Connected to {len(bot.guilds)} guild(s).", flush=True)
 
     except Exception:
         print("[READY] FATAL ERROR in on_ready:", flush=True)
         traceback.print_exc()
+
+
+@bot.event
+async def on_guild_join(guild):
+    async with _ready_lock:await initialize()
 
 
 @tree.error

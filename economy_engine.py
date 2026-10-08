@@ -449,6 +449,8 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
         from economy_services import settle_contracts
         from treaty_service import tick as treaty_tick
         treaty_tick(c,target)
+        from war_service import expire as expire_war_challenges
+        expire_war_challenges(c,target)
         c.execute('SELECT id,stability FROM nations')
         after_treaties={row['id']:row['stability'] for row in c.fetchall()}
         from dynasty import tick as dynasty_tick
@@ -456,6 +458,8 @@ def run_month(expected_month=None, scheduled_at=None, hours=24):
         settle_contracts(c,target)
         from company_economy import prepare as prepare_companies, finish as finish_companies
         company_plants=prepare_companies(c,target)
+        from military_posture import activate_wartime_reserves
+        activate_wartime_reserves(c)
         c.execute("UPDATE military_posture SET mode='active' WHERE mode='mobilizing' AND ready_month<=?",(target,))
         reports={}
         for n in nations:

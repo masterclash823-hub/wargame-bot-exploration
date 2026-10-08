@@ -7,6 +7,7 @@ Province commands:
   /province unclaim         - GM: remove ownership from provinces
   /province info            - anyone: view a single province by cell ID
   /province list            - anyone: list all provinces owned by a nation
+  /province rename          - player: name an owned province for free
 """
 from flags import flag_text, flagged_embed
 import json
@@ -339,6 +340,24 @@ class ProvincesCog(commands.Cog):
         from azgaar_ui import import_command
         await import_command(interaction, file, url, map_file, True, sync_owners)
 
+    @app_commands.command(name='map',description='Download the map when shared by the GM / Pobierz mapę udostępnioną przez GM')
+    @i18n.localized
+    async def player_map(self,interaction:discord.Interaction):
+        from azgaar_ui import export_command
+        await export_command(interaction,player=True)
+
+    @admin_grp.command(name='map_access',description='[GM] Share or hide the map / Udostępnij lub ukryj mapę dla graczy')
+    @i18n.localized
+    async def map_access(self,interaction:discord.Interaction,enabled:bool):
+        from utils import gm_only
+        from world_service import tr
+        if not gm_only(interaction):
+            await interaction.response.send_message(tr('Tylko GM.','GM only.'),ephemeral=True);return
+        from game_setup import configure
+        configure(interaction.guild_id,'map',enabled)
+        await interaction.response.send_message(tr('Mapa dostępna przez /map.' if enabled else 'Mapa ukryta przed graczami.',
+            'Map available via /map.' if enabled else 'Map hidden from players.'),ephemeral=True)
+
     @admin_grp.command(name="map_export", description="[GM] Export the world to Azgaar / Eksport mapy do Azgaara")
     @app_commands.choices(format=[app_commands.Choice(name="map", value="map"), app_commands.Choice(name="json", value="json")])
     @app_commands.describe(file="Original .map on the first export / Oryginalny .map przy pierwszym eksporcie",
@@ -591,6 +610,20 @@ class ProvincesCog(commands.Cog):
     async def province_buy(self, interaction: discord.Interaction, cell_id: int | None = None):
         from province_purchase_ui import show
         await show(interaction,cell_id)
+
+    @province_grp.command(name="rename",description="Name your province for free / Nazwij własną prowincję za darmo")
+    @app_commands.describe(cell_id="Province cell ID / ID prowincji",name="City name, 1–80 characters / Nazwa miasta, 1–80 znaków")
+    @i18n.localized
+    async def province_rename(self,interaction: discord.Interaction,cell_id: int | None = None,name: str | None = None):
+        from province_naming_ui import show,save
+        from world_service import tr
+        if cell_id is None and name is None:
+            await show(interaction)
+        elif cell_id is None or name is None:
+            await interaction.response.send_message(tr('Podaj ID prowincji i nazwę albo otwórz /province rename bez parametrów.',
+                'Provide both the province ID and name, or open /province rename without parameters.'),ephemeral=True)
+        else:
+            await save(interaction,cell_id,name)
 
     @province_grp.command(name="terraform", description="Plan paid terraforming / Zaplanuj płatną terraformację")
     @app_commands.describe(cell_id="Optional cell to preview / Opcjonalne ID prowincji do podglądu")

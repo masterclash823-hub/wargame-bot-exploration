@@ -39,13 +39,15 @@ CHAPTERS = [
         'An event ends after at most three decisions. Its effects apply at the end. You can play it through the panel even if you did not receive a direct message.')),
     dict(key='military', target='military', pl=(
         'Przed bitwą',
-        'Sprawdź jednostki w Wojsko → Siły zbrojne. Oddziały w rezerwie potrzebują miesiąca gry na mobilizację.\n\n'
+        'Sprawdź jednostki w Wojsko → Siły zbrojne. Wojna aktywuje rezerwy natychmiast; w pokoju mobilizacja trwa miesiąc gry.\n\n'
         'Plan wyślesz przez Dyplomacja i bitwy → Wyślij plan bitwy. Zaznacz jednostki w formularzu — samo wymienienie ich w opisie nie wysyła ich do walki. '
-        'Napisz, co chcesz osiągnąć i jak mają działać. Bitwę rozstrzyga GM.'), en=(
+        'W Panelu wojen wybierz przeciwnika, plan i pole bitwy. Obrońca wybiera własny plan i potwierdza: bot automatycznie rozlicza siłę, fortyfikacje i straty. '
+        'Opis taktyki nie daje premii w trybie automatycznym; nietypowe bitwy może nadal rozstrzygać GM. Pokój zawieracie przez traktat.'), en=(
         'Before a battle',
-        'Check your units in Military → Armed forces. Units in reserve need one game month to mobilize.\n\n'
+        'Check your units in Military → Armed forces. War activates reserves immediately; peacetime mobilization takes one game month.\n\n'
         'Submit your plan through Diplomacy & battles → Submit battle plan. Select the units in the form; naming them in the description does not assign them. '
-        'Explain your objective and how the troops should act. The GM resolves the battle.')),
+        'Open the War dashboard and choose an enemy, plan and battlefield. The defender selects a plan and confirms; the bot settles power, fortifications and losses automatically. '
+        'Tactical prose grants no bonus in automatic mode; a GM can still settle special battles. Agree peace through a treaty.')),
 ]
 
 
@@ -76,9 +78,9 @@ class TutorialView(i18n.LocalizedView):
         title, text = CHAPTERS[self.page][self.lang]
         nation = get_nation_by_owner(str(self.owner_id))
         if self.page == 0 and not nation:
-            text = (('Poproś Game Mastera o utworzenie i przydzielenie państwa. Przygotuj nazwę i krótką historię.'
+            text = (('Otwórz /nation found lub Panel → Zgłoś państwo. Podaj nazwę, historię i ID wolnych prowincji startowych (pierwsza to stolica). GM zatwierdza gotowe zgłoszenie; bot nadaje ziemię i pakiet startowy.'
                      if self.lang == 'pl' else
-                     'Ask the Game Master to create and assign a nation to you. Prepare a name and a short history.')
+                     'Open /nation found or Panel → Apply for a nation. Enter a name, lore and unclaimed starting province IDs (the first is the capital). The GM approves the application; the bot grants territory and starting supplies.')
                     + '\n\n' + text)
         embed = discord.Embed(title=title, description=text, color=discord.Color.gold())
         if nation:

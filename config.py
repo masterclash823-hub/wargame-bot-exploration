@@ -38,6 +38,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 GEMINI_FALLBACK_MODELS = os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite,gemini-2.5-flash")
 
+# Deliberately independent: no event/combat credential fallback.
+PROJECT_AI_API_KEY = os.getenv('PROJECT_AI_API_KEY','').strip()
+PROJECT_AI_MODEL = os.getenv('PROJECT_AI_MODEL','gemini-2.5-flash-lite').strip()
+
 # Optional independent event providers. Use free-tier accounts; never put keys in code.
 EVENT_AI_PROVIDERS = os.getenv("EVENT_AI_PROVIDERS", "gemini,groq,mistral,openrouter")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()

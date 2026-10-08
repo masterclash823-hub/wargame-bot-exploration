@@ -107,9 +107,13 @@ async def import_command(i, file, url, map_file, resync, sync_owners):
         await i.followup.send(tr('Nie można odczytać mapy: ', 'Cannot read map: ') + str(exc)[:1500], ephemeral=True)
 
 
-async def export_command(i, file=None, format='map'):
-    if not await allowed(i):
-        return
+async def export_command(i, file=None, format='map', *, player=False):
+    if player:
+        from game_setup import map_available
+        if file is not None or not (gm_only(i) or map_available(i.guild_id)):
+            await i.response.send_message(tr('GM nie udostępnił mapy graczom.','The GM has not shared the map with players.'),ephemeral=True)
+            return
+    elif not await allowed(i):return
     await i.response.defer(ephemeral=True)
     try:
         if format not in ('map', 'json'):
@@ -124,6 +128,10 @@ async def export_command(i, file=None, format='map'):
                 name += '.gz'
         if len(output) > limit:
             raise ValueError(tr('Mapa przekracza limit załączników tego serwera.', 'Map exceeds this server attachment limit.'))
+        if player:
+            from game_setup import map_available
+            if not (gm_only(i) or map_available(i.guild_id)):
+                raise ValueError(tr('GM wyłączył udostępnianie mapy.','The GM disabled map sharing.'))
         message = tr('W Azgaarze wybierz Load → Machine i otwórz plik .map.', 'In Azgaar choose Load → Machine and open the .map file.') if format == 'map' else tr(
             'Pełny JSON do wymiany danych. Azgaar otwiera projekty .map — wybierz format map, aby otworzyć mapę w edytorze.',
             'Full JSON for data exchange. Azgaar opens .map projects — choose format map to open it in the editor.')

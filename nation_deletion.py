@@ -9,6 +9,9 @@ def delete_nation(nation_id):
         c.execute('SELECT id FROM nations WHERE id=?',(nation_id,))
         if not c.fetchone():
             return False
+        c.execute("SELECT * FROM war_engagements WHERE status='pending' AND (attacker_id=? OR defender_id=?)",(nation_id,nation_id))
+        from war_service import _close
+        for e in c.fetchall():_close(c,e,'cancelled')
         # Battles restrict deletion of their plans, unlike other nation children.
         c.execute('SELECT b.id,b.status,b.plan_a_id,b.plan_b_id FROM battles b '
                   'JOIN battle_plans a ON a.id=b.plan_a_id '

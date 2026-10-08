@@ -9,7 +9,9 @@ złoto i materiały. Menu pokazuje też trwający projekt oraz ostatnie wyniki.
 | Projekt | Zmiana biomu | Złoto | Materiały | Miesiące gry | Technologia gospodarcza |
 | --- | --- | ---: | --- | ---: | ---: |
 | Zalesianie | Temperate Grassland → Temperate Deciduous Forest | 800 | 100 drewna, 50 kamienia | 6 | 4 |
-| Przygotowanie pól | Temperate Deciduous Forest → Temperate Grassland | 800 | 50 drewna, 50 kamienia, 50 żelaza | 6 | 4 |
+| Wycinka lasu | Temperate Deciduous Forest / Temperate Rainforest → Temperate Grassland | 800 | 50 drewna, 50 kamienia, 50 żelaza | 6 | 4 |
+| Wycinka lasu tropikalnego | Tropical Rainforest / Tropical Seasonal Forest → Savanna | 1000 | 50 drewna, 75 kamienia, 75 żelaza | 9 | 5 |
+| Wycinka tajgi | Taiga → Tundra | 800 | 50 drewna, 50 kamienia, 50 żelaza | 6 | 4 |
 | Osuszanie mokradeł | Wetland → Temperate Grassland | 1200 | 150 drewna, 150 kamienia, 50 żelaza | 9 | 5 |
 | Nawadnianie pustyni | Desert / Hot Desert → Savanna | 1600 | 100 drewna, 200 kamienia, 75 żelaza | 12 | 5 |
 | Zalesianie tundry | Tundra → Taiga | 1800 | 150 drewna, 150 kamienia, 100 żelaza | 12 | 6 |

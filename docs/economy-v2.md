@@ -108,11 +108,22 @@ Obie strony mogą przerwać umowę przyciskiem lub `/economy contract_stop`.
 ## Wojsko i kolonie
 
 Wojsko istniejące oraz nowo rekrutowane jest domyślnie aktywne (100% kosztu).
-Rezerwa kosztuje 35%, wyprawa 150%. Powrót z rezerwy wymaga jednego miesiąca
-mobilizacji opłacanej jak aktywne wojsko. Gotowość wraca przy następnym
-rozliczeniu; zgłoszenie gotowej jednostki do planu bitwy ustawia wyprawę.
-Po bitwie gracz może zmienić tryb w panelu. Samo wypowiedzenie wojny
-nie zmienia trybu całej armii.
+Rezerwa kosztuje 35%, wyprawa 150%. W czasie pokoju powrót z rezerwy wymaga
+jednego miesiąca mobilizacji opłacanej jak aktywne wojsko. Gotowość wraca przy
+następnym rozliczeniu; zgłoszenie gotowej jednostki do planu bitwy ustawia wyprawę.
+
+Wejście państwa do wojny natychmiast aktywuje wszystkie jego rezerwy i jednostki
+w trakcie mobilizacji: armię oraz flotę. Dotyczy obu stron wypowiedzenia wojny
+i przyjęcia wezwania z gwarancji bezpieczeństwa. Sojusz lub samo wezwanie nie
+aktywuje jednostek państwa, które jeszcze nie dołączyło do wojny. Jednostki już
+aktywne lub na wyprawie zachowują swój tryb; lokalizacja, liczebność, plany bitew
+i przydziały do szlaków nie zmieniają się. Rezerwy tracą ulgę w utrzymaniu:
+obowiązuje zwykłe 100%, a dla wypraw nadal 150%.
+
+Przez całą wojnę nie można przenosić jednostek do rezerwy, także ze starego
+panelu. Po zakończeniu wszystkich wojen rezerwa jest ponownie dostępna ręcznie;
+pokój sam nie demobilizuje armii. Bot aktualizuje też rezerwy w już trwających
+wojnach przy uruchomieniu i przed rozliczeniem utrzymania w każdym miesiącu.
 
 Niezapłacone utrzymanie tworzy zaległości i stopniowo obniża siłę bojową
 (10% za miesiąc zaległości, do 50%). Przez pierwsze dwa kolejne miesiące
@@ -161,6 +172,21 @@ Testy offline obejmują awarię i wycofanie miesiąca, równoczesne uruchomienia
 zgodność prognozy z rozliczeniem, migrację, limity surowców, koszty ulepszeń,
 umowy, rezerwę i wyłączność statków. PostgreSQL, Discord i Render wymagają
 sprawdzenia integracyjnego przy wdrożeniu; testy używają tymczasowej bazy SQLite.
+
+## Wspólne armie w bitwie
+
+Autor oczekującego planu może użyć `/battle invite <plan_id> <państwo>` albo
+przycisku **Zaproś armię** w panelu. Zaproszone państwo akceptuje udział przez
+`/battle join` lub **Dołącz armię** i samo wskazuje własne grupy jednostek. Plan
+może obejmować najwyżej dwa państwa po jednej stronie; muszą być sojusznikami
+albo walczyć z tym samym przeciwnikiem.
+
+Każda grupa zachowuje właściciela, jego technologię, morale i osobne straty.
+Uczestnik może wycofać swoje oddziały komendą `/battle leave` do czasu
+dopasowania planów przez GM. System blokuje powtórne użycie tej samej grupy
+oraz umieszczenie państwa po obu stronach bitwy. W bitwach koalicyjnych nie
+tworzy się automatycznie puli jeńców, ponieważ wymagałaby osobnego wskazania
+państwa, z którego pochodzi ludność.
 
 
 ## Ręczne przydziały pracowników

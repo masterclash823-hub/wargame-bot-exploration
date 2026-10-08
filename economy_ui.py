@@ -86,12 +86,12 @@ def dashboard(n,r):
     cover=f'{stock/needed:.1f}' if needed else '∞'
     embed.add_field(name=tr('Żywność','Food'),value=tr('Zapas na ','Stock for ')+cover+tr(' mies.',' months')+f"\n{r['food_change']:+.1f}/"+tr('mies.','month'))
     tips=[]
-    if r['balance']<0:tips.append(tr('⚠️ Wydatki przewyższają dochody. Sprawdź rezerwy wojskowe albo zwiększ sprzedaż.',
-                                    '⚠️ Spending exceeds income. Consider military reserves or increase sales.'))
+    if r['balance']<0:tips.append(tr('⚠️ Wydatki przewyższają dochody. Zwiększ sprzedaż lub ogranicz wydatki; rezerwa wojskowa jest dostępna tylko w czasie pokoju.',
+                                    '⚠️ Spending exceeds income. Increase sales or reduce spending; military reserves are only available in peacetime.'))
     if r['food_shortage']:tips.append(tr('⚠️ Brakuje żywności: zbuduj lub ulepsz farmę albo zawrzyj umowę na dostawy.',
                                          '⚠️ Food shortage: build/upgrade a farm or arrange regular food imports.'))
-    if p['arrears']:tips.append(tr('⚠️ Brak złota na rachunki. Zmniejsz armię aktywną lub przenieś ją do rezerwy.',
-                                  '⚠️ Bills exceed available gold. Reduce active forces or put units in reserve.'))
+    if p['arrears']:tips.append(tr('⚠️ Brak złota na rachunki. Ogranicz koszty armii; przeniesienie do rezerwy wymaga zakończenia wszystkich wojen.',
+                                  '⚠️ Bills exceed available gold. Reduce army costs; moving units to reserve requires all wars to end.'))
     if r.get('maintenance_factor',1)<1:
         factor=r['maintenance_factor']
         tips.append(tr(f'⚠️ Zaległości ograniczają wydajność płatnych budynków do {factor:.0%}. Spłata rachunków przywraca pełne działanie.',

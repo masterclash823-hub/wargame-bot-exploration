@@ -389,7 +389,8 @@ HELP_SECTIONS = {
         "title": "🏳️ Nation",
         "color": discord.Color.blue(),
         "fields": [
-            ("Starting a nation", "Ask the Game Master to create and assign your nation."),
+            ("/nation found", "Submit your nation's name, lore and connected starting provinces. The GM reviews and approves it."),
+            ("/nation application", "Check the decision or edit your pending application. Also available in /panel."),
             ("/goals status", "Choose one optional goal; earn 10 prestige. Also available in the panel."),
             ("/memories", "Read your private decision archive and recorded consequences."),
             ("/nation stats [name]", "View a nation's stats."),
@@ -422,7 +423,7 @@ HELP_SECTIONS = {
             ("/economy labor", "Review labor policy, slavery and the cost of emancipation; confirm a reform."),
             ("/captives list", "Review one-use victory claims; take captives into your province or waive the claim."),
             ("/economy upgrade <cell_id> <building>", "Upgrade a building to level 2 or 3. Output: 170% / 240%."),
-            ("/economy posture <unit_id> <mode>", "Reserve 35%, active 100%, expedition 150% upkeep. Mobilization takes one month."),
+            ("/economy posture <unit_id> <mode>", "Reserve 35%, active 100%, expedition 150% upkeep. War activates reserves immediately; peacetime mobilization takes one month."),
             ("/economy recurring <trade_id>", "Propose monthly deliveries. The recipient must explicitly accept monthly:True."),
             ("/economy contract_stop <trade_id>", "Either party can stop monthly deliveries."),
             ("/buildings list", "Browse all building types with costs and effects."),
@@ -490,8 +491,12 @@ HELP_SECTIONS = {
         "color": discord.Color.dark_orange(),
         "fields": [
             ("/battle plan", "Submit a battle plan — location (free text), orders, optional unit IDs and image URL."),
+            ("/war status", "War inbox: enemies, challenges and next actions. Send a plan; the defender confirms and the bot resolves the battle."),
+            ("/war attack /war defend", "Automatic battles use stats, morale, forts and the normal roll, with tactical modifiers ×1. Plan prose gives no bonus. Challenges expire after 2 game months."),
+            ("/battle invite <plan> <nation>", "Invite one allied nation, or one fighting the same enemy, to add its own army."),
+            ("/battle join <plan> <unit IDs>", "Accept an invitation and choose your own groups; /battle leave withdraws before matching."),
             ("/battle view <id>", "View a battle. Plans are private to parties and GM only."),
-            ("/diplomacy war <nation>", "Declare war. Units committed to battle plans enter expedition posture (150% upkeep)."),
+            ("/diplomacy war <nation>", "Declare war and immediately activate both sides' reserves (100% upkeep). Battle plans use expedition posture (150%)."),
             ("/diplomacy peace <nation>", "Propose peace; the recipient must accept the terms in the treaty panel."),
             ("/diplomacy alliance <nation>", "Propose an alliance; the other nation must explicitly accept."),
             ("/diplomacy status", "View your own diplomatic relations."),
@@ -512,7 +517,7 @@ GM_HELP_FIELDS = [
     ("/ranking [category] [limit] [channel]", "Preview a nation ranking; choose a channel to publish. Full ranking attached as TXT."),
     ("/goals create <nation> <title> <description>", "Create a custom goal for a nation; completion awards 10 prestige."),
     ("/goals status <nation> · /goals complete <nation> <goal_id>", "Review a goal and confirm completion with the button; rewards are granted once."),
-    ("/nation found <player> <name> <history>", "Create a nation and assign it to a player. Existing nations remain unchanged."),
+    ("/nation applications", "Review player applications; approve the nation, starting provinces, capital and supplies in one step, or reject with a reason."),
     ("/nation transfer <nation> <player>", "Transfer ownership after reviewing inherited obligations. Pending proposals are cancelled."),
     ("/chronicle configure <channel> [hour_utc] [language]", "Enable a daily report of up to two public actions. Default: 18:00 UTC, Polish."),
     ("/chronicle preview / pause / status / retry", "Preview, pause and inspect reports; explicitly retry a failed or uncertain delivery."),
@@ -567,7 +572,8 @@ HELP_SECTIONS_PL = {
         "title": "🏳️ Naród",
         "color": discord.Color.blue(),
         "fields": [
-            ("Pierwsze państwo", "Poproś Game Mastera o utworzenie państwa i nadanie go Tobie."),
+            ("/nation found", "Zgłoś nazwę, historię i połączone prowincje startowe państwa. GM sprawdza i akceptuje zgłoszenie."),
+            ("/nation application", "Sprawdź decyzję lub edytuj oczekujące zgłoszenie. Dostępne też w /panel."),
             ("/goals status", "Wybierz jeden opcjonalny cel za 10 prestiżu. Dostępne także w panelu."),
             ("/memories", "Czytaj prywatne archiwum decyzji i ich zapisanych skutków."),
             ("/nation stats [nazwa]", "Statystyki narodu. Puste = twój naród."),
@@ -601,7 +607,7 @@ HELP_SECTIONS_PL = {
             ("/economy labor", "Sprawdź politykę pracy, niewolnictwo i koszt zniesienia; zatwierdź reformę."),
             ("/captives list", "Przejrzyj jednorazowe uprawnienia po zwycięstwach; weź jeńców do prowincji lub zrezygnuj."),
             ("/economy upgrade <id> <budynek>", "Ulepsz budynek do poziomu 2 lub 3: 170% / 240% produkcji. Obsada automatyczna."),
-            ("/economy posture <id> <tryb>", "Utrzymanie: rezerwa 35%, aktywne 100%, wyprawa 150%. Mobilizacja trwa miesiąc."),
+            ("/economy posture <id> <tryb>", "Utrzymanie: rezerwa 35%, aktywne 100%, wyprawa 150%. Wojna aktywuje rezerwy natychmiast; pokojowa mobilizacja trwa miesiąc."),
             ("/economy recurring <id>", "Zaproponuj wymianę co miesiąc. Odbiorca musi wyrazić zgodę na miesięczne dostawy."),
             ("/economy contract_stop <id>", "Każda strona może zatrzymać umowę miesięczną."),
             ("/buildings list", "Lista wszystkich typów budynków z kosztami i efektami."),
@@ -654,8 +660,12 @@ HELP_SECTIONS_PL = {
         "color": discord.Color.dark_orange(),
         "fields": [
             ("/battle plan", "Wyślij plan bitwy — lokalizacja (tekst), rozkazy, opcjonalne ID jednostek i URL mapy."),
+            ("/war status", "Panel wojen: przeciwnicy, wyzwania i następne kroki. Wyślij plan; po potwierdzeniu obrony bot rozlicza bitwę."),
+            ("/war attack /war defend", "Automatyczna bitwa: statystyki, morale, fortyfikacje i zwykły los, mnożniki taktyczne ×1. Opis nie daje premii. Wyzwania wygasają po 2 miesiącach gry."),
+            ("/battle invite <plan> <państwo>", "Zaproś jedno państwo sojusznicze lub walczące z tym samym przeciwnikiem do dodania własnej armii."),
+            ("/battle join <plan> <ID jednostek>", "Przyjmij zaproszenie i wybierz własne grupy; /battle leave wycofuje je przed dopasowaniem."),
             ("/battle view <id>", "Szczegóły bitwy. Plany prywatne dla stron i GM."),
-            ("/diplomacy war <naród>", "Wypowiedz wojnę. Jednostki zgłoszone do planu bitwy przechodzą na wyprawę (150% utrzymania)."),
+            ("/diplomacy war <naród>", "Wypowiedz wojnę i od razu aktywuj rezerwy obu stron (100% utrzymania). Plany bitew wymagają wyprawy (150%)."),
             ("/diplomacy peace <naród>", "Zaproponuj pokój; odbiorca musi zaakceptować warunki w panelu traktatów."),
             ("/diplomacy alliance <naród>", "Zaproponuj sojusz innemu narodowi."),
             ("/diplomacy status", "Twoje relacje dyplomatyczne."),
@@ -692,7 +702,7 @@ GM_HELP_FIELDS_PL = [
     ("/goals create <nation> <title> <description>", "Utwórz opisowy cel dla państwa; wykonanie daje 10 prestiżu."),
     ("/goals status <nation> · /goals complete <nation> <goal_id>", "Sprawdź cel i potwierdź wykonanie przyciskiem; nagroda jest jednorazowa."),
     ("/algae deposit_add / deposit_remove <cell_id>", "Ręcznie dodaj lub usuń złoże. Limit: 5. Import nie tworzy złóż."),
-    ("/nation found <gracz> <nazwa> <historia>", "Utwórz państwo i nadaj je graczowi. Istniejące państwa pozostają bez zmian."),
+    ("/nation applications", "Rozpatrz zgłoszenia graczy: jednym kliknięciem utwórz państwo z prowincjami, stolicą i pakietem startowym albo odrzuć z powodem."),
     ("/nation transfer <naród> <gracz>", "Przekaż państwo po sprawdzeniu przejmowanych zobowiązań. Oczekujące propozycje zostaną anulowane."),
     ("/chronicle configure <kanał> [godzina_utc] [język]", "Włącz codzienny raport do dwóch publicznych akcji. Domyślnie: 18:00 UTC, polski."),
     ("/chronicle preview / pause / status / retry", "Podgląd, wstrzymanie i stan raportów; świadome ponowienie nieudanej lub niepewnej wysyłki."),
@@ -1010,32 +1020,39 @@ class EconomyCog(commands.Cog):
     # MEGAPROJECT GROUP
     # ======================================================================
 
+    @mp_grp.command(name='review',description='Review a project with separate AI / Oceń projekt przez osobne AI')
+    @i18n.localized
+    async def mp_review(self,interaction:discord.Interaction,project_id:int=0):
+        from project_ai_ui import show
+        await show(interaction,project_id)
+
     @mp_grp.command(name="propose", description="Propose a project / Zaproponuj projekt")
     @app_commands.describe(name="Project name", effect="Desired effect", gold_budget="Gold budget")
     @i18n.localized
     async def mp_propose(self, interaction: discord.Interaction,
                          name: str, effect: str, gold_budget: int):
+        from world_service import tr
+        if not 1<=len(name.strip())<=80 or not 1<=len(effect.strip())<=4000 or not 0<=gold_budget<=1000000:
+            await interaction.response.send_message(tr('Nazwa 1–80 znaków, opis 1–4000, budżet 0–1000000.',
+                'Name 1–80 characters, description 1–4000, budget 0–1000000.'),ephemeral=True);return
         lang = _lang(interaction)
         n = _nation_owner(str(interaction.user.id))
         if not n:
             await interaction.response.send_message(i18n.t(lang, "no_nation"), ephemeral=True)
             return
-        with db.cursor() as c:
-            c.execute(
-                "INSERT INTO megaprojects(nation_id,name,proposed_effect,cost_json,status)"
-                " VALUES(?,?,?,?,?)",
-                (n["id"], name, effect, json.dumps({"gold": gold_budget}), "proposed")
-            )
-            project_id = c.lastrowid
+        project_id = db.insert_returning_id(
+            "INSERT INTO megaprojects(nation_id,name,proposed_effect,cost_json,status) VALUES(?,?,?,?,?)",
+            (n["id"], name, effect, json.dumps({"gold": gold_budget}), "proposed"))
         _log(n["id"], "player",
              i18n.text("Proposed project '{p0}' (#{p1}): {p2}. Budget: {p3}g.", p0=name, p1=project_id, p2=effect, p3=gold_budget))
         embed = discord.Embed(
             title=i18n.text('Project Proposed'),
             description=(
-                i18n.text('**{p0}** (ID: {p1})\n{p2}\nBudget: {p3:,} gold\n\nAwaiting GM approval.', p0=name, p1=project_id, p2=effect, p3=gold_budget)
+                i18n.text('**{p0}** (ID: {p1})\n{p2}\nBudget: {p3:,} gold\n\nAwaiting GM approval.', p0=name, p1=project_id, p2=effect[:3500], p3=gold_budget)
             ),
             color=discord.Color.orange(),
         )
+        embed.set_footer(text=f'/project review {project_id}')
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @mp_grp.command(name="build", description="Start building an approved project / Rozpocznij budowe")
@@ -1708,22 +1725,7 @@ class EconomyCog(commands.Cog):
             await interaction.response.send_message(i18n.t(_lang(interaction), "gm_only"), ephemeral=True)
             return
 
-        STARTER = {
-            "food":       200,
-            "wood":       150,
-            "stone":      100,
-            "iron":        80,
-            "copper":      40,
-            "coal":        40,
-            "clay":        60,
-            "cloth":       30,
-            "tar":         30,
-            "gunpowder":   20,
-            "horses":      10,
-            "spices":      10,
-            "silk":         5,
-        }
-        STARTER_GOLD = 500
+        from nation_applications import STARTER,STARTER_GOLD
 
         with db.cursor() as c:
             if nation.lower() in ("all", "wszyscy", "wszystkie"):

@@ -363,6 +363,11 @@ def export_map(*, native_format=True, map_raw=None):
                           'Terraformed province biome is missing from the map catalogue: '+p['biome'])
                 row['biome']=biome
         by_province_id = {p['id']: p for p in provinces.values()}
+        for burg in pack.get('burgs',[]):
+            if not isinstance(burg,dict) or not burg.get('i') or burg.get('removed'):continue
+            p=provinces.get(burg.get('cell'))
+            if p and p['active'] and p['name']:
+                burg['name']=p['name']
         capital_cells = {}
         for n in nations:
             p = by_province_id.get(n['capital_province_id'])
