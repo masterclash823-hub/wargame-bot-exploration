@@ -92,6 +92,14 @@ class NationCog(commands.Cog):
     @i18n.localized
     async def found(self, interaction: discord.Interaction):
         from nation_application_ui import form
+        from world_service import tr
+        if _get_by_owner(str(interaction.user.id)):
+            await interaction.response.send_message(
+                tr('Masz już państwo. Każdy gracz może założyć tylko jedno państwo.',
+                   'You already have a nation. Each player may found only one nation.'),
+                ephemeral=True,
+            )
+            return
         await form(interaction)
 
     @nation_group.command(name='bonuses',description='Choose starting bonuses / Wybierz bonusy początkowe')
