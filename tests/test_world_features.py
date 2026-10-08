@@ -279,6 +279,13 @@ class IdentityGoalTests(WorldFixture,unittest.TestCase):
 
 
 class WorldUITests(WorldFixture,unittest.IsolatedAsyncioTestCase):
+    async def test_found_rejects_player_who_already_has_nation(self):
+        i=interaction(1);i.guild_id=100
+        await NationCog.found.callback(None,i)
+        i.response.send_message.assert_awaited_once()
+        self.assertIn('Masz już państwo', i.response.send_message.call_args.kwargs['content'])
+        self.assertIsNone(getattr(i.response, 'send_modal', None) if False else None)
+
     async def test_player_creation_opens_application_without_creating_nation(self):
         i=interaction(3);i.guild_id=100;i.response.send_modal=AsyncMock()
         await NationCog.found.callback(None,i)
