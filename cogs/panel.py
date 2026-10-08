@@ -245,7 +245,7 @@ ACTIONS = {
                  ("new_blueprint","🧰"),("posture","⏳"),("captives","⛓️")],
     "territory": [("provinces","🗺️"),("province","🔎"),("province_buy","🛒"),("province_rename","✏️"),("province_terraform","🌱"),("colonies","🏝️"),("colony_view","🔎"),
                   ("colony_found","🚩"),("colony_develop","📈"),("colony_expand","🧭"),("routes","🚢"),("settlers","👥")],
-    "diplomacy": [("wars","⚔️"),("relations","📜"),("war","⚔️"),("peace","🕊️"),("alliance","🤝"),
+    "diplomacy": [("wars","⚔️"),("relations","📜"),("war","⚔️"),("alliance","🤝"),
                   ("battle_plan","🗒️"),("battle_invite","📨"),("battle_join","🫱🏻‍🫲🏽"),("battles","📖"),("treaties","📜"),("new_treaty","📝"),("calls","🛡️")],
     "events": [("ruins","🏚️"),("event_list","📋"),("event_play","🎭"),("memories","🧠"),("exploration","🧭")],
     "settings": [("help","❓"),("tutorial","📘"),("language_pl","🇵🇱"),("language_en","🇬🇧"),("coop","🤝")],
