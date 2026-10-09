@@ -307,6 +307,18 @@ class WorldUITests(WorldFixture,unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.balances(),before)
         self.assertFalse(self.query('SELECT * FROM blueprints'))
 
+    async def test_submitting_treaty_notifies_recipient(self):
+        from unittest.mock import AsyncMock
+        import cogs.treaties as treaty_cog
+        tid=treaties.propose(1,1,2,'alliance',draft=True)
+        view=TreatyView(1,treaties.get_treaty(tid,1))
+        i=interaction(1)
+        i.client=NS(fetch_user=AsyncMock(return_value=NS(send=AsyncMock())))
+        await view.submit.callback(i)
+        i.client.fetch_user.assert_awaited_once_with(2)
+        i.client.fetch_user.return_value.send.assert_awaited_once()
+        self.assertEqual(treaties.get_treaty(tid,2)['status'],'proposed')
+
     async def test_treaty_embed_shows_all_terms_and_stale_button_cannot_accept(self):
         tid=treaties.propose(1,1,2,'alliance',note='X'*2000)
         t=treaties.get_treaty(tid,2);e=treaty_embed(t)

@@ -149,8 +149,28 @@ class TreatyView(i18n.LocalizedView):
     @discord.ui.button(label='Send proposal',style=discord.ButtonStyle.primary,row=1)
     @i18n.localized
     async def submit(self,interaction,button):
-        try:service.submit_proposal(self.t['id'],interaction.user.id,self.t['version'])
-        except ValueError as exc:await interaction.response.send_message(str(exc),ephemeral=True);return
+        try:
+            service.submit_proposal(self.t['id'],interaction.user.id,self.t['version'])
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc),ephemeral=True);return
+        # The recipient should be told immediately; the proposal remains visible
+        # through /treaty list even when DMs are disabled.
+        try:
+            sent=service.get_treaty(self.t['id'],interaction.user.id)
+            recipient_id=sent['recipient_owner']
+            if recipient_id and recipient_id!=interaction.user.id:
+                user=await interaction.client.fetch_user(int(recipient_id))
+                lang=i18n.current_language()
+                kind=service.KINDS[sent['kind']][0 if lang=='pl' else 1]
+                await user.send(
+                    tr(f'📜 Otrzymano propozycję traktatu #{sent["id"]} ({kind}) od **{sent["a_name"]}**. '
+                       f'Otwórz /treaty list, aby ją przejrzeć i zaakceptować.',
+                       f'📜 You received treaty proposal #{sent["id"]} ({kind}) from **{sent["a_name"]}**. '
+                       f'Open /treaty list to review and accept it.')
+                )
+        except Exception:
+            # Discord DMs can be disabled; delivery must never roll back the treaty.
+            pass
         await self.update(interaction)
 
 
